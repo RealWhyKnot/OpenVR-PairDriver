@@ -67,6 +67,26 @@ void IPCServer::HandleRequest(const protocol::Request &request, protocol::Respon
 		}
 		break;
 
+	case protocol::RequestSetInputHealthConfig:
+		if (mask & pairdriver::kFeatureInputHealth) {
+			driver->SetInputHealthConfig(request.setInputHealthConfig);
+			response.type = protocol::ResponseSuccess;
+		} else {
+			LOG("IPC[%s]: rejected RequestSetInputHealthConfig; pipe not bound to inputhealth", pipeName.c_str());
+			response.type = protocol::ResponseInvalid;
+		}
+		break;
+
+	case protocol::RequestResetInputHealthStats:
+		if (mask & pairdriver::kFeatureInputHealth) {
+			driver->HandleResetInputHealthStats(request.resetInputHealthStats);
+			response.type = protocol::ResponseSuccess;
+		} else {
+			LOG("IPC[%s]: rejected RequestResetInputHealthStats; pipe not bound to inputhealth", pipeName.c_str());
+			response.type = protocol::ResponseInvalid;
+		}
+		break;
+
 	default:
 		LOG("IPC[%s]: invalid request type %d", pipeName.c_str(), request.type);
 		response.type = protocol::ResponseInvalid;

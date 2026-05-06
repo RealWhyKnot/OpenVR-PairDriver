@@ -4,6 +4,7 @@
 #include "InterfaceHookInjector.h"
 #include "ServerTrackedDeviceProvider.h"
 #include "SkeletalHookInjector.h"
+#include "InputHealthHookInjector.h"
 
 #include <atomic>
 #include <chrono>
@@ -128,24 +129,28 @@ static void *DetourGetGenericInterface(vr::IVRDriverContext *_this, const char *
 			IHook::Register(&TrackedDevicePoseUpdatedHook006);
 		}
 	}
-	else if ((s_featureFlags & pairdriver::kFeatureSmoothing)
-	         && iface.find("IVRDriverInput_") != std::string::npos
+	else if (iface.find("IVRDriverInput_") != std::string::npos
 	         && iface.find("Internal") == std::string::npos)
 	{
-		// Public IVRDriverInput query — substring match catches both
+		// Public IVRDriverInput query -- substring match catches both
 		// IVRDriverInput_003 (SC's bundled SDK; user's runtime currently
 		// publishes this) and IVRDriverInput_004 (current OpenVR master;
 		// adds Pose+EyeTracking at slots 7-10 but keeps Skeleton creates+
 		// updates at slots 5/6). Internal exclusion guards against
 		// IVRDriverInputInternal_XXX (a 2-method eye-tracking interface,
-		// unrelated to skeletal data — see memory file).
+		// unrelated to skeletal data -- see memory file).
 		//
-		// The lighthouse driver calls vr::VRDriverInput()->UpdateSkeleton-
-		// Component() which is a virtual dispatch through the vtable
-		// returned here; patching slot 6 catches the call. Same approach
-		// HandOfLesser uses in production.
-		LOG("[skeletal] %s queried via context: iface=%p", iface.c_str(), originalInterface);
-		skeletal::TryInstallPublicHooks(originalInterface);
+		// Two subsystems may be interested in this vtable: skeletal patches
+		// slots 5/6 (Create/Update Skeleton), inputhealth (Stage 1B+) will
+		// patch the boolean and scalar slots. Each is gated on its own
+		// feature flag and skips registration when the flag is off.
+		if (s_featureFlags & pairdriver::kFeatureSmoothing) {
+			LOG("[skeletal] %s queried via context: iface=%p", iface.c_str(), originalInterface);
+			skeletal::TryInstallPublicHooks(originalInterface);
+		}
+		if (s_featureFlags & pairdriver::kFeatureInputHealth) {
+			inputhealth::TryInstallScalarBooleanHooks(originalInterface);
+		}
 	}
 
 	return originalInterface;
@@ -173,6 +178,13 @@ void InjectHooks(ServerTrackedDeviceProvider *driver, vr::IVRDriverContext *pDri
 			// IVRDriverInputInternal_*, both of which arrive through the
 			// detour we just registered.
 			skeletal::Init(driver);
+		}
+		if (featureFlags & pairdriver::kFeatureInputHealth) {
+			// Input-health subsystem: caches the driver pointer for future
+			// boolean/scalar detours (Stage 1B+). Stage 1A only logs the
+			// first IVRDriverInput query so the next-stage implementer can
+			// confirm the same iface pointer reaches the inputhealth branch.
+			inputhealth::Init(driver);
 		}
 	}
 	else
@@ -207,6 +219,9 @@ void DisableHooks()
 	InterfaceHooks::DrainInFlightDetours();
 	if (s_featureFlags & pairdriver::kFeatureSmoothing) {
 		skeletal::Shutdown();
+	}
+	if (s_featureFlags & pairdriver::kFeatureInputHealth) {
+		inputhealth::Shutdown();
 	}
 	MH_Uninitialize();
 	s_featureFlags = 0;

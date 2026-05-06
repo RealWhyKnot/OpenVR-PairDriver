@@ -10,13 +10,14 @@
 #include <openvr_driver.h>
 #endif
 
-// Per-feature pipe names. The driver opens up to two pipes depending on which
-// enable_*.flag files are present in its resources directory; each consumer
-// overlay connects only to its own pipe. Wire format on both pipes is the same
-// protocol::Request/Response struct; the driver routes by request type and
-// rejects out-of-feature requests.
+// Per-feature pipe names. The driver opens up to three pipes depending on
+// which enable_*.flag files are present in its resources directory; each
+// consumer overlay connects only to its own pipe. Wire format on all pipes
+// is the same protocol::Request/Response struct; the driver routes by
+// request type and rejects out-of-feature requests.
 #define OPENVR_PAIRDRIVER_CALIBRATION_PIPE_NAME "\\\\.\\pipe\\OpenVR-Calibration"
 #define OPENVR_PAIRDRIVER_SMOOTHING_PIPE_NAME   "\\\\.\\pipe\\OpenVR-Smoothing"
+#define OPENVR_PAIRDRIVER_INPUTHEALTH_PIPE_NAME "\\\\.\\pipe\\OpenVR-InputHealth"
 
 // Pose telemetry shmem segment. Created by the driver only when the calibration
 // feature is enabled; the calibration overlay opens it to read driver-side
@@ -112,10 +113,17 @@ namespace protocol
 	// applies per-bone slerp smoothing to Index Knuckles bone arrays before they
 	// reach OpenVR consumers (proven 2026-05-02 in VRChat). Default OFF; the union
 	// and Request sizeof are unchanged because the new struct is much smaller than
-	// SetDeviceTransform — the bump is to force a paired overlay+driver reinstall
+	// SetDeviceTransform -- the bump is to force a paired overlay+driver reinstall
 	// so the user sees a clean handshake error instead of a silently-ignored new
 	// request type if they upgrade only one half.
-	const uint32_t Version = 9;
+	// v10 (2026-05-06): adds the InputHealth subsystem. Driver opens a third pipe
+	// (\\.\pipe\OpenVR-InputHealth) gated on enable_inputhealth.flag, accepts
+	// RequestSetInputHealthConfig + RequestResetInputHealthStats. Wire layout
+	// unchanged because both new structs are much smaller than SetDeviceTransform;
+	// the bump is again purely to force paired install. The driver-side hooks on
+	// UpdateBooleanComponent / UpdateScalarComponent and the snapshot publish
+	// path land in subsequent commits behind this protocol baseline.
+	const uint32_t Version = 10;
 
 	// Maximum length of a tracking-system-name string (e.g., "lighthouse", "oculus",
 	// "Pimax Crystal HMD"). 32 bytes is more than enough for known systems and keeps
@@ -134,6 +142,15 @@ namespace protocol
 		// payload behind a small mutex; the IVRDriverInputInternal hook reads
 		// it on every UpdateSkeletonComponent call (~340 Hz/hand).
 		RequestSetFingerSmoothing,
+		// v10 (2026-05-06): input-health config push. Driver caches the
+		// payload as packed atomics; the boolean/scalar input detours read it
+		// on every component update. Default-constructed config is "feature
+		// off" (master_enabled = false) so the detour fast-paths to passthrough.
+		RequestSetInputHealthConfig,
+		// v10 (2026-05-06): reset accumulated stats for one device. Used by
+		// the wizard's "start fresh" button and by the user's "Don't ask
+		// for this device" / "I just got new hardware" flows.
+		RequestResetInputHealthStats,
 	};
 
 	enum ResponseType
@@ -302,6 +319,53 @@ namespace protocol
 		bool recalibrateOnMovement;
 	};
 
+	// POD payload for RequestSetInputHealthConfig. Sized to fit inside an
+	// 8-byte atomic so the per-tick read on the driver's input detours can be
+	// a single relaxed load (same trick as FingerSmoothingConfig). Default
+	// construction encodes "feature off and diagnostics-only" so the detour
+	// path stays passthrough until the overlay sends a real config.
+	struct InputHealthConfig
+	{
+		// Master kill-switch. False = the boolean/scalar detours forward
+		// component updates untouched and the background worker stays idle.
+		bool      master_enabled;
+
+		// When true, the driver records observations and publishes snapshots
+		// but never alters component values flowing up to consumers. This is
+		// the recommended default when the feature is first enabled; the
+		// user opts into actual compensation later through the wizard.
+		bool      diagnostics_only;
+
+		// Per-category compensation toggles. All default false. Have no
+		// effect while diagnostics_only is true. The actual implementation
+		// of these compensations lands in subsequent commits; for the v10
+		// baseline they are just config bits the driver records and acks.
+		bool      enable_rest_recenter;
+		bool      enable_trigger_remap;
+
+		// Suppress repeated "drift detected" notifications shorter than this
+		// many seconds apart, per device. Default 0 means "use the driver's
+		// hard-coded default" (1800 s); explicit values let power users tune.
+		uint16_t  notification_cooldown_s;
+
+		// Trailing padding to round to 8 bytes. Named so a future reader
+		// doesn't mistake it for a meaningful flag; left zero by the overlay.
+		uint16_t  _reserved;
+	};
+
+	// POD payload for RequestResetInputHealthStats. Identifies the device by
+	// hashed serial (8 bytes; client uses FNV-1a or similar deterministic
+	// hash on the ETrackedDeviceProperty serial string) and lists which
+	// stat categories to wipe.
+	struct InputHealthResetStats
+	{
+		uint64_t device_serial_hash;
+		uint8_t  reset_passive;   // wipe Welford / PH / EWMA / polar bins
+		uint8_t  reset_active;    // wipe wizard-recorded calibration prior
+		uint8_t  reset_curves;    // wipe applied compensation curves
+		uint8_t  _reserved[5];
+	};
+
 	struct Request
 	{
 		RequestType type;
@@ -313,9 +377,16 @@ namespace protocol
 			// v9: finger smoothing. FingerSmoothingConfig is much smaller than
 			// SetDeviceTransform so this addition does not grow the union and
 			// therefore does not change sizeof(Request). The Version bump
-			// is purely to force paired install — the wire layout is otherwise
+			// is purely to force paired install -- the wire layout is otherwise
 			// backwards-compatible.
 			FingerSmoothingConfig setFingerSmoothing;
+			// v10: input-health config + stats reset. Both structs are much
+			// smaller than SetDeviceTransform so the union does not grow.
+			// Same paired-install rationale as v9: bump Version to make a
+			// version skew show up at the handshake instead of as a silently
+			// ignored RequestType in the dispatcher's default branch.
+			InputHealthConfig setInputHealthConfig;
+			InputHealthResetStats resetInputHealthStats;
 		};
 
 		Request() : type(RequestInvalid), setAlignmentSpeedParams({}) { }

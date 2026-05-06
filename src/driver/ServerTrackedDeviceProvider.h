@@ -58,7 +58,7 @@ public:
 	}
 
 	// Finger-smoothing config cache. Written by IPCServer when the overlay
-	// pushes a new config (rare — only on UI changes). Read by the
+	// pushes a new config (rare -- only on UI changes). Read by the
 	// IVRDriverInputInternal::UpdateSkeletonComponent detour at hand-update
 	// rate (~340 Hz/hand). Held under its OWN mutex distinct from
 	// stateMutex so finger updates can never block the pose-update path,
@@ -66,12 +66,25 @@ public:
 	void SetFingerSmoothingConfig(const protocol::FingerSmoothingConfig &cfg);
 	protocol::FingerSmoothingConfig GetFingerSmoothingConfig() const;
 
+	// Input-health config cache. Written by IPCServer when the OpenVR-InputHealth
+	// overlay pushes a new config (rare). Read by the boolean / scalar input
+	// detours on every component update once Stage 1B lands (same atomic-pack
+	// pattern as fingerCfgPacked so the per-tick read is a single relaxed load).
+	void SetInputHealthConfig(const protocol::InputHealthConfig &cfg);
+	protocol::InputHealthConfig GetInputHealthConfig() const;
+
+	// Reset accumulated input-health stats for one device. Stage 1A stores the
+	// most recent reset request and logs it; Stage 1C+ wires this into the
+	// per-device-serial stat tables maintained by the background worker.
+	void HandleResetInputHealthStats(const protocol::InputHealthResetStats &req);
+
 private:
 	// Per-feature IPC servers, allocated only when the matching enable_*.flag
-	// is detected at Init. Either may be null in feature-disabled builds; the
+	// is detected at Init. Any may be null in feature-disabled builds; the
 	// pose-update path doesn't touch them.
 	std::unique_ptr<IPCServer> calibrationServer;
 	std::unique_ptr<IPCServer> smoothingServer;
+	std::unique_ptr<IPCServer> inputHealthServer;
 
 	// Pose telemetry shmem, only created when calibration is enabled. The
 	// calibration overlay opens this segment to read driver-side pose
@@ -226,6 +239,17 @@ private:
 	// so the detour fast-paths to passthrough until the overlay has sent
 	// a real config.
 	mutable std::atomic<uint64_t>     fingerCfgPacked{0};
+
+	// Input-health config packed into an atomic uint64_t. Same pattern as
+	// fingerCfgPacked: single-writer (IPC thread on user UI input), many-
+	// reader (Stage 1B+ boolean / scalar input detours, ~hundreds of Hz per
+	// component summed across every input on every tracked device). Default
+	// zero = {master_enabled=false, diagnostics_only=false, ...} so the
+	// detour fast-paths to passthrough until the overlay sends real config.
+	// InputHealthConfig is 8 bytes (sized exactly for this pack). The
+	// runtime invariant is enforced by a static_assert in the .cpp where the
+	// packing happens.
+	mutable std::atomic<uint64_t>     inputHealthCfgPacked{0};
 
 	// Look up an existing fallback slot by system name (linear scan + memcmp).
 	// Returns nullptr if no slot is currently occupied with that name.

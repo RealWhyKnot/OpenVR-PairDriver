@@ -66,6 +66,14 @@ vr::EVRInitError ServerTrackedDeviceProvider::Init(vr::IVRDriverContext *pDriver
 		smoothingServer->Run();
 	}
 
+	if (featureFlags & pairdriver::kFeatureInputHealth) {
+		inputHealthServer = std::make_unique<IPCServer>(
+			this,
+			OPENVR_PAIRDRIVER_INPUTHEALTH_PIPE_NAME,
+			pairdriver::kFeatureInputHealth);
+		inputHealthServer->Run();
+	}
+
 	// Hook installation is gated inside the injector by the same feature
 	// flags so the GetGenericInterface detour skips registering the
 	// per-feature inner hooks for subsystems that aren't enabled.
@@ -98,6 +106,7 @@ void ServerTrackedDeviceProvider::Cleanup()
 	//   3. shmem.Close -- safe now because no detour can read it.
 	//   4. VR_CLEANUP_SERVER_DRIVER_CONTEXT -- finalize.
 	DisableHooks();
+	if (inputHealthServer) inputHealthServer->Stop();
 	if (smoothingServer) smoothingServer->Stop();
 	if (calibrationServer) calibrationServer->Stop();
 	shmem.Close();
@@ -748,11 +757,54 @@ void ServerTrackedDeviceProvider::SetFingerSmoothingConfig(const protocol::Finge
 
 protocol::FingerSmoothingConfig ServerTrackedDeviceProvider::GetFingerSmoothingConfig() const
 {
-	// Hot path: ~680 Hz (340 Hz × 2 hands) skeletal detour reads. Single
+	// Hot path: ~680 Hz (340 Hz x 2 hands) skeletal detour reads. Single
 	// atomic load + acquire fence + memcpy = no contention, no syscalls,
 	// no LOG()-inside-critical-section drift to worry about.
 	const uint64_t packed = fingerCfgPacked.load(std::memory_order_acquire);
 	protocol::FingerSmoothingConfig cfg{};
 	std::memcpy(&cfg, &packed, sizeof(cfg));
 	return cfg;
+}
+
+void ServerTrackedDeviceProvider::SetInputHealthConfig(const protocol::InputHealthConfig &cfg)
+{
+	static_assert(sizeof(protocol::InputHealthConfig) <= sizeof(uint64_t),
+		"InputHealthConfig must fit inside atomic<uint64_t>");
+
+	uint64_t newPacked = 0;
+	std::memcpy(&newPacked, &cfg, sizeof(cfg));
+
+	const uint64_t oldPacked = inputHealthCfgPacked.exchange(newPacked, std::memory_order_acq_rel);
+
+	if (oldPacked != newPacked) {
+		protocol::InputHealthConfig prev{};
+		std::memcpy(&prev, &oldPacked, sizeof(prev));
+		LOG("[inputhealth] SetInputHealthConfig via IPC: master=%d diag_only=%d rest=%d trig=%d cooldown=%us (was: master=%d diag_only=%d rest=%d trig=%d cooldown=%us)",
+			(int)cfg.master_enabled, (int)cfg.diagnostics_only,
+			(int)cfg.enable_rest_recenter, (int)cfg.enable_trigger_remap,
+			(unsigned)cfg.notification_cooldown_s,
+			(int)prev.master_enabled, (int)prev.diagnostics_only,
+			(int)prev.enable_rest_recenter, (int)prev.enable_trigger_remap,
+			(unsigned)prev.notification_cooldown_s);
+	}
+}
+
+protocol::InputHealthConfig ServerTrackedDeviceProvider::GetInputHealthConfig() const
+{
+	// Hot path: every UpdateBooleanComponent / UpdateScalarComponent detour
+	// once Stage 1B lands. Single atomic load + acquire fence + memcpy.
+	const uint64_t packed = inputHealthCfgPacked.load(std::memory_order_acquire);
+	protocol::InputHealthConfig cfg{};
+	std::memcpy(&cfg, &packed, sizeof(cfg));
+	return cfg;
+}
+
+void ServerTrackedDeviceProvider::HandleResetInputHealthStats(const protocol::InputHealthResetStats &req)
+{
+	// Stage 1A: log the request so the wizard's "start fresh" button can be
+	// observed end-to-end. Stage 1C+ wires this into the per-serial stat
+	// tables maintained by the InputHealth background worker.
+	LOG("[inputhealth] HandleResetInputHealthStats: serial_hash=0x%016llx passive=%d active=%d curves=%d (no-op until Stage 1C)",
+		(unsigned long long)req.device_serial_hash,
+		(int)req.reset_passive, (int)req.reset_active, (int)req.reset_curves);
 }

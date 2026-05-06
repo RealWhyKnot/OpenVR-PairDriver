@@ -54,20 +54,22 @@ uint32_t DetectFeatureFlags()
 {
 	std::wstring dir = GetResourcesDir();
 	if (dir.empty()) {
-		LOG("DetectFeatureFlags: unable to resolve driver resources directory; treating both features as disabled");
+		LOG("DetectFeatureFlags: unable to resolve driver resources directory; treating all features as disabled");
 		return 0;
 	}
 
 	uint32_t flags = 0;
 	const bool calOn = FlagFileExists(dir, L"enable_calibration.flag");
 	const bool smoOn = FlagFileExists(dir, L"enable_smoothing.flag");
+	const bool ihOn  = FlagFileExists(dir, L"enable_inputhealth.flag");
 	if (calOn) flags |= kFeatureCalibration;
 	if (smoOn) flags |= kFeatureSmoothing;
+	if (ihOn)  flags |= kFeatureInputHealth;
 
 	// %ls expects wide string on MSVC's CRT. Cap the printed length so a
 	// pathological install path doesn't blow the log line.
-	LOG("DetectFeatureFlags: resources=%.260ls calibration=%d smoothing=%d (mask=0x%x)",
-		dir.c_str(), (int)calOn, (int)smoOn, (unsigned)flags);
+	LOG("DetectFeatureFlags: resources=%.260ls calibration=%d smoothing=%d inputhealth=%d (mask=0x%x)",
+		dir.c_str(), (int)calOn, (int)smoOn, (int)ihOn, (unsigned)flags);
 	return flags;
 }
 
