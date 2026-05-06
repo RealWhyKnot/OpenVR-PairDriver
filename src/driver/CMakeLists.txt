@@ -85,7 +85,7 @@ target_link_libraries(OpenVRPairDriver
 target_compile_definitions(OpenVRPairDriver
 	PRIVATE NOMINMAX
 	PRIVATE UNICODE
-	PRIVATE OPENVRSPACECALIBRATORDRIVER_EXPORTS)
+	PRIVATE OPENVRPAIRDRIVER_EXPORTS)
 
 set_target_properties(OpenVRPairDriver PROPERTIES OUTPUT_NAME ${DRIVER_NAME})
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#ifdef OPENVRSPACECALIBRATORDRIVER_EXPORTS
-#define OPENVRSPACECALIBRATORDRIVER_API extern "C" __declspec(dllexport)
+#ifdef OPENVRPAIRDRIVER_EXPORTS
+#define OPENVRPAIRDRIVER_API extern "C" __declspec(dllexport)
 #else
-#define OPENVRSPACECALIBRATORDRIVER_API extern "C" __declspec(dllimport)
+#define OPENVRPAIRDRIVER_API extern "C" __declspec(dllimport)
 #endif
