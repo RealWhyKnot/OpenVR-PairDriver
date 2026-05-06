@@ -51,14 +51,33 @@ Write-Host "Build version: $Version"
 # Configure (skippable for incremental edits). The CMAKE_POLICY_VERSION_MINIMUM
 # bump is needed because the minhook submodule pins cmake_minimum_required at
 # 2.8 and current CMake versions reject anything below 3.5.
+#
+# The $ErrorActionPreference = 'Continue' wrap around each cmake call is
+# the same shape SC's build.ps1 uses. PowerShell 5.1 wraps CMake's stdout
+# message() lines as NativeCommandError ErrorRecords; under the script-
+# wide 'Stop' default that wrap kills the script on the first message
+# even when cmake exited 0. Localised 'Continue' lets the cmake run to
+# completion; we still throw on a real non-zero exit code.
 if (-not $SkipConfigure) {
-	& cmake -S . -B build -A x64 "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
-	if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
+	$PrevEap = $ErrorActionPreference
+	$ErrorActionPreference = "Continue"
+	try {
+		& cmake -S . -B build -A x64 "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+		if ($LASTEXITCODE -ne 0) { throw "CMake configure failed (exit $LASTEXITCODE)" }
+	} finally {
+		$ErrorActionPreference = $PrevEap
+	}
 }
 
 # Build Release.
-& cmake --build build --config Release --parallel
-if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+$PrevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+try {
+	& cmake --build build --config Release --parallel
+	if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)" }
+} finally {
+	$ErrorActionPreference = $PrevEap
+}
 
 # Verify the artifact lands where we expect.
 $dllPath = "build/driver_openvrpair/bin/win64/driver_openvrpair.dll"
