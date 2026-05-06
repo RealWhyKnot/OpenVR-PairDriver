@@ -78,6 +78,36 @@ jobs:
           Write-Host "Release manifest: $($manifest.Name)"
           Write-Host "SHA256:           $hash"
 
+      - name: Build NSIS installer
+        id: installer
+        shell: pwsh
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          $version = $env:TAG_NAME -replace '^v', ''
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (-not (Test-Path $makensis)) {
+            $makensis = "C:\Program Files\NSIS\makensis.exe"
+          }
+          if (-not (Test-Path $makensis)) {
+            throw "makensis.exe not found in the standard NSIS install paths."
+          }
+          Push-Location install
+          & $makensis "/DVERSION=$version" installer.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis exited $LASTEXITCODE" }
+          Pop-Location
+          $installer = Get-ChildItem install/OpenVR-PairDriver-Setup.exe
+          # Rename to include the version stamp so the release asset has a
+          # versioned filename like OpenVR-PairDriver-vN-Setup.exe.
+          $versioned = "release/OpenVR-PairDriver-v$version-Setup.exe"
+          Move-Item $installer.FullName $versioned -Force
+          $hash = (Get-FileHash $versioned -Algorithm SHA256).Hash
+          "path=$((Resolve-Path $versioned).Path)" >> $env:GITHUB_OUTPUT
+          "name=$(Split-Path -Leaf $versioned)"    >> $env:GITHUB_OUTPUT
+          "sha256=$hash"                           >> $env:GITHUB_OUTPUT
+          Write-Host "Installer: $versioned"
+          Write-Host "SHA256:    $hash"
+
       - name: Generate release body
         id: changelog
         shell: pwsh
@@ -108,13 +138,14 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           $zip = "${{ steps.zip.outputs.path }}"
+          $installer = "${{ steps.installer.outputs.path }}"
           $notes = @'
           ${{ steps.changelog.outputs.body }}
           '@
           $notesPath = Join-Path $env:RUNNER_TEMP 'release-body-input.md'
           $notes | Out-File -LiteralPath $notesPath -Encoding utf8 -NoNewline
           "input_path=$notesPath" >> $env:GITHUB_OUTPUT
-          gh release create $tag $zip --title $tag --notes-file $notesPath
+          gh release create $tag $zip $installer --title $tag --notes-file $notesPath
 
       - name: Verify published release body matches input
         env:
@@ -144,32 +175,79 @@ jobs:
           }
           Write-Host "Auto-correct succeeded; body now matches input."
 
-      - name: Push promoted changelog back to main
-        # main is unprotected on this repo, so a bot push is accepted directly
-        # without the PR machinery WKVRCProxy uses. Done last so a build/release
-        # failure does not leave the changelog on main mismatched against the
-        # actual published artifact.
+      - name: Push promoted changelog back to main (verified)
+        # Use the GraphQL createCommitOnBranch mutation so the promotion
+        # commit is signed server-side with GitHub's bot key. Required by
+        # the project-wide "all new commits must be verified" policy and by
+        # any future protected-branch rule on main. Done last so a build/
+        # release failure does not push a phantom-promoted CHANGELOG to main.
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          git config user.name  'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
 
           git fetch origin main
-          git checkout main
-          git reset --hard origin/main
-
-          cp .changelog-stash/CHANGELOG.md           CHANGELOG.md
-          cp .changelog-stash/wiki/Changelog.md wiki/Changelog.md
-
-          if [[ -z "$(git status --porcelain CHANGELOG.md wiki/Changelog.md)" ]]; then
-            echo "Nothing to promote -- main is already in promoted state."
+          # Cheap pre-check: if main already carries the promoted bytes
+          # (e.g. a re-run of the same tag), skip the mutation entirely.
+          if cmp -s .changelog-stash/CHANGELOG.md <(git show origin/main:CHANGELOG.md) \
+             && cmp -s .changelog-stash/wiki/Changelog.md <(git show origin/main:wiki/Changelog.md); then
+            echo "Nothing to promote -- main already carries the promoted bytes."
             exit 0
           fi
 
-          git add CHANGELOG.md wiki/Changelog.md
-          git commit -m "docs(changelog): promote Unreleased -> ${TAG_NAME} [skip changelog]"
-          git push origin main
+          changelog_b64=$(base64 -w 0 .changelog-stash/CHANGELOG.md)
+          wiki_b64=$(base64 -w 0 .changelog-stash/wiki/Changelog.md)
+          expected_oid=$(git rev-parse origin/main)
+
+          headline="docs(changelog): promote Unreleased -> ${TAG_NAME} [skip changelog]"
+          body="Promoted by .github/workflows/release.yml after publishing ${TAG_NAME}."
+
+          payload=$(jq -n \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg branch "main" \
+            --arg headline "$headline" \
+            --arg body "$body" \
+            --arg oid "$expected_oid" \
+            --arg changelog "$changelog_b64" \
+            --arg wiki "$wiki_b64" \
+            '{
+              query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid url } } }",
+              variables: {
+                input: {
+                  branch: { repositoryNameWithOwner: $repo, branchName: $branch },
+                  message: { headline: $headline, body: $body },
+                  fileChanges: {
+                    additions: [
+                      { path: "CHANGELOG.md",      contents: $changelog },
+                      { path: "wiki/Changelog.md", contents: $wiki }
+                    ]
+                  },
+                  expectedHeadOid: $oid
+                }
+              }
+            }')
+
+          response=$(printf '%s' "$payload" | gh api graphql --input -)
+          echo "$response" | jq .
+
+          if echo "$response" | jq -e '.errors // empty' >/dev/null; then
+            echo "::error::createCommitOnBranch returned GraphQL errors"
+            exit 1
+          fi
+
+          new_oid=$(echo "$response" | jq -r '.data.createCommitOnBranch.commit.oid')
+          if [[ -z "$new_oid" || "$new_oid" == "null" ]]; then
+            echo "::error::createCommitOnBranch did not return a commit oid"
+            exit 1
+          fi
+
+          verified=$(gh api "repos/$GITHUB_REPOSITORY/commits/$new_oid" --jq '.commit.verification.verified')
+          if [[ "$verified" != "true" ]]; then
+            echo "::error::Commit $new_oid is not verified (got: $verified)"
+            gh api "repos/$GITHUB_REPOSITORY/commits/$new_oid" --jq '.commit.verification'
+            exit 1
+          fi
+          echo "Verified promote commit: $new_oid"
