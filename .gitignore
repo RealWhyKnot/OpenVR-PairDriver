@@ -14,6 +14,12 @@ ipch
 # Per-session local-build counter (regenerated each build).
 /build/local_build_state.json
 
+# Release artifacts produced by build.ps1 -Release. Generated, not committed.
+/release/
+
+# Changelog stash captured by .github/workflows/release.yml during a CI build.
+/.changelog-stash/
+
 # Local tooling state.
 .claude/
 CLAUDE.md

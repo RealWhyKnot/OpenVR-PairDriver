@@ -6,7 +6,12 @@ param(
 
 	# Skip the CMake configure step (rerun MSBuild only). Useful when iterating
 	# on a single source file.
-	[switch]$SkipConfigure
+	[switch]$SkipConfigure,
+
+	# Produce a release zip + per-file manifest TSV under release/. Required
+	# by .github/workflows/release.yml; set automatically by it. A local dev
+	# build can pass this too if you want to test the packaging step.
+	[switch]$Release
 )
 
 $ErrorActionPreference = "Stop"
@@ -64,3 +69,39 @@ $dll = Get-Item $dllPath
 Write-Host ""
 Write-Host ("Built {0} ({1:N0} bytes, {2})" -f $dll.Name, $dll.Length, $dll.LastWriteTime)
 Write-Host ("  -> {0}" -f $dll.FullName)
+
+if ($Release) {
+	# Pack the deployable driver tree (manifest, resources, bin/win64/DLL) into
+	# a zip plus a sibling manifest TSV. The release workflow consumes both --
+	# the zip is the asset, the manifest feeds the File integrity section of
+	# the release body.
+	$driverTree = "build/driver_openvrpair"
+	if (-not (Test-Path $driverTree)) {
+		throw "Driver tree not found at $driverTree -- expected the CMake post-build copy step to populate it."
+	}
+	New-Item -ItemType Directory -Force -Path "release" | Out-Null
+	$zipName = "OpenVR-PairDriver-v$Version.zip"
+	$zipPath = Join-Path "release" $zipName
+	if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+	Compress-Archive -Path "$driverTree/*" -DestinationPath $zipPath -CompressionLevel Optimal
+	$zipItem = Get-Item $zipPath
+
+	$manifestName = "OpenVR-PairDriver-v$Version.manifest.tsv"
+	$manifestPath = Join-Path "release" $manifestName
+	$rootLength = (Resolve-Path $driverTree).Path.Length + 1
+	$rows = Get-ChildItem $driverTree -Recurse -File | ForEach-Object {
+		$rel = $_.FullName.Substring($rootLength).Replace('\', '/')
+		$h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+		"{0}`t{1}`t{2}" -f $h, $_.Length, $rel
+	}
+	# WriteAllLines via System.IO.File with a no-BOM UTF8Encoding so the
+	# downstream Generate-ReleaseNotes.ps1 manifest parser sees clean column-1
+	# bytes rather than the UTF-8 BOM that Out-File -Encoding utf8 prepends on
+	# Windows PowerShell 5.1.
+	$enc = [System.Text.UTF8Encoding]::new($false)
+	[System.IO.File]::WriteAllLines((Resolve-Path -LiteralPath (Split-Path $manifestPath)).Path + "\" + (Split-Path -Leaf $manifestPath), $rows, $enc)
+
+	Write-Host ""
+	Write-Host ("Packaged release zip:      {0} ({1:N0} bytes)" -f $zipItem.Name, $zipItem.Length)
+	Write-Host ("Packaged release manifest: {0}" -f $manifestName)
+}
