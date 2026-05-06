@@ -1,0 +1,5 @@
+{
+	"driver_openvrpair": {
+		"loadPriority": 9999
+	}
+}
