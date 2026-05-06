@@ -11,10 +11,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 	{
 	case DLL_PROCESS_ATTACH:
 		OpenLogFile();
-		LOG("OpenVR-SpaceCalibratorDriver " SPACECAL_VERSION_STRING " loaded");
+		LOG("OpenVR-PairDriver " SPACECAL_VERSION_STRING " loaded");
 		break;
 	case DLL_PROCESS_DETACH:
-		LOG("OpenVR-SpaceCalibratorDriver unloaded");
+		LOG("OpenVR-PairDriver unloaded");
 		break;
 	case DLL_THREAD_ATTACH:
 	case DLL_THREAD_DETACH:
