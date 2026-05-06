@@ -82,10 +82,17 @@ target_link_libraries(OpenVRPairDriver
 	PRIVATE ${OPENVR_LIBRARIES}
 	PRIVATE minhook)
 
+# Pull the build version stamp from version.txt at the repo root and inject
+# it as PAIRDRIVER_VERSION_STRING. build.ps1 writes this file for every build
+# (release CI passes the tag, local builds derive YYYY.M.D.N-XXXX).
+file(READ "${CMAKE_SOURCE_DIR}/version.txt" PAIRDRIVER_VERSION_RAW)
+string(STRIP "${PAIRDRIVER_VERSION_RAW}" PAIRDRIVER_VERSION_STAMP)
+
 target_compile_definitions(OpenVRPairDriver
 	PRIVATE NOMINMAX
 	PRIVATE UNICODE
-	PRIVATE OPENVRPAIRDRIVER_EXPORTS)
+	PRIVATE OPENVRPAIRDRIVER_EXPORTS
+	PRIVATE "PAIRDRIVER_VERSION_STRING=\"${PAIRDRIVER_VERSION_STAMP}\"")
 
 set_target_properties(OpenVRPairDriver PROPERTIES OUTPUT_NAME ${DRIVER_NAME})
 

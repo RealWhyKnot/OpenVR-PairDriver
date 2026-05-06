@@ -14,10 +14,10 @@ FILE *LogFile;
 
 namespace {
 
-// Mirrors the overlay's ClearOldLogs (CalibrationMetrics.cpp:260): nuke any
-// driver_log.*.txt older than 24 hours so the LocalAppDataLow\SpaceCalibrator
-// \Logs directory doesn't accumulate forever. Files newer than the cutoff are
-// retained so a triage session can grab the recent few.
+// Drop any driver_log.*.txt older than 24 hours so the
+// LocalAppDataLow\OpenVR-PairDriver\Logs directory doesn't accumulate forever.
+// Files newer than the cutoff are retained so a recent diagnostic session can
+// grab them.
 void ClearOldDriverLogs(const std::wstring& dir)
 {
 	std::wstring search = dir + L"\\driver_log.*.txt";
@@ -48,7 +48,7 @@ void ClearOldDriverLogs(const std::wstring& dir)
 	FindClose(h);
 }
 
-// Build %LocalAppDataLow%\SpaceCalibrator\Logs\driver_log.<date>T<time>.txt.
+// Build %LocalAppDataLow%\OpenVR-PairDriver\Logs\driver_log.<date>T<time>.txt.
 // Returns the wide path on success, empty on any failure (caller falls back
 // to the legacy cwd path so a missing AppDataLow doesn't lose logs entirely).
 std::wstring BuildLogPath()
@@ -61,7 +61,7 @@ std::wstring BuildLogPath()
 	std::wstring root(rootRaw);
 	CoTaskMemFree(rootRaw);
 
-	std::wstring dir = root + L"\\SpaceCalibrator";
+	std::wstring dir = root + L"\\OpenVR-PairDriver";
 	if (!CreateDirectoryW(dir.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return {};
 	dir += L"\\Logs";
 	if (!CreateDirectoryW(dir.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return {};
@@ -80,11 +80,9 @@ std::wstring BuildLogPath()
 	if (!GetDateFormatEx(LOCALE_NAME_INVARIANT, 0, &now, L"yyyy-MM-dd", date.data(), dateLen, nullptr)) return {};
 	if (!GetTimeFormatEx(LOCALE_NAME_INVARIANT, 0, &now, L"HH-mm-ss", time.data(), timeLen)) return {};
 
-	// Filename: driver_log.<date>T<time>.txt -- distinct prefix from the
-	// overlay's spacecal_log.* so the two sit side-by-side in the same dir
-	// without ClearOldLogs cross-deleting them. The overlay's ClearOldLogs
-	// matches "spacecal_log.*.txt" only; ours matches "driver_log.*.txt"
-	// only.
+	// Filename prefix is driver_log.* so the consumer overlays' own log
+	// rotation passes, which match their own prefixes, never cross-delete
+	// these driver-side logs.
 	std::wstring path = dir + L"\\driver_log." + date.data() + L"T" + time.data() + L".txt";
 	return path;
 }
@@ -107,7 +105,7 @@ void OpenLogFile()
 
 	// Fallback: legacy behavior. Better than nothing if SHGetKnownFolderPath
 	// isn't available or AppDataLow isn't writable.
-	LogFile = fopen("space_calibrator_driver.log", "a");
+	LogFile = fopen("openvr_pair_driver.log", "a");
 	if (!LogFile) {
 		LogFile = stderr;
 	}

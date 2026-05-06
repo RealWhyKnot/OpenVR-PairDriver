@@ -1,4 +1,5 @@
 #include "ServerTrackedDeviceProvider.h"
+#include "FeatureFlags.h"
 #include "Logging.h"
 #include "InterfaceHookInjector.h"
 #include "IsometryTransform.h"
@@ -20,28 +21,55 @@ vr::EVRInitError ServerTrackedDeviceProvider::Init(vr::IVRDriverContext *pDriver
 	// querying inside BlendTransform on every pose update.
 	QueryPerformanceFrequency(&qpcFreq);
 
-	// transforms[] elements are zero/identity-initialized via DeviceTransform's
-	// default member initializers and IsoTransform's default constructor; a
-	// memset would be undefined behavior because Eigen members aren't trivially
-	// copyable. AlignmentSpeedParams is a plain aggregate of doubles so memset
-	// here is safe.
-	memset(&alignmentSpeedParams, 0, sizeof alignmentSpeedParams);
+	// Detect which subsystems to wire up. Driver scans its resources/ folder
+	// for enable_calibration.flag and enable_smoothing.flag; the consumer
+	// installers each drop their own flag at install time. With neither flag
+	// the driver runs inert -- still loaded by SteamVR, but no hooks, no IPC,
+	// no shmem.
+	featureFlags = pairdriver::DetectFeatureFlags();
 
-	alignmentSpeedParams.thr_rot_tiny = 0.1f * (EIGEN_PI / 180.0f);
-	alignmentSpeedParams.thr_rot_small = 1.0f * (EIGEN_PI / 180.0f);
-	alignmentSpeedParams.thr_rot_large = 5.0f * (EIGEN_PI / 180.0f);
+	if (featureFlags & pairdriver::kFeatureCalibration) {
+		// Calibration setup: speed thresholds, pose telemetry shmem, IPC pipe.
+		// transforms[] elements are zero/identity-initialized via DeviceTransform's
+		// default member initializers and IsoTransform's default constructor; a
+		// memset would be undefined behavior because Eigen members aren't trivially
+		// copyable. AlignmentSpeedParams is a plain aggregate of doubles so memset
+		// here is safe.
+		memset(&alignmentSpeedParams, 0, sizeof alignmentSpeedParams);
 
-	alignmentSpeedParams.thr_trans_tiny = 0.1f / 1000.0; // mm
-	alignmentSpeedParams.thr_trans_small = 1.0f / 1000.0; // mm
-	alignmentSpeedParams.thr_trans_large = 20.0f / 1000.0; // mm
-	
-	alignmentSpeedParams.align_speed_tiny = 0.05f;
-	alignmentSpeedParams.align_speed_small = 0.2f;
-	alignmentSpeedParams.align_speed_large = 2.0f;
+		alignmentSpeedParams.thr_rot_tiny = 0.1f * (EIGEN_PI / 180.0f);
+		alignmentSpeedParams.thr_rot_small = 1.0f * (EIGEN_PI / 180.0f);
+		alignmentSpeedParams.thr_rot_large = 5.0f * (EIGEN_PI / 180.0f);
 
-	InjectHooks(this, pDriverContext);
-	server.Run();
-	shmem.Create(OPENVR_SPACECALIBRATOR_SHMEM_NAME);
+		alignmentSpeedParams.thr_trans_tiny = 0.1f / 1000.0; // mm
+		alignmentSpeedParams.thr_trans_small = 1.0f / 1000.0; // mm
+		alignmentSpeedParams.thr_trans_large = 20.0f / 1000.0; // mm
+
+		alignmentSpeedParams.align_speed_tiny = 0.05f;
+		alignmentSpeedParams.align_speed_small = 0.2f;
+		alignmentSpeedParams.align_speed_large = 2.0f;
+
+		shmem.Create(OPENVR_PAIRDRIVER_SHMEM_NAME);
+
+		calibrationServer = std::make_unique<IPCServer>(
+			this,
+			OPENVR_PAIRDRIVER_CALIBRATION_PIPE_NAME,
+			pairdriver::kFeatureCalibration);
+		calibrationServer->Run();
+	}
+
+	if (featureFlags & pairdriver::kFeatureSmoothing) {
+		smoothingServer = std::make_unique<IPCServer>(
+			this,
+			OPENVR_PAIRDRIVER_SMOOTHING_PIPE_NAME,
+			pairdriver::kFeatureSmoothing);
+		smoothingServer->Run();
+	}
+
+	// Hook installation is gated inside the injector by the same feature
+	// flags so the GetGenericInterface detour skips registering the
+	// per-feature inner hooks for subsystems that aren't enabled.
+	InjectHooks(this, pDriverContext, featureFlags);
 
 	debugTransform = Eigen::Vector3d::Zero();
 	debugRotation = Eigen::Quaterniond::Identity();
@@ -66,12 +94,12 @@ void ServerTrackedDeviceProvider::Cleanup()
 	//   1. DisableHooks first -- removes patches AND drains in-flight
 	//      detour callers before returning. After it returns no thread
 	//      is executing inside any of our hook bodies.
-	//   2. server.Stop -- joins the IPC worker thread (its own internal
-	//      drain).
+	//   2. Stop both IPC servers (each joins its own worker thread).
 	//   3. shmem.Close -- safe now because no detour can read it.
 	//   4. VR_CLEANUP_SERVER_DRIVER_CONTEXT -- finalize.
 	DisableHooks();
-	server.Stop();
+	if (smoothingServer) smoothingServer->Stop();
+	if (calibrationServer) calibrationServer->Stop();
 	shmem.Close();
 	VR_CLEANUP_SERVER_DRIVER_CONTEXT();
 }

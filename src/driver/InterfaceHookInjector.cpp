@@ -1,5 +1,6 @@
 #include "Logging.h"
 #include "Hooking.h"
+#include "FeatureFlags.h"
 #include "InterfaceHookInjector.h"
 #include "ServerTrackedDeviceProvider.h"
 #include "SkeletalHookInjector.h"
@@ -10,6 +11,12 @@
 #include <thread>
 
 static ServerTrackedDeviceProvider *Driver = nullptr;
+
+// Captured at InjectHooks() time and consulted inside DetourGetGenericInterface
+// so per-feature inner hooks (IVRServerDriverHost::TrackedDevicePoseUpdated for
+// calibration, IVRDriverInput slots 5/6 for skeletal) are only registered when
+// their feature flag is set.
+static uint32_t s_featureFlags = 0;
 
 // In-flight detour counter. Every detour body in this file AND in
 // SkeletalHookInjector.cpp brackets itself with DetourScope which inc/decs
@@ -105,7 +112,7 @@ static void *DetourGetGenericInterface(vr::IVRDriverContext *_this, const char *
 	auto originalInterface = GetGenericInterfaceHook.originalFunc(_this, pchInterfaceVersion, peError);
 
 	std::string iface(pchInterfaceVersion);
-	if (iface == "IVRServerDriverHost_005")
+	if ((s_featureFlags & pairdriver::kFeatureCalibration) && iface == "IVRServerDriverHost_005")
 	{
 		if (!IHook::Exists(TrackedDevicePoseUpdatedHook005.name))
 		{
@@ -113,7 +120,7 @@ static void *DetourGetGenericInterface(vr::IVRDriverContext *_this, const char *
 			IHook::Register(&TrackedDevicePoseUpdatedHook005);
 		}
 	}
-	else if (iface == "IVRServerDriverHost_006")
+	else if ((s_featureFlags & pairdriver::kFeatureCalibration) && iface == "IVRServerDriverHost_006")
 	{
 		if (!IHook::Exists(TrackedDevicePoseUpdatedHook006.name))
 		{
@@ -121,7 +128,8 @@ static void *DetourGetGenericInterface(vr::IVRDriverContext *_this, const char *
 			IHook::Register(&TrackedDevicePoseUpdatedHook006);
 		}
 	}
-	else if (iface.find("IVRDriverInput_") != std::string::npos
+	else if ((s_featureFlags & pairdriver::kFeatureSmoothing)
+	         && iface.find("IVRDriverInput_") != std::string::npos
 	         && iface.find("Internal") == std::string::npos)
 	{
 		// Public IVRDriverInput query — substring match catches both
@@ -143,21 +151,29 @@ static void *DetourGetGenericInterface(vr::IVRDriverContext *_this, const char *
 	return originalInterface;
 }
 
-void InjectHooks(ServerTrackedDeviceProvider *driver, vr::IVRDriverContext *pDriverContext)
+void InjectHooks(ServerTrackedDeviceProvider *driver, vr::IVRDriverContext *pDriverContext, uint32_t featureFlags)
 {
 	Driver = driver;
+	s_featureFlags = featureFlags;
+
+	if (featureFlags == 0) {
+		LOG("InjectHooks: no features enabled; skipping all hook installation");
+		return;
+	}
 
 	auto err = MH_Initialize();
 	if (err == MH_OK)
 	{
 		GetGenericInterfaceHook.CreateHookInObjectVTable(pDriverContext, 0, &DetourGetGenericInterface);
 		IHook::Register(&GetGenericInterfaceHook);
-		// Skeletal-hook subsystem: caches the driver pointer so its detours
-		// can read finger-smoothing config. Must run AFTER MinHook init and
-		// BEFORE any GetGenericInterface query for IVRDriverInput_003 /
-		// IVRDriverInputInternal_*, both of which arrive through the
-		// detour we just registered.
-		skeletal::Init(driver);
+		if (featureFlags & pairdriver::kFeatureSmoothing) {
+			// Skeletal-hook subsystem: caches the driver pointer so its detours
+			// can read finger-smoothing config. Must run AFTER MinHook init and
+			// BEFORE any GetGenericInterface query for IVRDriverInput_003 /
+			// IVRDriverInputInternal_*, both of which arrive through the
+			// detour we just registered.
+			skeletal::Init(driver);
+		}
 	}
 	else
 	{
@@ -167,6 +183,13 @@ void InjectHooks(ServerTrackedDeviceProvider *driver, vr::IVRDriverContext *pDri
 
 void DisableHooks()
 {
+	// Inert-driver path: InjectHooks bailed before MH_Initialize so there's
+	// nothing to tear down. Skip the whole sequence rather than calling
+	// MH_Uninitialize on an uninitialized library.
+	if (s_featureFlags == 0) {
+		return;
+	}
+
 	// 1. Remove the MinHook patches. After DestroyAll returns, no NEW callers
 	//    can enter our detours via the hooked vtable slot (the slot is
 	//    restored to point at the original function).
@@ -182,6 +205,9 @@ void DisableHooks()
 	// 4. Tear down MinHook itself.
 	IHook::DestroyAll();
 	InterfaceHooks::DrainInFlightDetours();
-	skeletal::Shutdown();
+	if (s_featureFlags & pairdriver::kFeatureSmoothing) {
+		skeletal::Shutdown();
+	}
 	MH_Uninitialize();
+	s_featureFlags = 0;
 }

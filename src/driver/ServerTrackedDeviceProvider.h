@@ -13,6 +13,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 
@@ -47,7 +48,7 @@ public:
 
 	////// End vr::IServerTrackedDeviceProvider functions
 
-	ServerTrackedDeviceProvider() : server(this) { }
+	ServerTrackedDeviceProvider() = default;
 	void SetDeviceTransform(const protocol::SetDeviceTransform &newTransform);
 	void SetTrackingSystemFallback(const protocol::SetTrackingSystemFallback &newFallback);
 	bool HandleDevicePoseUpdated(uint32_t openVRID, vr::DriverPose_t &pose);
@@ -66,8 +67,20 @@ public:
 	protocol::FingerSmoothingConfig GetFingerSmoothingConfig() const;
 
 private:
-	IPCServer server;
+	// Per-feature IPC servers, allocated only when the matching enable_*.flag
+	// is detected at Init. Either may be null in feature-disabled builds; the
+	// pose-update path doesn't touch them.
+	std::unique_ptr<IPCServer> calibrationServer;
+	std::unique_ptr<IPCServer> smoothingServer;
+
+	// Pose telemetry shmem, only created when calibration is enabled. The
+	// calibration overlay opens this segment to read driver-side pose
+	// snapshots and telemetry counters.
 	protocol::DriverPoseShmem shmem;
+
+	// Bitmask of pairdriver::kFeature* flags detected at Init(). 0 means
+	// neither flag was present and the driver is running inert.
+	uint32_t featureFlags = 0;
 
 	enum DeltaSize {
 		TINY,

@@ -6,16 +6,25 @@
 #include <thread>
 #include <set>
 #include <mutex>
+#include <string>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
 class ServerTrackedDeviceProvider;
 
+// Single named-pipe IPC server. The driver creates one instance per active
+// feature, each bound to its own pipe name and a feature mask that decides
+// which protocol::RequestType values it will accept. Out-of-feature requests
+// are logged and answered with ResponseInvalid so a misconfigured overlay
+// fails loudly instead of silently no-oping.
 class IPCServer
 {
 public:
-	IPCServer(ServerTrackedDeviceProvider *driver) : driver(driver) { }
+	IPCServer(ServerTrackedDeviceProvider *driver,
+	          const char *pipeName,
+	          uint32_t featureMask)
+		: driver(driver), pipeName(pipeName), featureMask(featureMask) { }
 	~IPCServer();
 
 	void Run();
@@ -38,7 +47,7 @@ private:
 	void ClosePipeInstance(PipeInstance *pipeInst);
 
 	static void RunThread(IPCServer *_this);
-	static BOOL CreateAndConnectInstance(LPOVERLAPPED overlap, HANDLE &pipe);
+	BOOL CreateAndConnectInstance(LPOVERLAPPED overlap, HANDLE &pipe);
 	static void WINAPI CompletedReadCallback(DWORD err, DWORD bytesRead, LPOVERLAPPED overlap);
 	static void WINAPI CompletedWriteCallback(DWORD err, DWORD bytesWritten, LPOVERLAPPED overlap);
 
@@ -61,4 +70,6 @@ private:
 	HANDLE connectEvent = nullptr;
 
 	ServerTrackedDeviceProvider *driver;
+	std::string pipeName;
+	uint32_t featureMask;
 };

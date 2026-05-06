@@ -1,9 +1,15 @@
 #include "IPCServer.h"
+#include "FeatureFlags.h"
 #include "Logging.h"
 #include "ServerTrackedDeviceProvider.h"
 
 void IPCServer::HandleRequest(const protocol::Request &request, protocol::Response &response)
 {
+	// Each request type is gated by the feature mask the pipe was opened
+	// under. RequestHandshake works on every pipe so an overlay can probe
+	// the protocol version regardless of which feature it cares about.
+	const uint32_t mask = featureMask;
+
 	switch (request.type)
 	{
 	case protocol::RequestHandshake:
@@ -12,32 +18,58 @@ void IPCServer::HandleRequest(const protocol::Request &request, protocol::Respon
 		break;
 
 	case protocol::RequestSetDeviceTransform:
-		driver->SetDeviceTransform(request.setDeviceTransform);
-		response.type = protocol::ResponseSuccess;
+		if (mask & pairdriver::kFeatureCalibration) {
+			driver->SetDeviceTransform(request.setDeviceTransform);
+			response.type = protocol::ResponseSuccess;
+		} else {
+			LOG("IPC[%s]: rejected RequestSetDeviceTransform; pipe not bound to calibration", pipeName.c_str());
+			response.type = protocol::ResponseInvalid;
+		}
 		break;
 
 	case protocol::RequestDebugOffset:
-		driver->HandleApplyRandomOffset();
-		response.type = protocol::ResponseSuccess;
+		if (mask & pairdriver::kFeatureCalibration) {
+			driver->HandleApplyRandomOffset();
+			response.type = protocol::ResponseSuccess;
+		} else {
+			LOG("IPC[%s]: rejected RequestDebugOffset; pipe not bound to calibration", pipeName.c_str());
+			response.type = protocol::ResponseInvalid;
+		}
 		break;
 
 	case protocol::RequestSetAlignmentSpeedParams:
-		driver->HandleSetAlignmentSpeedParams(request.setAlignmentSpeedParams);
-		response.type = protocol::ResponseSuccess;
+		if (mask & pairdriver::kFeatureCalibration) {
+			driver->HandleSetAlignmentSpeedParams(request.setAlignmentSpeedParams);
+			response.type = protocol::ResponseSuccess;
+		} else {
+			LOG("IPC[%s]: rejected RequestSetAlignmentSpeedParams; pipe not bound to calibration", pipeName.c_str());
+			response.type = protocol::ResponseInvalid;
+		}
 		break;
 
 	case protocol::RequestSetTrackingSystemFallback:
-		driver->SetTrackingSystemFallback(request.setTrackingSystemFallback);
-		response.type = protocol::ResponseSuccess;
+		if (mask & pairdriver::kFeatureCalibration) {
+			driver->SetTrackingSystemFallback(request.setTrackingSystemFallback);
+			response.type = protocol::ResponseSuccess;
+		} else {
+			LOG("IPC[%s]: rejected RequestSetTrackingSystemFallback; pipe not bound to calibration", pipeName.c_str());
+			response.type = protocol::ResponseInvalid;
+		}
 		break;
 
 	case protocol::RequestSetFingerSmoothing:
-		driver->SetFingerSmoothingConfig(request.setFingerSmoothing);
-		response.type = protocol::ResponseSuccess;
+		if (mask & pairdriver::kFeatureSmoothing) {
+			driver->SetFingerSmoothingConfig(request.setFingerSmoothing);
+			response.type = protocol::ResponseSuccess;
+		} else {
+			LOG("IPC[%s]: rejected RequestSetFingerSmoothing; pipe not bound to smoothing", pipeName.c_str());
+			response.type = protocol::ResponseInvalid;
+		}
 		break;
 
 	default:
-		LOG("Invalid IPC request: %d", request.type);
+		LOG("IPC[%s]: invalid request type %d", pipeName.c_str(), request.type);
+		response.type = protocol::ResponseInvalid;
 		break;
 	}
 }
@@ -98,7 +130,6 @@ void IPCServer::ClosePipeInstance(PipeInstance *pipeInst)
 void IPCServer::RunThread(IPCServer *_this)
 {
 	_this->running = true;
-	LPCTSTR pipeName = TEXT(OPENVR_SPACECALIBRATOR_PIPE_NAME);
 
 	HANDLE connectEvent = _this->connectEvent = CreateEvent(0, TRUE, TRUE, 0);
 	if (!connectEvent)
@@ -111,7 +142,7 @@ void IPCServer::RunThread(IPCServer *_this)
 	connectOverlap.hEvent = connectEvent;
 
 	HANDLE nextPipe;
-	BOOL connectPending = CreateAndConnectInstance(&connectOverlap, nextPipe);
+	BOOL connectPending = _this->CreateAndConnectInstance(&connectOverlap, nextPipe);
 
 	while (!_this->stop)
 	{
@@ -147,12 +178,12 @@ void IPCServer::RunThread(IPCServer *_this)
 				}
 			}
 
-			LOG("IPC client connected");
+			LOG("IPC[%s] client connected", _this->pipeName.c_str());
 
 			auto pipeInst = _this->CreatePipeInstance(nextPipe);
 			CompletedWriteCallback(0, sizeof protocol::Response, (LPOVERLAPPED) pipeInst);
 
-			connectPending = CreateAndConnectInstance(&connectOverlap, nextPipe);
+			connectPending = _this->CreateAndConnectInstance(&connectOverlap, nextPipe);
 		}
 		else if (wait != WAIT_IO_COMPLETION)
 		{
@@ -170,8 +201,8 @@ void IPCServer::RunThread(IPCServer *_this)
 
 BOOL IPCServer::CreateAndConnectInstance(LPOVERLAPPED overlap, HANDLE &pipe)
 {
-	pipe = CreateNamedPipe(
-		TEXT(OPENVR_SPACECALIBRATOR_PIPE_NAME),
+	pipe = CreateNamedPipeA(
+		pipeName.c_str(),
 		PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
 		PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
 		PIPE_UNLIMITED_INSTANCES,
@@ -183,7 +214,7 @@ BOOL IPCServer::CreateAndConnectInstance(LPOVERLAPPED overlap, HANDLE &pipe)
 
 	if (pipe == INVALID_HANDLE_VALUE)
 	{
-		LOG("CreateNamedPipe failed. Error: %d", GetLastError());
+		LOG("CreateNamedPipe(%s) failed. Error: %d", pipeName.c_str(), GetLastError());
 		return FALSE;
 	}
 
@@ -204,7 +235,7 @@ BOOL IPCServer::CreateAndConnectInstance(LPOVERLAPPED overlap, HANDLE &pipe)
 
 	// Pipe handle was created above but neither path took ownership of it. Close
 	// before returning failure so we don't leak a kernel pipe handle every retry.
-	LOG("ConnectNamedPipe failed. Error: %d", GetLastError());
+	LOG("ConnectNamedPipe(%s) failed. Error: %d", pipeName.c_str(), GetLastError());
 	CloseHandle(pipe);
 	pipe = INVALID_HANDLE_VALUE;
 	return FALSE;
@@ -231,11 +262,12 @@ void IPCServer::CompletedReadCallback(DWORD err, DWORD bytesRead, LPOVERLAPPED o
 	{
 		if (err == ERROR_BROKEN_PIPE)
 		{
-			LOG("IPC client disconnecting normally");
+			LOG("IPC[%s] client disconnecting normally", pipeInst->server->pipeName.c_str());
 		}
 		else
 		{
-			LOG("IPC client disconnecting due to error (via CompletedReadCallback), error: %d, bytesRead: %d", err, bytesRead);
+			LOG("IPC[%s] client disconnecting due to error (CompletedReadCallback): err=%d bytesRead=%d",
+				pipeInst->server->pipeName.c_str(), err, bytesRead);
 		}
 		pipeInst->server->ClosePipeInstance(pipeInst);
 	}
@@ -259,7 +291,8 @@ void IPCServer::CompletedWriteCallback(DWORD err, DWORD bytesWritten, LPOVERLAPP
 
 	if (!success)
 	{
-		LOG("IPC client disconnecting due to error (via CompletedWriteCallback), error: %d, bytesWritten: %d", err, bytesWritten);
+		LOG("IPC[%s] client disconnecting due to error (CompletedWriteCallback): err=%d bytesWritten=%d",
+			pipeInst->server->pipeName.c_str(), err, bytesWritten);
 		pipeInst->server->ClosePipeInstance(pipeInst);
 	}
 }

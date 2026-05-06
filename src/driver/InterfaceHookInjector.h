@@ -2,11 +2,17 @@
 
 #include <openvr_driver.h>
 
+#include <cstdint>
+
 class ServerTrackedDeviceProvider;
 
 static void DetourTrackedDevicePoseUpdated(vr::IVRServerDriverHost * _this, uint32_t unWhichDevice, const vr::DriverPose_t & newPose, uint32_t unPoseStructSize);
 
-void InjectHooks(ServerTrackedDeviceProvider *driver, vr::IVRDriverContext *pDriverContext);
+// Install the GetGenericInterface detour and register the inner per-interface
+// hooks gated by featureFlags (pairdriver::kFeature*). With featureFlags == 0
+// the GetGenericInterface detour itself is also skipped and the call is a
+// no-op aside from caching the driver pointer.
+void InjectHooks(ServerTrackedDeviceProvider *driver, vr::IVRDriverContext *pDriverContext, uint32_t featureFlags);
 
 // DisableHooks removes our MinHook patches AND drains in-flight detour callers
 // before returning. After it returns no detour can be executing inside our code,

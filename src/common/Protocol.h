@@ -10,8 +10,18 @@
 #include <openvr_driver.h>
 #endif
 
-#define OPENVR_SPACECALIBRATOR_PIPE_NAME "\\\\.\\pipe\\OpenVRSpaceCalibratorDriver"
-#define OPENVR_SPACECALIBRATOR_SHMEM_NAME "OpenVRSpaceCalibratorPoseMemoryV1"
+// Per-feature pipe names. The driver opens up to two pipes depending on which
+// enable_*.flag files are present in its resources directory; each consumer
+// overlay connects only to its own pipe. Wire format on both pipes is the same
+// protocol::Request/Response struct; the driver routes by request type and
+// rejects out-of-feature requests.
+#define OPENVR_PAIRDRIVER_CALIBRATION_PIPE_NAME "\\\\.\\pipe\\OpenVR-Calibration"
+#define OPENVR_PAIRDRIVER_SMOOTHING_PIPE_NAME   "\\\\.\\pipe\\OpenVR-Smoothing"
+
+// Pose telemetry shmem segment. Created by the driver only when the calibration
+// feature is enabled; the calibration overlay opens it to read driver-side
+// pose snapshots and telemetry counters.
+#define OPENVR_PAIRDRIVER_SHMEM_NAME            "OpenVRPairPoseMemoryV1"
 
 #ifdef _OPENVR_API 
 

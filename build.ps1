@@ -43,9 +43,11 @@ if ($Version -eq "") {
 Set-Content -Path "version.txt" -Value $Version -NoNewline
 Write-Host "Build version: $Version"
 
-# Configure (skippable for incremental edits).
+# Configure (skippable for incremental edits). The CMAKE_POLICY_VERSION_MINIMUM
+# bump is needed because the minhook submodule pins cmake_minimum_required at
+# 2.8 and current CMake versions reject anything below 3.5.
 if (-not $SkipConfigure) {
-	& cmake -S . -B build -A x64
+	& cmake -S . -B build -A x64 "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
 	if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
 }
 

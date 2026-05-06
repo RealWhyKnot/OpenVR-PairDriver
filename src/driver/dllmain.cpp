@@ -1,9 +1,15 @@
 #include "Logging.h"
-#include "Version.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <cstdio>
+
+// Build-time version string. CMake reads version.txt and injects this macro
+// via target_compile_definitions; the fallback only fires for an out-of-tree
+// build that didn't go through the normal configure step.
+#ifndef PAIRDRIVER_VERSION_STRING
+#define PAIRDRIVER_VERSION_STRING "0.0.0.0-dev"
+#endif
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
@@ -11,7 +17,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 	{
 	case DLL_PROCESS_ATTACH:
 		OpenLogFile();
-		LOG("OpenVR-PairDriver " SPACECAL_VERSION_STRING " loaded");
+		LOG("OpenVR-PairDriver " PAIRDRIVER_VERSION_STRING " loaded");
 		break;
 	case DLL_PROCESS_DETACH:
 		LOG("OpenVR-PairDriver unloaded");
