@@ -45,6 +45,18 @@ struct ComponentStats
 	bool        is_scalar  = false;
 	bool        is_boolean = false;
 
+	// Property container the driver passed at Create{Boolean,Scalar}Component
+	// time. Stable for the lifetime of the underlying tracked device. Stored
+	// so HandleResetInputHealthStats can walk this map and resolve each entry
+	// to its owning device's serial number on demand without taking a hot-path
+	// query inside the input-update detour.
+	vr::PropertyContainerHandle_t container_handle = vr::k_ulInvalidPropertyContainer;
+
+	// Lazily resolved FNV-1a 64-bit hash of Prop_SerialNumber_String for the
+	// owning device. Zero means "not yet resolved" -- the reset path resolves
+	// it on demand via vr::VRProperties() and caches the result here.
+	uint64_t    device_serial_hash = 0;
+
 	// Latched first-update-on-this-handle log so the deploy-validation step
 	// has a clean grep-able signal that hooks fire end-to-end. Reset by
 	// Stage 1A's Init clears the whole map; per-handle reset comes through

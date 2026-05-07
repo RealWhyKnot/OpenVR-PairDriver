@@ -24,6 +24,11 @@
 // pose snapshots and telemetry counters.
 #define OPENVR_PAIRDRIVER_SHMEM_NAME            "OpenVRPairPoseMemoryV1"
 
+// Input-health snapshot shmem segment. Created by the driver only when the
+// inputhealth feature is enabled; the InputHealth overlay opens it to read
+// per-component statistics published at ~10 Hz from the driver-side worker.
+#define OPENVR_PAIRDRIVER_INPUTHEALTH_SHMEM_NAME "OpenVRPairInputHealthMemoryV1"
+
 #ifdef _OPENVR_API 
 
 namespace vr {
@@ -700,6 +705,312 @@ namespace protocol
 			per_id_apply = pData->telemetry.per_id_apply_count.load(std::memory_order_relaxed);
 			quash_apply = pData->telemetry.quash_apply_count.load(std::memory_order_relaxed);
 			return true;
+		}
+	};
+
+	// =========================================================================
+	// InputHealth snapshot shmem.
+	//
+	// Slot table layout. Each slot holds a per-VRInputComponentHandle_t snapshot
+	// of the driver-side stats; the InputHealth overlay reads slots whose
+	// `handle` field is non-zero, validates per-slot seqlock, and renders.
+	// The driver writer thread runs at ~10 Hz, the slot table is sized to
+	// cover any realistic controller topology (256 components).
+	// =========================================================================
+
+	// Number of bins in the polar histogram mirror. Matches
+	// inputhealth::kBinCount in src/common/inputhealth/PolarHistogram.h. Wire
+	// stability is enforced here -- the source-side enum could change
+	// independently as long as both sides recompile against this header.
+	static const uint32_t INPUTHEALTH_POLAR_BIN_COUNT = 36;
+
+	// Maximum component path length stored in the snapshot (bytes, includes
+	// trailing NUL). OpenVR component paths are short (e.g. "/input/joystick/x");
+	// 64 is generous.
+	static const uint32_t INPUTHEALTH_PATH_LEN = 64;
+
+	// Maximum number of component slots in the shmem table. 256 covers any
+	// realistic OpenVR topology (Index Knuckles publishes ~50 components per
+	// hand; budget hardware is well under).
+	static const uint32_t INPUTHEALTH_SLOT_COUNT = 256;
+
+	// Per-slot snapshot body. Plain POD; the writer memcpy's it into the
+	// slot's body field under a per-slot seqlock counter (held in the
+	// surrounding InputHealthSnapshotSlot, separately from this body).
+	// Field order is wire-stable; if a field is added or reordered bump
+	// InputHealthSnapshotShmem::SHMEM_VERSION.
+	struct InputHealthSnapshotBody
+	{
+		// Driver-side identity. handle == 0 marks an empty slot the writer
+		// has never used or has explicitly retired (e.g. after Shutdown).
+		uint64_t handle;
+		uint64_t container_handle;
+		uint64_t device_serial_hash;
+		uint64_t partner_handle;
+
+		// Component metadata.
+		char     path[INPUTHEALTH_PATH_LEN];
+		uint8_t  is_scalar;
+		uint8_t  is_boolean;
+		uint8_t  axis_role;       // inputhealth::AxisRole
+		uint8_t  ph_initialized;
+		uint8_t  ph_triggered;
+		uint8_t  ph_triggered_positive;
+		uint8_t  rest_min_initialized;
+		uint8_t  last_boolean;
+
+		// Welford streaming mean / variance.
+		uint64_t welford_count;
+		double   welford_mean;
+		double   welford_m2;
+
+		// Page-Hinkley accumulator.
+		double   ph_mean;
+		double   ph_pos;
+		double   ph_neg;
+
+		// EWMA-decayed rolling minimum (rest-stuck detection on triggers).
+		double   rest_min;
+
+		// Last raw sample on this handle (last_value for scalars, latest
+		// boolean state for booleans -- redundant with last_boolean above
+		// for booleans, kept consistent for scalars).
+		float    last_value;
+		uint32_t _pad_lv;
+
+		uint64_t last_update_us;
+		uint64_t press_count;
+
+		// Polar histogram bins. Only meaningful for AxisRole::StickX;
+		// other roles leave these zero. Per-bin: max_r and count and
+		// last_update_us.
+		float    polar_max_r[INPUTHEALTH_POLAR_BIN_COUNT];
+		uint16_t polar_count[INPUTHEALTH_POLAR_BIN_COUNT];
+		uint16_t _pad_polar_count[INPUTHEALTH_POLAR_BIN_COUNT];   // align next field to 8
+		uint64_t polar_last_update_us[INPUTHEALTH_POLAR_BIN_COUNT];
+		float    polar_global_max_r;
+		uint32_t _pad_polar_global;
+	};
+
+	// Per-slot record: an atomic seqlock counter followed by the body. The
+	// counter is incremented twice per write (odd during, even after) so the
+	// reader can detect torn reads. The body is memcpy'd in/out -- never
+	// touched field-by-field by the wire layer.
+	struct InputHealthSnapshotSlot
+	{
+		std::atomic<uint64_t>     generation;
+		InputHealthSnapshotBody   body;
+	};
+
+	// Static asserts to keep wire layout stable across builds. If a field is
+	// added or reordered, recompute the expected size and bump SHMEM_VERSION.
+	static_assert(std::is_trivially_copyable<InputHealthSnapshotBody>::value,
+		"InputHealthSnapshotBody must be trivially copyable for shmem use");
+	static_assert(std::is_standard_layout<InputHealthSnapshotBody>::value,
+		"InputHealthSnapshotBody must be standard-layout for stable wire format");
+
+	class InputHealthSnapshotShmem
+	{
+	public:
+		// Sentinel + version. Bump version on any field change in
+		// InputHealthSnapshotRecord or the header. Mismatched versions are
+		// rejected at Open() so the overlay never reads the wrong layout.
+		static const uint32_t SHMEM_MAGIC   = 0x494E4848; // 'INHH'
+		static const uint32_t SHMEM_VERSION = 1;
+
+	private:
+		struct ShmemData
+		{
+			// Header fields stay at offset 0 so the overlay can validate
+			// before touching anything else.
+			uint32_t magic;
+			uint32_t shmem_version;
+
+			// Number of slots in the table. Pinned to INPUTHEALTH_SLOT_COUNT
+			// at create time; written here so a future expansion can be
+			// detected without bumping SHMEM_VERSION (the overlay caps its
+			// iteration at min(slot_count, INPUTHEALTH_SLOT_COUNT)).
+			uint32_t slot_count;
+
+			// Monotonic publish-tick counter. Bumped each time the driver
+			// finishes writing a full pass over the slot table. The overlay
+			// uses this as a dirty-frame signal so the diagnostics tab can
+			// show "live" vs "stale" state.
+			std::atomic<uint64_t> publish_tick;
+
+			// Reserved for future header growth without bumping
+			// SHMEM_VERSION (so long as the overlay tolerates new flags).
+			uint32_t _reserved[6];
+
+			// The slot table. Indexed by [0, slot_count); the writer
+			// allocates slots monotonically as new component handles are
+			// observed and reuses freed slots after Shutdown.
+			InputHealthSnapshotSlot slots[INPUTHEALTH_SLOT_COUNT];
+		};
+
+	private:
+		HANDLE     hMapFile = INVALID_HANDLE_VALUE;
+		ShmemData *pData    = nullptr;
+
+		std::string LastErrorString(DWORD lastError)
+		{
+			LPSTR buffer = nullptr;
+			size_t size = FormatMessageA(
+				FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+				NULL, lastError, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&buffer, 0, NULL
+			);
+			std::string message(buffer ? buffer : "", size);
+			if (buffer) LocalFree(buffer);
+			return message;
+		}
+
+	public:
+		InputHealthSnapshotShmem() = default;
+		~InputHealthSnapshotShmem() { Close(); }
+
+		InputHealthSnapshotShmem(const InputHealthSnapshotShmem &) = delete;
+		InputHealthSnapshotShmem &operator=(const InputHealthSnapshotShmem &) = delete;
+
+		operator bool() const { return pData != nullptr; }
+
+		void Close()
+		{
+			if (pData) { UnmapViewOfFile(pData); pData = nullptr; }
+			if (hMapFile && hMapFile != INVALID_HANDLE_VALUE) {
+				CloseHandle(hMapFile); hMapFile = INVALID_HANDLE_VALUE;
+			}
+		}
+
+		// Driver-side: create or re-open the shmem segment, stamp the header,
+		// zero the slot table. Idempotent on the same name.
+		bool Create(LPCSTR segment_name)
+		{
+			Close();
+			hMapFile = CreateFileMappingA(
+				INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
+				0, sizeof(ShmemData), segment_name);
+			if (!hMapFile) return false;
+
+			pData = reinterpret_cast<ShmemData*>(MapViewOfFile(
+				hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(ShmemData)));
+			if (!pData) return false;
+
+			// Fresh mappings are zero-filled by the OS, so only the header
+			// fields need an explicit stamp. Existing mappings (driver
+			// reload) are left untouched apart from the magic/version
+			// re-stamp; the slot generations from the prior incarnation
+			// remain valid until the publisher overwrites them.
+			pData->magic         = SHMEM_MAGIC;
+			pData->shmem_version = SHMEM_VERSION;
+			pData->slot_count    = INPUTHEALTH_SLOT_COUNT;
+			return true;
+		}
+
+		// Overlay-side: open an existing segment. Throws on missing or
+		// mismatched magic/version so the caller can surface a paired-install
+		// hint to the user instead of silently rendering stale data.
+		void Open(LPCSTR segment_name)
+		{
+			Close();
+			hMapFile = OpenFileMappingA(FILE_MAP_READ, FALSE, segment_name);
+			if (!hMapFile) {
+				throw std::runtime_error(
+					"Failed to open InputHealth shmem segment: " +
+					LastErrorString(GetLastError()));
+			}
+			pData = reinterpret_cast<ShmemData*>(MapViewOfFile(
+				hMapFile, FILE_MAP_READ, 0, 0, sizeof(ShmemData)));
+			if (!pData) {
+				DWORD err = GetLastError();
+				CloseHandle(hMapFile); hMapFile = INVALID_HANDLE_VALUE;
+				throw std::runtime_error(
+					"Failed to map InputHealth shmem segment: " +
+					LastErrorString(err));
+			}
+			if (pData->magic != SHMEM_MAGIC) {
+				char buf[160];
+				snprintf(buf, sizeof buf,
+					"InputHealth shmem magic mismatch: got 0x%08X, expected 0x%08X",
+					pData->magic, SHMEM_MAGIC);
+				Close();
+				throw std::runtime_error(buf);
+			}
+			if (pData->shmem_version != SHMEM_VERSION) {
+				char buf[160];
+				snprintf(buf, sizeof buf,
+					"InputHealth shmem version mismatch: got %u, expected %u",
+					pData->shmem_version, SHMEM_VERSION);
+				Close();
+				throw std::runtime_error(buf);
+			}
+		}
+
+		// Driver-side: number of slots reserved at create time. Stable for
+		// the lifetime of the segment; surfaced so external code can iterate.
+		uint32_t SlotCount() const { return pData ? pData->slot_count : 0; }
+
+		// Driver-side: bump the publish-tick counter once per worker pass.
+		void BumpPublishTick()
+		{
+			if (!pData) return;
+			pData->publish_tick.fetch_add(1, std::memory_order_release);
+		}
+
+		// Overlay-side: most recent publish-tick value. Increases each time
+		// the driver finishes a full pass over the slot table.
+		uint64_t LoadPublishTick() const
+		{
+			if (!pData) return 0;
+			return pData->publish_tick.load(std::memory_order_acquire);
+		}
+
+		// Driver-side: slot accessor. The publisher holds an external
+		// handle -> slot map and uses this to obtain the slot pointer for
+		// a given index. Returns nullptr if pData is unmapped or index is
+		// out of range.
+		InputHealthSnapshotSlot *SlotForWrite(uint32_t index)
+		{
+			if (!pData) return nullptr;
+			if (index >= pData->slot_count) return nullptr;
+			return &pData->slots[index];
+		}
+
+		// Driver-side: write a snapshot body into slot[index] under the
+		// per-slot seqlock. Bumps the generation odd before the memcpy and
+		// even after, so a concurrent overlay reader can detect torn reads.
+		// No-op if the slot pointer is unavailable.
+		void WriteSlot(uint32_t index, const InputHealthSnapshotBody &body)
+		{
+			InputHealthSnapshotSlot *slot = SlotForWrite(index);
+			if (!slot) return;
+			const uint64_t prev = slot->generation.load(std::memory_order_relaxed);
+			// Pre-write fence: mark mid-write before any body byte is touched.
+			slot->generation.store(prev + 1, std::memory_order_release);
+			std::memcpy(&slot->body, &body, sizeof(InputHealthSnapshotBody));
+			// Post-write fence: stamp the new even generation; the reader's
+			// acquire load on this counter pairs with this release store and
+			// guarantees the body bytes are visible.
+			slot->generation.store(prev + 2, std::memory_order_release);
+		}
+
+		// Overlay-side: read a snapshot body from slot[index] using the
+		// per-slot seqlock. Retries up to `max_retries` times if a torn
+		// read is detected. Returns true on success and writes the body to
+		// `out`; returns false if the retry budget was exceeded.
+		bool TryReadSlot(uint32_t index, InputHealthSnapshotBody &out, int max_retries = 8) const
+		{
+			if (!pData) return false;
+			if (index >= pData->slot_count) return false;
+			const InputHealthSnapshotSlot &slot = pData->slots[index];
+			for (int attempt = 0; attempt < max_retries; ++attempt) {
+				const uint64_t g1 = slot.generation.load(std::memory_order_acquire);
+				if ((g1 & 1ULL) != 0ULL) continue; // mid-write
+				std::memcpy(&out, &slot.body, sizeof(InputHealthSnapshotBody));
+				std::atomic_thread_fence(std::memory_order_acquire);
+				const uint64_t g2 = slot.generation.load(std::memory_order_acquire);
+				if (g1 == g2) return true;
+			}
+			return false;
 		}
 	};
 }

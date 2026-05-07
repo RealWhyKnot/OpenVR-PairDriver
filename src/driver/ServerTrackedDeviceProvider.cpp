@@ -1,6 +1,7 @@
 #include "ServerTrackedDeviceProvider.h"
 #include "FeatureFlags.h"
 #include "Logging.h"
+#include "InputHealthHookInjector.h"
 #include "InterfaceHookInjector.h"
 #include "IsometryTransform.h"
 #include "MotionGate.h"  // ClassifyCorrection / StillFloor — option 3 per user 2026-05-04
@@ -801,10 +802,5 @@ protocol::InputHealthConfig ServerTrackedDeviceProvider::GetInputHealthConfig() 
 
 void ServerTrackedDeviceProvider::HandleResetInputHealthStats(const protocol::InputHealthResetStats &req)
 {
-	// Stage 1A: log the request so the wizard's "start fresh" button can be
-	// observed end-to-end. Stage 1C+ wires this into the per-serial stat
-	// tables maintained by the InputHealth background worker.
-	LOG("[inputhealth] HandleResetInputHealthStats: serial_hash=0x%016llx passive=%d active=%d curves=%d (no-op until Stage 1C)",
-		(unsigned long long)req.device_serial_hash,
-		(int)req.reset_passive, (int)req.reset_active, (int)req.reset_curves);
+	inputhealth::ApplyResetRequest(req);
 }

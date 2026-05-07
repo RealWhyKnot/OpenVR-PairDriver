@@ -2,6 +2,7 @@
 #include "Hooking.h"
 #include "FeatureFlags.h"
 #include "InterfaceHookInjector.h"
+#include "InputHealthSnapshotPublisher.h"
 #include "ServerTrackedDeviceProvider.h"
 #include "SkeletalHookInjector.h"
 #include "InputHealthHookInjector.h"
@@ -185,6 +186,7 @@ void InjectHooks(ServerTrackedDeviceProvider *driver, vr::IVRDriverContext *pDri
 			// first IVRDriverInput query so the next-stage implementer can
 			// confirm the same iface pointer reaches the inputhealth branch.
 			inputhealth::Init(driver);
+			inputhealth::SnapshotPublisherInit();
 		}
 	}
 	else
@@ -221,6 +223,7 @@ void DisableHooks()
 		skeletal::Shutdown();
 	}
 	if (s_featureFlags & pairdriver::kFeatureInputHealth) {
+		inputhealth::SnapshotPublisherShutdown();
 		inputhealth::Shutdown();
 	}
 	MH_Uninitialize();
