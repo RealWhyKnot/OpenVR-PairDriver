@@ -42,4 +42,4 @@ Wire format defined in [src/common/Protocol.h](src/common/Protocol.h). Each cons
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE). Third-party attributions in [NOTICE](NOTICE).
