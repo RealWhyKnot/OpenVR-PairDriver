@@ -99,16 +99,31 @@ if ($Release) {
 		throw "Driver tree not found at $driverTree -- expected the CMake post-build copy step to populate it."
 	}
 	New-Item -ItemType Directory -Force -Path "release" | Out-Null
+	$stageDir = Join-Path "release" "_stage_$Version"
+	if (Test-Path $stageDir) { Remove-Item -Recurse -Force $stageDir }
+	New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
+	Copy-Item -Recurse -Path "$driverTree/*" -Destination $stageDir
+
+	$stagedDriverBin = Join-Path $stageDir "bin/win64"
+	$bareDriverDll = Join-Path $stagedDriverBin "driver_openvrpair.dll"
+	$loaderDriverDll = Join-Path $stagedDriverBin "driver_01openvrpair.dll"
+	if (Test-Path $bareDriverDll) {
+		Move-Item -Force -Path $bareDriverDll -Destination $loaderDriverDll
+	}
+	if (-not (Test-Path $loaderDriverDll)) {
+		throw "Staged shared driver DLL not found at $loaderDriverDll"
+	}
+
 	$zipName = "OpenVR-PairDriver-v$Version.zip"
 	$zipPath = Join-Path "release" $zipName
 	if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-	Compress-Archive -Path "$driverTree/*" -DestinationPath $zipPath -CompressionLevel Optimal
+	Compress-Archive -Path "$stageDir/*" -DestinationPath $zipPath -CompressionLevel Optimal
 	$zipItem = Get-Item $zipPath
 
 	$manifestName = "OpenVR-PairDriver-v$Version.manifest.tsv"
 	$manifestPath = Join-Path "release" $manifestName
-	$rootLength = (Resolve-Path $driverTree).Path.Length + 1
-	$rows = Get-ChildItem $driverTree -Recurse -File | ForEach-Object {
+	$rootLength = (Resolve-Path $stageDir).Path.Length + 1
+	$rows = Get-ChildItem $stageDir -Recurse -File | ForEach-Object {
 		$rel = $_.FullName.Substring($rootLength).Replace('\', '/')
 		$h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
 		"{0}`t{1}`t{2}" -f $h, $_.Length, $rel
@@ -119,6 +134,7 @@ if ($Release) {
 	# Windows PowerShell 5.1.
 	$enc = [System.Text.UTF8Encoding]::new($false)
 	[System.IO.File]::WriteAllLines((Resolve-Path -LiteralPath (Split-Path $manifestPath)).Path + "\" + (Split-Path -Leaf $manifestPath), $rows, $enc)
+	Remove-Item -Recurse -Force $stageDir
 
 	Write-Host ""
 	Write-Host ("Packaged release zip:      {0} ({1:N0} bytes)" -f $zipItem.Name, $zipItem.Length)

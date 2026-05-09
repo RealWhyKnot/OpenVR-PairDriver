@@ -9,6 +9,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -65,6 +66,26 @@ void PublishOneTick()
 	g_shmem.BumpPublishTick();
 }
 
+void PublishOneTickSafely()
+{
+	static uint64_t s_publishErrors = 0;
+	try {
+		PublishOneTick();
+	} catch (const std::exception &e) {
+		++s_publishErrors;
+		if (s_publishErrors == 1 || s_publishErrors == 100 || (s_publishErrors % 10000) == 0) {
+			LOG("[inputhealth-publisher] skipped publish tick after error '%s' (count=%llu)",
+				e.what(), (unsigned long long)s_publishErrors);
+		}
+	} catch (...) {
+		++s_publishErrors;
+		if (s_publishErrors == 1 || s_publishErrors == 100 || (s_publishErrors % 10000) == 0) {
+			LOG("[inputhealth-publisher] skipped publish tick after non-std exception (count=%llu)",
+				(unsigned long long)s_publishErrors);
+		}
+	}
+}
+
 void WorkerMain()
 {
 	LOG("[inputhealth-publisher] worker thread started (%d Hz)", kPublishHz);
@@ -78,7 +99,7 @@ void WorkerMain()
 			if (g_workerStop) break;
 		}
 
-		PublishOneTick();
+		PublishOneTickSafely();
 	}
 
 	LOG("[inputhealth-publisher] worker thread exiting");

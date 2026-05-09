@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -43,6 +44,8 @@ static std::mutex                                                               
 // One-shot install / probe log markers.
 static std::atomic<bool> g_firstCreateBoolLogged{false};
 static std::atomic<bool> g_firstCreateScalarLogged{false};
+static std::atomic<uint64_t> g_hotPathLockSkips{0};
+static std::atomic<uint64_t> g_hotPathObservationErrors{0};
 
 // =============================================================================
 // VirtualQuery-guarded probes (mirror SkeletalHookInjector's pair).
@@ -110,7 +113,8 @@ static uint64_t QpcMicros()
 // invalid component handle) if no partner exists yet.
 static vr::VRInputComponentHandle_t FindStickPartner_locked(
 	const std::string &stem,
-	inputhealth::AxisRole this_role)
+	inputhealth::AxisRole this_role,
+	vr::PropertyContainerHandle_t container)
 {
 	const inputhealth::AxisRole want = (this_role == inputhealth::AxisRole::StickX)
 		? inputhealth::AxisRole::StickY
@@ -119,12 +123,44 @@ static vr::VRInputComponentHandle_t FindStickPartner_locked(
 		auto &peer = kv.second;
 		if (!peer.is_scalar) continue;
 		if (peer.axis_role != want) continue;
+		if (peer.container_handle != container) continue;
 		// Match on stem: peer's path with its trailing /x or /y stripped.
 		std::string peerStem;
 		(void)inputhealth::ClassifyAxisRole(peer.path, peerStem);
 		if (peerStem == stem) return kv.first;
 	}
 	return 0;
+}
+
+static uint64_t ResolveSerialHash(vr::PropertyContainerHandle_t container)
+{
+	if (container == vr::k_ulInvalidPropertyContainer) return 0;
+	auto *helpers = vr::VRProperties();
+	if (!helpers) return 0;
+
+	vr::ETrackedPropertyError err = vr::TrackedProp_Success;
+	std::string serial = helpers->GetStringProperty(container, vr::Prop_SerialNumber_String, &err);
+	if (err != vr::TrackedProp_Success || serial.empty()) return 0;
+	return inputhealth::Fnv1a64(serial);
+}
+
+static void LogHotPathLockSkip(const char *kind)
+{
+	const uint64_t n = g_hotPathLockSkips.fetch_add(1, std::memory_order_relaxed) + 1;
+	if (n == 1 || n == 100 || (n % 10000) == 0) {
+		LOG("[inputhealth] skipped %s observation because stats mutex was busy (count=%llu); forwarded raw value",
+			kind, (unsigned long long)n);
+	}
+}
+
+static void LogHotPathObservationError(const char *kind, const char *what)
+{
+	const uint64_t n = g_hotPathObservationErrors.fetch_add(1, std::memory_order_relaxed) + 1;
+	if (n == 1 || n == 100 || (n % 10000) == 0) {
+		LOG("[inputhealth] disabled %s observation for this tick after error '%s' (count=%llu); forwarded raw value",
+			kind, what ? what : "unknown",
+			(unsigned long long)n);
+	}
 }
 
 // Tunable Page-Hinkley parameters. Defaults from the research doc Q3:
@@ -180,13 +216,20 @@ static vr::EVRInputError DetourCreateBooleanComponent(
 		&& pHandle && *pHandle != vr::k_ulInvalidInputComponentHandle
 		&& pchName)
 	{
-		std::lock_guard<std::mutex> lk(g_componentMutex);
-		auto &stats = g_componentStats[*pHandle];
-		stats.path             = pchName;
-		stats.is_boolean       = true;
-		stats.is_scalar        = false;
-		stats.first_update_logged = false;
-		stats.container_handle = ulContainer;
+		try {
+			std::lock_guard<std::mutex> lk(g_componentMutex);
+			auto &stats = g_componentStats[*pHandle];
+			stats.path             = pchName;
+			stats.is_boolean       = true;
+			stats.is_scalar        = false;
+			stats.first_update_logged = false;
+			stats.container_handle = ulContainer;
+			stats.device_serial_hash = ResolveSerialHash(ulContainer);
+		} catch (const std::exception &e) {
+			LogHotPathObservationError("boolean-create", e.what());
+		} catch (...) {
+			LogHotPathObservationError("boolean-create", "non-std exception");
+		}
 	}
 	return result;
 }
@@ -201,21 +244,31 @@ static vr::EVRInputError DetourUpdateBooleanComponent(
 
 	auto *driver = g_driver.load(std::memory_order_acquire);
 	if (driver) {
-		const auto cfg = driver->GetInputHealthConfig();
-		if (cfg.master_enabled) {
-			std::lock_guard<std::mutex> lk(g_componentMutex);
-			auto it = g_componentStats.find(ulComponent);
-			if (it != g_componentStats.end()) {
-				auto &s = it->second;
-				if (bNewValue && !s.last_boolean) ++s.press_count;
-				s.last_boolean    = bNewValue;
-				s.last_update_us  = QpcMicros();
-				if (!s.first_update_logged) {
-					s.first_update_logged = true;
-					LOG("[inputhealth] first UpdateBooleanComponent on handle=%llu path='%s' value=%d",
-						(unsigned long long)ulComponent, s.path.c_str(), (int)bNewValue);
+		try {
+			const auto cfg = driver->GetInputHealthConfig();
+			if (cfg.master_enabled) {
+				if (!g_componentMutex.try_lock()) {
+					LogHotPathLockSkip("boolean");
+				} else {
+					std::lock_guard<std::mutex> lk(g_componentMutex, std::adopt_lock);
+					auto it = g_componentStats.find(ulComponent);
+					if (it != g_componentStats.end()) {
+						auto &s = it->second;
+						if (bNewValue && !s.last_boolean) ++s.press_count;
+						s.last_boolean    = bNewValue;
+						s.last_update_us  = QpcMicros();
+						if (!s.first_update_logged) {
+							s.first_update_logged = true;
+							LOG("[inputhealth] first UpdateBooleanComponent on handle=%llu path='%s' value=%d",
+								(unsigned long long)ulComponent, s.path.c_str(), (int)bNewValue);
+						}
+					}
 				}
 			}
+		} catch (const std::exception &e) {
+			LogHotPathObservationError("boolean", e.what());
+		} catch (...) {
+			LogHotPathObservationError("boolean", "non-std exception");
 		}
 	}
 
@@ -247,30 +300,37 @@ static vr::EVRInputError DetourCreateScalarComponent(
 		&& pHandle && *pHandle != vr::k_ulInvalidInputComponentHandle
 		&& pchName)
 	{
-		std::string path = pchName;
-		std::string stem;
-		const auto role = inputhealth::ClassifyAxisRole(path, stem);
+		try {
+			std::string path = pchName;
+			std::string stem;
+			const auto role = inputhealth::ClassifyAxisRole(path, stem);
 
-		std::lock_guard<std::mutex> lk(g_componentMutex);
-		auto &stats = g_componentStats[*pHandle];
-		stats.path             = std::move(path);
-		stats.is_boolean       = false;
-		stats.is_scalar        = true;
-		stats.first_update_logged = false;
-		stats.axis_role        = role;
-		stats.partner_handle   = 0;
-		stats.container_handle = ulContainer;
+			std::lock_guard<std::mutex> lk(g_componentMutex);
+			auto &stats = g_componentStats[*pHandle];
+			stats.path             = std::move(path);
+			stats.is_boolean       = false;
+			stats.is_scalar        = true;
+			stats.first_update_logged = false;
+			stats.axis_role        = role;
+			stats.partner_handle   = 0;
+			stats.container_handle = ulContainer;
+			stats.device_serial_hash = ResolveSerialHash(ulContainer);
 
-		if (role == inputhealth::AxisRole::StickX || role == inputhealth::AxisRole::StickY) {
-			vr::VRInputComponentHandle_t partner = FindStickPartner_locked(stem, role);
-			if (partner != 0) {
-				stats.partner_handle                       = partner;
-				g_componentStats[partner].partner_handle   = *pHandle;
-				LOG("[inputhealth] paired stick axes: stem='%s' xHandle=%llu yHandle=%llu",
-					stem.c_str(),
-					role == inputhealth::AxisRole::StickX ? (unsigned long long)*pHandle  : (unsigned long long)partner,
-					role == inputhealth::AxisRole::StickY ? (unsigned long long)*pHandle  : (unsigned long long)partner);
+			if (role == inputhealth::AxisRole::StickX || role == inputhealth::AxisRole::StickY) {
+				vr::VRInputComponentHandle_t partner = FindStickPartner_locked(stem, role, ulContainer);
+				if (partner != 0) {
+					stats.partner_handle                       = partner;
+					g_componentStats[partner].partner_handle   = *pHandle;
+					LOG("[inputhealth] paired stick axes: stem='%s' xHandle=%llu yHandle=%llu",
+						stem.c_str(),
+						role == inputhealth::AxisRole::StickX ? (unsigned long long)*pHandle  : (unsigned long long)partner,
+						role == inputhealth::AxisRole::StickY ? (unsigned long long)*pHandle  : (unsigned long long)partner);
+				}
 			}
+		} catch (const std::exception &e) {
+			LogHotPathObservationError("scalar-create", e.what());
+		} catch (...) {
+			LogHotPathObservationError("scalar-create", "non-std exception");
 		}
 	}
 	return result;
@@ -286,65 +346,75 @@ static vr::EVRInputError DetourUpdateScalarComponent(
 
 	auto *driver = g_driver.load(std::memory_order_acquire);
 	if (driver) {
-		const auto cfg = driver->GetInputHealthConfig();
-		if (cfg.master_enabled) {
-			const uint64_t now_us = QpcMicros();
-			std::lock_guard<std::mutex> lk(g_componentMutex);
-			auto it = g_componentStats.find(ulComponent);
-			if (it != g_componentStats.end()) {
-				auto &s = it->second;
+		try {
+			const auto cfg = driver->GetInputHealthConfig();
+			if (cfg.master_enabled) {
+				const uint64_t now_us = QpcMicros();
+				if (!g_componentMutex.try_lock()) {
+					LogHotPathLockSkip("scalar");
+				} else {
+					std::lock_guard<std::mutex> lk(g_componentMutex, std::adopt_lock);
+					auto it = g_componentStats.find(ulComponent);
+					if (it != g_componentStats.end()) {
+						auto &s = it->second;
 
-				// Stage 1D per-tick budget keeps to the items the research
-				// doc Q6 admits onto the detour thread: ring push (skipped
-				// for now -- ring-buffer wiring lands with the snapshot
-				// path), Welford update, Page-Hinkley update, EWMA-min
-				// update for rest samples, polar bin update for paired
-				// axes. Heavy work (geometric median, hull rebuild, SPRT)
-				// runs on the background worker (also not yet wired).
-				WelfordUpdate(s.welford, static_cast<double>(fNewValue));
-				const auto driftParams = DefaultDriftParams();
-				PageHinkleyUpdate(s.ph_drift, driftParams, static_cast<double>(fNewValue));
-				if (fNewValue < kRestThreshold && fNewValue > -kRestThreshold) {
-					EWMARollingMinUpdate(s.rest_min,
-						static_cast<double>(fNewValue),
-						kRestMinDecay);
-				}
+						// Stage 1D per-tick budget keeps to the items the research
+						// doc Q6 admits onto the detour thread: ring push (skipped
+						// for now -- ring-buffer wiring lands with the snapshot
+						// path), Welford update, Page-Hinkley update, EWMA-min
+						// update for rest samples, polar bin update for paired
+						// axes. Heavy work (geometric median, hull rebuild, SPRT)
+						// runs on the background worker (also not yet wired).
+						WelfordUpdate(s.welford, static_cast<double>(fNewValue));
+						const auto driftParams = DefaultDriftParams();
+						PageHinkleyUpdate(s.ph_drift, driftParams, static_cast<double>(fNewValue));
+						if (fNewValue < kRestThreshold && fNewValue > -kRestThreshold) {
+							EWMARollingMinUpdate(s.rest_min,
+								static_cast<double>(fNewValue),
+								kRestMinDecay);
+						}
 
-				// Polar histogram is owned by the X-side of a paired stick.
-				// On a Y-side update, look up the X partner and update its
-				// histogram with the (partner_last_x, this_y) tuple. On an
-				// X-side update, do the same with this value as x and the
-				// partner's last value as y. The histogram thus integrates
-				// samples from both axes against a slight (~1 tick) cross-
-				// axis lag, which is well below the 10 deg bin resolution.
-				if (s.axis_role == inputhealth::AxisRole::StickX) {
-					float partner_y = 0.0f;
-					auto pit = g_componentStats.find(s.partner_handle);
-					if (pit != g_componentStats.end()) partner_y = pit->second.last_value;
-					PolarHistogramUpdate(s.polar,
-						static_cast<double>(fNewValue),
-						static_cast<double>(partner_y),
-						now_us, kRestMinDecay);
-				} else if (s.axis_role == inputhealth::AxisRole::StickY) {
-					auto pit = g_componentStats.find(s.partner_handle);
-					if (pit != g_componentStats.end() && pit->second.axis_role == inputhealth::AxisRole::StickX) {
-						PolarHistogramUpdate(pit->second.polar,
-							static_cast<double>(pit->second.last_value),
-							static_cast<double>(fNewValue),
-							now_us, kRestMinDecay);
+						// Polar histogram is owned by the X-side of a paired stick.
+						// On a Y-side update, look up the X partner and update its
+						// histogram with the (partner_last_x, this_y) tuple. On an
+						// X-side update, do the same with this value as x and the
+						// partner's last value as y. The histogram thus integrates
+						// samples from both axes against a slight (~1 tick) cross-
+						// axis lag, which is well below the 10 deg bin resolution.
+						if (s.axis_role == inputhealth::AxisRole::StickX) {
+							float partner_y = 0.0f;
+							auto pit = g_componentStats.find(s.partner_handle);
+							if (pit != g_componentStats.end()) partner_y = pit->second.last_value;
+							PolarHistogramUpdate(s.polar,
+								static_cast<double>(fNewValue),
+								static_cast<double>(partner_y),
+								now_us, kRestMinDecay);
+						} else if (s.axis_role == inputhealth::AxisRole::StickY) {
+							auto pit = g_componentStats.find(s.partner_handle);
+							if (pit != g_componentStats.end() && pit->second.axis_role == inputhealth::AxisRole::StickX) {
+								PolarHistogramUpdate(pit->second.polar,
+									static_cast<double>(pit->second.last_value),
+									static_cast<double>(fNewValue),
+									now_us, kRestMinDecay);
+							}
+						}
+
+						s.last_value     = fNewValue;
+						s.last_update_us = now_us;
+
+						if (!s.first_update_logged) {
+							s.first_update_logged = true;
+							LOG("[inputhealth] first UpdateScalarComponent on handle=%llu path='%s' value=%.4f role=%d",
+								(unsigned long long)ulComponent, s.path.c_str(),
+								fNewValue, (int)s.axis_role);
+						}
 					}
 				}
-
-				s.last_value     = fNewValue;
-				s.last_update_us = now_us;
-
-				if (!s.first_update_logged) {
-					s.first_update_logged = true;
-					LOG("[inputhealth] first UpdateScalarComponent on handle=%llu path='%s' value=%.4f role=%d",
-						(unsigned long long)ulComponent, s.path.c_str(),
-						fNewValue, (int)s.axis_role);
-				}
 			}
+		} catch (const std::exception &e) {
+			LogHotPathObservationError("scalar", e.what());
+		} catch (...) {
+			LogHotPathObservationError("scalar", "non-std exception");
 		}
 	}
 
@@ -362,6 +432,8 @@ void Init(ServerTrackedDeviceProvider *driver)
 	g_driver.store(driver, std::memory_order_release);
 	g_firstCreateBoolLogged.store(false, std::memory_order_release);
 	g_firstCreateScalarLogged.store(false, std::memory_order_release);
+	g_hotPathLockSkips.store(0, std::memory_order_release);
+	g_hotPathObservationErrors.store(0, std::memory_order_release);
 	{
 		std::lock_guard<std::mutex> lk(g_componentMutex);
 		g_componentStats.clear();
@@ -545,21 +617,26 @@ void TryInstallScalarBooleanHooks(void *iface)
 	LOG("[inputhealth] pre-install snapshot: vtable[0]=%p [1]=%p [2]=%p [3]=%p spread=0x%llx",
 		vtable[0], vtable[1], vtable[2], vtable[3], (unsigned long long)spread);
 
+	bool createBoolReady = createBoolAlready;
+	bool updateBoolReady = updateBoolAlready;
+	bool createScalarReady = createScalarAlready;
+	bool updateScalarReady = updateScalarAlready;
+
 	if (!createBoolAlready) {
-		CreateBooleanHook.CreateHookInObjectVTable(iface, 0, &DetourCreateBooleanComponent);
-		IHook::Register(&CreateBooleanHook);
+		createBoolReady = CreateBooleanHook.CreateHookInObjectVTable(iface, 0, &DetourCreateBooleanComponent);
+		if (createBoolReady) IHook::Register(&CreateBooleanHook);
 	}
 	if (!updateBoolAlready) {
-		UpdateBooleanHook.CreateHookInObjectVTable(iface, 1, &DetourUpdateBooleanComponent);
-		IHook::Register(&UpdateBooleanHook);
+		updateBoolReady = UpdateBooleanHook.CreateHookInObjectVTable(iface, 1, &DetourUpdateBooleanComponent);
+		if (updateBoolReady) IHook::Register(&UpdateBooleanHook);
 	}
 	if (!createScalarAlready) {
-		CreateScalarHook.CreateHookInObjectVTable(iface, 2, &DetourCreateScalarComponent);
-		IHook::Register(&CreateScalarHook);
+		createScalarReady = CreateScalarHook.CreateHookInObjectVTable(iface, 2, &DetourCreateScalarComponent);
+		if (createScalarReady) IHook::Register(&CreateScalarHook);
 	}
 	if (!updateScalarAlready) {
-		UpdateScalarHook.CreateHookInObjectVTable(iface, 3, &DetourUpdateScalarComponent);
-		IHook::Register(&UpdateScalarHook);
+		updateScalarReady = UpdateScalarHook.CreateHookInObjectVTable(iface, 3, &DetourUpdateScalarComponent);
+		if (updateScalarReady) IHook::Register(&UpdateScalarHook);
 	}
 
 	LogVirtualQueryRegion("public_vtable_slot0", vtable[0]);
@@ -567,7 +644,13 @@ void TryInstallScalarBooleanHooks(void *iface)
 	LogVirtualQueryRegion("public_vtable_slot2", vtable[2]);
 	LogVirtualQueryRegion("public_vtable_slot3", vtable[3]);
 
-	LOG("[inputhealth] installed PUBLIC IVRDriverInput hooks: vtable[0]=CreateBool vtable[1]=UpdateBool vtable[2]=CreateScalar vtable[3]=UpdateScalar -- waiting for first calls");
+	if (createBoolReady && updateBoolReady && createScalarReady && updateScalarReady) {
+		LOG("[inputhealth] installed PUBLIC IVRDriverInput hooks: vtable[0]=CreateBool vtable[1]=UpdateBool vtable[2]=CreateScalar vtable[3]=UpdateScalar -- waiting for first calls");
+	} else {
+		LOG("[inputhealth] partial IVRDriverInput hook install; createBool=%d updateBool=%d createScalar=%d updateScalar=%d -- missing hooks stay pass-through",
+			(int)createBoolReady, (int)updateBoolReady,
+			(int)createScalarReady, (int)updateScalarReady);
+	}
 }
 
 } // namespace inputhealth

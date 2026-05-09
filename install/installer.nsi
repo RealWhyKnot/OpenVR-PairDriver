@@ -170,7 +170,7 @@ Section "Install" SecInstall
 	SetOutPath "$vrRuntimePath\drivers\01openvrpair\resources\settings"
 	File "${ARTIFACTS_BASEDIR}\resources\settings\default.vrsettings"
 	SetOutPath "$vrRuntimePath\drivers\01openvrpair\bin\win64"
-	File "${ARTIFACTS_BASEDIR}\bin\win64\driver_openvrpair.dll"
+	File /oname=driver_01openvrpair.dll "${ARTIFACTS_BASEDIR}\bin\win64\driver_openvrpair.dll"
 
 	WriteRegStr HKLM "Software\OpenVR-PairDriver\Main"   "" $INSTDIR
 	WriteRegStr HKLM "Software\OpenVR-PairDriver\Driver" "" $vrRuntimePath
@@ -214,6 +214,7 @@ Section "Uninstall"
 	Delete "$vrRuntimePath\drivers\01openvrpair\driver.vrdrivermanifest"
 	Delete "$vrRuntimePath\drivers\01openvrpair\resources\driver.vrresources"
 	Delete "$vrRuntimePath\drivers\01openvrpair\resources\settings\default.vrsettings"
+	Delete "$vrRuntimePath\drivers\01openvrpair\bin\win64\driver_01openvrpair.dll"
 	Delete "$vrRuntimePath\drivers\01openvrpair\bin\win64\driver_openvrpair.dll"
 	; RMDir without /r so any consumer-owned flag files keep the resources/
 	; folder alive.
