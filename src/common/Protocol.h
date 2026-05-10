@@ -781,6 +781,15 @@ namespace protocol
 		uint64_t last_update_us;
 		uint64_t press_count;
 
+		// Raw scalar range observed since last reset. Cheap O(1) driver-side
+		// bookkeeping used by the overlay to sanity-check trigger/stick
+		// calibration coverage before making any health claim.
+		uint8_t  scalar_range_initialized;
+		uint8_t  _pad_scalar_range_flags[3];
+		float    observed_min;
+		float    observed_max;
+		uint32_t _pad_observed_range;
+
 		// Polar histogram bins. Only meaningful for AxisRole::StickX;
 		// other roles leave these zero. Per-bin: max_r and count and
 		// last_update_us.
@@ -816,7 +825,7 @@ namespace protocol
 		// InputHealthSnapshotRecord or the header. Mismatched versions are
 		// rejected at Open() so the overlay never reads the wrong layout.
 		static const uint32_t SHMEM_MAGIC   = 0x494E4848; // 'INHH'
-		static const uint32_t SHMEM_VERSION = 1;
+		static const uint32_t SHMEM_VERSION = 2;
 
 	private:
 		struct ShmemData

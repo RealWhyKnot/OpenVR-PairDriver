@@ -72,6 +72,13 @@ struct ComponentStats
 	// peak distribution for a trigger, etc.
 	WelfordState        welford;
 
+	// Observed scalar range. This is intentionally a cheap raw min/max over
+	// all samples, not a verdict: the overlay uses it to tell whether an
+	// active trigger/stick exercise has covered enough range to be useful.
+	bool                scalar_range_initialized = false;
+	float               observed_min             = 0.0f;
+	float               observed_max             = 0.0f;
+
 	// Two-sided PH on the value, with EWMA reference. For sticks: detects
 	// rest centroid migration. For triggers: a one-sided variant is more
 	// appropriate (only upward drift of rest matters), but the same struct
@@ -125,6 +132,9 @@ inline void ComponentStatsResetPassive(ComponentStats &s)
 	PageHinkleyReset(s.ph_drift);
 	EWMARollingMinReset(s.rest_min);
 	PolarHistogramReset(s.polar);
+	s.scalar_range_initialized = false;
+	s.observed_min   = 0.0f;
+	s.observed_max   = 0.0f;
 	s.last_value     = 0.0f;
 	s.last_update_us = 0;
 	s.press_count    = 0;

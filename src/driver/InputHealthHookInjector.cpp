@@ -366,6 +366,14 @@ static vr::EVRInputError DetourUpdateScalarComponent(
 						// axes. Heavy work (geometric median, hull rebuild, SPRT)
 						// runs on the background worker (also not yet wired).
 						WelfordUpdate(s.welford, static_cast<double>(fNewValue));
+						if (!s.scalar_range_initialized) {
+							s.scalar_range_initialized = true;
+							s.observed_min = fNewValue;
+							s.observed_max = fNewValue;
+						} else {
+							if (fNewValue < s.observed_min) s.observed_min = fNewValue;
+							if (fNewValue > s.observed_max) s.observed_max = fNewValue;
+						}
 						const auto driftParams = DefaultDriftParams();
 						PageHinkleyUpdate(s.ph_drift, driftParams, static_cast<double>(fNewValue));
 						if (fNewValue < kRestThreshold && fNewValue > -kRestThreshold) {
@@ -495,6 +503,9 @@ static void FillSnapshotBody(
 	out.last_value     = s.last_value;
 	out.last_update_us = s.last_update_us;
 	out.press_count    = s.press_count;
+	out.scalar_range_initialized = s.scalar_range_initialized ? 1 : 0;
+	out.observed_min   = s.observed_min;
+	out.observed_max   = s.observed_max;
 
 	for (int i = 0; i < protocol::INPUTHEALTH_POLAR_BIN_COUNT && i < kBinCount; ++i) {
 		out.polar_max_r[i]          = s.polar.bins[i].max_r;
