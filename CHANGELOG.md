@@ -16,6 +16,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **driver:** Split per-feature pipes and gate subsystems on enable_*.flag (d731767)
 - **inputhealth:** Share snapshot diagnostics helpers (0.1.0.0) (5f2d770)
 - **inputhealth:** Per-component learned compensation push (0.1.0.0) (a32e1c4)
+- **overlay:** Full UI overhaul -- sidebar, cards, theme, typography (0.1.0.0) (e6a8c8e)
 
 ### Changed
 - Rename export macro to OPENVRPAIRDRIVER_EXPORTS (c7df7e6)
