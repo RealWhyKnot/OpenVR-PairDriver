@@ -39,6 +39,18 @@ void IpcClientBase::Close()
 
 void IpcClientBase::Connect(const char *pipeName)
 {
+	// If the last Connect() saw a version mismatch, refuse to try again until
+	// the back-off period has elapsed. This prevents the overlay's polling loop
+	// from hammering the pipe with reconnect attempts that will all fail with
+	// the same mismatch. Real I/O errors still throw immediately.
+	if (mismatchState_ != MismatchState::Matching) {
+		if (std::chrono::steady_clock::now() < backoffUntil_) {
+			return; // still in back-off window; caller sees IsConnected()==false
+		}
+		// Back-off elapsed -- attempt again and update state below.
+		mismatchState_ = MismatchState::Matching;
+	}
+
 	Close();
 	pipeName_ = pipeName ? pipeName : "";
 	WaitNamedPipeA(pipeName_.c_str(), 1000);
@@ -57,9 +69,19 @@ void IpcClientBase::Connect(const char *pipeName)
 
 	auto response = SendBlocking(protocol::Request(protocol::RequestHandshake));
 	if (response.type != protocol::ResponseHandshake || response.protocol.version != protocol::Version) {
+		// Store which side is newer so callers can surface a meaningful message,
+		// then close the pipe and enter a 30-second back-off. Do NOT throw --
+		// the caller's reconnect loop should see a clean "not connected" outcome
+		// and display the mismatch state rather than logging a crash.
+		driverVersion_ = response.protocol.version;
+		mismatchState_ = (response.protocol.version < protocol::Version)
+			? MismatchState::OverlayNewer
+			: MismatchState::DriverNewer;
+		backoffUntil_ = std::chrono::steady_clock::now() + std::chrono::seconds(30);
 		Close();
-		throw std::runtime_error("Driver protocol version mismatch.");
+		return;
 	}
+	mismatchState_ = MismatchState::Matching;
 	++connectionGeneration_;
 }
 
@@ -85,10 +107,16 @@ protocol::Response IpcClientBase::SendBlocking(const protocol::Request &request)
 
 	protocol::Response response(protocol::ResponseInvalid);
 	DWORD bytesRead = 0;
-	if (!ReadFile(pipe_, &response, sizeof response, &bytesRead, nullptr) || bytesRead != sizeof response) {
+	if (!ReadFile(pipe_, &response, sizeof response, &bytesRead, nullptr)) {
 		DWORD err = GetLastError();
 		Close();
 		throw std::runtime_error("IPC read failed: " + std::to_string(err) + ": " + LastErrorString(err));
+	}
+	if (bytesRead != sizeof response) {
+		Close();
+		throw std::runtime_error(
+			"IPC read truncated: got " + std::to_string(bytesRead) +
+			" of " + std::to_string(sizeof response) + " bytes");
 	}
 
 	return response;

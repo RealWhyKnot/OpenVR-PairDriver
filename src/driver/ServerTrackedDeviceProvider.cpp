@@ -94,7 +94,13 @@ vr::EVRInitError ServerTrackedDeviceProvider::Init(vr::IVRDriverContext *pDriver
 		alignmentSpeedParams.align_speed_small = 0.2f;
 		alignmentSpeedParams.align_speed_large = 2.0f;
 
-		shmem.Create(OPENVR_PAIRDRIVER_SHMEM_NAME);
+		if (!shmem.Create(OPENVR_PAIRDRIVER_SHMEM_NAME)) {
+			// Non-fatal: pose telemetry is not essential -- calibration still
+			// works without it. Log so the overlay's diagnostics (or a post-
+			// mortem grep) can surface the cause.
+			LOG("shmem.Create(%s) failed (GetLastError=%u); pose telemetry disabled",
+				OPENVR_PAIRDRIVER_SHMEM_NAME, (unsigned)GetLastError());
+		}
 
 		calibrationServer = std::make_unique<IPCServer>(
 			this,
@@ -122,7 +128,19 @@ vr::EVRInitError ServerTrackedDeviceProvider::Init(vr::IVRDriverContext *pDriver
 	// Hook installation is gated inside the injector by the same feature
 	// flags so the GetGenericInterface detour skips registering the
 	// per-feature inner hooks for subsystems that aren't enabled.
-	InjectHooks(this, pDriverContext, featureFlags);
+	if (!InjectHooks(this, pDriverContext, featureFlags)) {
+		// MH_Initialize failed. IPC servers and shmem are already up, but
+		// without hooks the calibration and smoothing paths are dead. Report
+		// failure so SteamVR unloads us cleanly rather than leaving the driver
+		// in a zombie state where DisableHooks would call into uninitialized
+		// MinHook on the way out.
+		if (calibrationServer) calibrationServer->Stop();
+		if (smoothingServer) smoothingServer->Stop();
+		if (inputHealthServer) inputHealthServer->Stop();
+		shmem.Close();
+		VR_CLEANUP_SERVER_DRIVER_CONTEXT();
+		return vr::VRInitError_Driver_Failed;
+	}
 
 	debugTransform = Eigen::Vector3d::Zero();
 	debugRotation = Eigen::Quaterniond::Identity();
@@ -835,43 +853,82 @@ void ServerTrackedDeviceProvider::HandleApplyRandomOffset() {
 	LOG("%s", oss.str().c_str());
 }
 
+// Pack/unpack helpers for the two-atomic FingerSmoothingConfig representation.
+// See ServerTrackedDeviceProvider.h for the byte layout.
+namespace {
+	inline uint64_t PackFingerHeader(const protocol::FingerSmoothingConfig &cfg)
+	{
+		uint64_t packed = 0;
+		uint8_t* b = reinterpret_cast<uint8_t*>(&packed);
+		b[0] = cfg.master_enabled ? 1 : 0;
+		b[1] = cfg.smoothness;
+		b[2] = static_cast<uint8_t>(cfg.finger_mask & 0xFF);
+		b[3] = static_cast<uint8_t>((cfg.finger_mask >> 8) & 0xFF);
+		b[4] = 0;
+		b[5] = cfg.per_finger_smoothness[8];
+		b[6] = cfg.per_finger_smoothness[9];
+		b[7] = 0;
+		return packed;
+	}
+
+	inline uint64_t PackFingerLow(const protocol::FingerSmoothingConfig &cfg)
+	{
+		uint64_t packed = 0;
+		std::memcpy(&packed, cfg.per_finger_smoothness, 8);
+		return packed;
+	}
+
+	inline protocol::FingerSmoothingConfig UnpackFingerSmoothing(uint64_t header, uint64_t low)
+	{
+		protocol::FingerSmoothingConfig cfg{};
+		const uint8_t* b = reinterpret_cast<const uint8_t*>(&header);
+		cfg.master_enabled = b[0] != 0;
+		cfg.smoothness     = b[1];
+		cfg.finger_mask    = static_cast<uint16_t>(b[2] | (static_cast<uint16_t>(b[3]) << 8));
+		cfg._reserved      = 0;
+		std::memcpy(cfg.per_finger_smoothness, &low, 8);
+		cfg.per_finger_smoothness[8] = b[5];
+		cfg.per_finger_smoothness[9] = b[6];
+		cfg._reserved2[0] = 0;
+		cfg._reserved2[1] = 0;
+		return cfg;
+	}
+}
+
 void ServerTrackedDeviceProvider::SetFingerSmoothingConfig(const protocol::FingerSmoothingConfig &cfg)
 {
-	static_assert(sizeof(protocol::FingerSmoothingConfig) <= sizeof(uint64_t),
-		"FingerSmoothingConfig must fit inside atomic<uint64_t>");
+	const uint64_t newHeader = PackFingerHeader(cfg);
+	const uint64_t newLow    = PackFingerLow(cfg);
 
-	// Pack cfg into a uint64_t. Zero-init the target so the upper bytes
-	// (beyond sizeof(cfg) = 6) are always 0; the comparison below relies
-	// on packed equality only changing when the meaningful bytes change.
-	uint64_t newPacked = 0;
-	std::memcpy(&newPacked, &cfg, sizeof(cfg));
-
-	// Single atomic exchange gives us both the publish + the previous
-	// value for change-detection logging without a separate load.
-	const uint64_t oldPacked = fingerCfgPacked.exchange(newPacked, std::memory_order_acq_rel);
+	// Two exchanges: header carries the master/smoothness/mask plus fingers 8&9;
+	// low carries fingers 0..7. The detour reads both atomically with acquire;
+	// a partial update during the brief gap is harmless (one frame, one finger).
+	const uint64_t oldHeader = fingerCfgPacked.exchange(newHeader, std::memory_order_acq_rel);
+	const uint64_t oldLow    = perFingerSmoothness0to7Packed.exchange(newLow, std::memory_order_acq_rel);
 
 	// Log only on real changes so a slider drag (60 Hz no-op tick) doesn't
-	// flood the log file. Packed equality covers all three meaningful
-	// fields (master_enabled, smoothness, finger_mask) plus _reserved
-	// which is always 0 -- so a non-zero diff means a real change.
-	if (oldPacked != newPacked) {
-		protocol::FingerSmoothingConfig prev{};
-		std::memcpy(&prev, &oldPacked, sizeof(prev));
-		LOG("[skeletal] SetFingerSmoothingConfig via IPC: enabled=%d smoothness=%u mask=0x%04x (was: enabled=%d smoothness=%u mask=0x%04x)",
+	// flood the log file.
+	if (oldHeader != newHeader || oldLow != newLow) {
+		const protocol::FingerSmoothingConfig prev = UnpackFingerSmoothing(oldHeader, oldLow);
+		LOG("[skeletal] SetFingerSmoothingConfig via IPC: enabled=%d global=%u mask=0x%04x per_finger=[%u,%u,%u,%u,%u,%u,%u,%u,%u,%u] (was: enabled=%d global=%u mask=0x%04x)",
 			(int)cfg.master_enabled, (unsigned)cfg.smoothness, (unsigned)cfg.finger_mask,
+			(unsigned)cfg.per_finger_smoothness[0], (unsigned)cfg.per_finger_smoothness[1],
+			(unsigned)cfg.per_finger_smoothness[2], (unsigned)cfg.per_finger_smoothness[3],
+			(unsigned)cfg.per_finger_smoothness[4], (unsigned)cfg.per_finger_smoothness[5],
+			(unsigned)cfg.per_finger_smoothness[6], (unsigned)cfg.per_finger_smoothness[7],
+			(unsigned)cfg.per_finger_smoothness[8], (unsigned)cfg.per_finger_smoothness[9],
 			(int)prev.master_enabled, (unsigned)prev.smoothness, (unsigned)prev.finger_mask);
 	}
 }
 
 protocol::FingerSmoothingConfig ServerTrackedDeviceProvider::GetFingerSmoothingConfig() const
 {
-	// Hot path: ~680 Hz (340 Hz x 2 hands) skeletal detour reads. Single
-	// atomic load + acquire fence + memcpy = no contention, no syscalls,
-	// no LOG()-inside-critical-section drift to worry about.
-	const uint64_t packed = fingerCfgPacked.load(std::memory_order_acquire);
-	protocol::FingerSmoothingConfig cfg{};
-	std::memcpy(&cfg, &packed, sizeof(cfg));
-	return cfg;
+	// Hot path: ~680 Hz (340 Hz x 2 hands) skeletal detour reads. Two atomic
+	// loads + acquire fences on x64 are both single movs each; the cost is
+	// one extra cache-line touch per call vs the old single-atomic version.
+	const uint64_t header = fingerCfgPacked.load(std::memory_order_acquire);
+	const uint64_t low    = perFingerSmoothness0to7Packed.load(std::memory_order_acquire);
+	return UnpackFingerSmoothing(header, low);
 }
 
 void ServerTrackedDeviceProvider::SetInputHealthConfig(const protocol::InputHealthConfig &cfg)
@@ -940,8 +997,17 @@ bool ServerTrackedDeviceProvider::LookupInputHealthCompensation(
 	protocol::InputHealthCompensationEntry &out) const
 {
 	if (serial_hash == 0 || path.empty()) return false;
-	std::shared_lock<std::shared_mutex> lk(inputHealthCompMutex, std::try_to_lock);
-	if (!lk.owns_lock()) return false;
+	// Block until the shared lock is acquired. Writes (SetInputHealthCompensation /
+	// ClearInputHealthCompensation) are IPC-driven and rare, so contention is
+	// negligible. try_to_lock silently dropped entries on any write-side contention,
+	// which caused compensation to be skipped for that pose frame.
+	// inputHealthCompContentionCount is incremented if another thread held the lock
+	// so post-hoc contention analysis is possible under a debugger.
+	std::shared_lock<std::shared_mutex> lk(inputHealthCompMutex, std::defer_lock);
+	if (!lk.try_lock()) {
+		inputHealthCompContentionCount.fetch_add(1, std::memory_order_relaxed);
+		lk.lock();
+	}
 
 	auto serialIt = inputHealthComp.find(serial_hash);
 	if (serialIt == inputHealthComp.end()) return false;

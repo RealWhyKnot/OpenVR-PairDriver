@@ -243,16 +243,29 @@ private:
 	// More importantly any future LOG() drift inside the critical section
 	// would stall every skeletal update on a disk write.
 	//
-	// FingerSmoothingConfig is 6 bytes (1 master_enabled, 1 smoothness,
-	// 2 finger_mask, 1 _reserved, with 1 byte trailing alignment padding).
-	// memcpy into the lower 6 bytes of the uint64_t with the upper bytes
-	// always zero. std::atomic<uint64_t> is always lock-free on x64 so the
-	// hot-path read is a single mov + acquire fence.
+	// v13 split: FingerSmoothingConfig grew per_finger_smoothness[10] for
+	// per-finger strength and no longer fits in a single uint64_t. The pack
+	// uses two atomics so the hot path stays lock-free on x64:
 	//
-	// Default zero = {master_enabled=false, smoothness=0, finger_mask=0}
-	// so the detour fast-paths to passthrough until the overlay has sent
-	// a real config.
+	//   fingerCfgPacked            : header (8 bytes) -- master_enabled,
+	//                                smoothness (global fallback),
+	//                                finger_mask (2 bytes), then per_finger
+	//                                bytes [8] and [9] tucked into the
+	//                                trailing space so fingers 8 and 9 are
+	//                                published atomically with the header.
+	//   perFingerSmoothness0to7    : fingers 0..7 packed as 8 raw bytes.
+	//
+	// The detour does two acquire loads. Skew between the two atomics is
+	// bounded to one frame on one finger -- acceptable for a perceptual
+	// smoothing knob. SetFingerSmoothingConfig writes both atomics; if both
+	// readers race a partial update they may observe one finger value from
+	// the old config and another from the new, which is harmless.
+	//
+	// Default zero = {master_enabled=false, smoothness=0, finger_mask=0,
+	// per_finger_smoothness all 0} so the detour fast-paths to passthrough
+	// until the overlay has sent a real config.
 	mutable std::atomic<uint64_t>     fingerCfgPacked{0};
+	mutable std::atomic<uint64_t>     perFingerSmoothness0to7Packed{0};
 
 	// Input-health config packed into an atomic uint64_t. Same pattern as
 	// fingerCfgPacked: single-writer (IPC thread on user UI input), many-
@@ -265,6 +278,10 @@ private:
 	// packing happens.
 	mutable std::atomic<uint64_t>     inputHealthCfgPacked{0};
 	mutable std::shared_mutex inputHealthCompMutex;
+	// Diagnostic counter: incremented each time a reader had to wait on
+	// inputHealthCompMutex (writer held). Not plumbed to the overlay yet;
+	// observable under a debugger to quantify lock contention.
+	mutable std::atomic<uint64_t> inputHealthCompContentionCount{0};
 	std::unordered_map<uint64_t, std::unordered_map<std::string, protocol::InputHealthCompensationEntry>> inputHealthComp;
 
 	// Look up an existing fallback slot by system name (linear scan + memcmp).

@@ -7,6 +7,8 @@
 
 #include <objbase.h>
 
+#include <cstdio>
+#include <fstream>
 #include <utility>
 #include <string>
 #include <vector>
@@ -38,7 +40,142 @@ std::wstring LocalAppDataLow()
 
 void EnsureDir(const std::wstring &path)
 {
-	if (!path.empty()) CreateDirectoryW(path.c_str(), nullptr);
+	if (path.empty()) return;
+	if (!CreateDirectoryW(path.c_str(), nullptr)) {
+		DWORD err = GetLastError();
+		if (err != ERROR_ALREADY_EXISTS) {
+			// Log to stderr -- subsequent file writes into this directory will
+			// fail with opaque errors; surfacing the root cause here makes
+			// diagnosis much faster.
+			fprintf(stderr,
+				"[openvr-pair] EnsureDir: CreateDirectoryW failed (error %lu) for path that may be needed for profile/log writes\n",
+				(unsigned long)err);
+		}
+	}
+}
+
+// Returns the directory containing the running exe, without a trailing slash.
+// Falls back to an empty string on failure.
+std::wstring ExeDir()
+{
+	wchar_t buf[MAX_PATH + 1] = {};
+	DWORD len = GetModuleFileNameW(nullptr, buf, MAX_PATH);
+	if (len == 0 || len >= MAX_PATH) return {};
+	std::wstring path(buf, len);
+	auto sep = path.find_last_of(L"\\/");
+	return (sep != std::wstring::npos) ? path.substr(0, sep) : path;
+}
+
+// Read a REG_SZ value from the given hive/key/value. Returns empty on failure.
+std::wstring ReadRegString(HKEY hive, const wchar_t *subkey, const wchar_t *valueName)
+{
+	HKEY hk = nullptr;
+	if (RegOpenKeyExW(hive, subkey, 0, KEY_READ, &hk) != ERROR_SUCCESS) return {};
+	DWORD type = 0, size = 0;
+	if (RegQueryValueExW(hk, valueName, nullptr, &type, nullptr, &size) != ERROR_SUCCESS
+		|| type != REG_SZ || size == 0) {
+		RegCloseKey(hk);
+		return {};
+	}
+	std::wstring value(size / sizeof(wchar_t), L'\0');
+	if (RegQueryValueExW(hk, valueName, nullptr, nullptr,
+		reinterpret_cast<LPBYTE>(value.data()), &size) != ERROR_SUCCESS) {
+		RegCloseKey(hk);
+		return {};
+	}
+	RegCloseKey(hk);
+	// Strip trailing NUL that RegQueryValueEx includes in `size`
+	while (!value.empty() && value.back() == L'\0') value.pop_back();
+	return value;
+}
+
+// Finds the Steam install root by trying three registry locations in order.
+// Returns empty if none are found.
+std::wstring FindSteamInstallPath()
+{
+	// 32-bit view first (most common install location on 64-bit Windows)
+	std::wstring p = ReadRegString(HKEY_LOCAL_MACHINE,
+		L"SOFTWARE\\WOW6432Node\\Valve\\Steam", L"InstallPath");
+	if (!p.empty()) return p;
+	p = ReadRegString(HKEY_LOCAL_MACHINE,
+		L"SOFTWARE\\Valve\\Steam", L"InstallPath");
+	if (!p.empty()) return p;
+	// HKCU fallback (per-user install)
+	p = ReadRegString(HKEY_CURRENT_USER,
+		L"Software\\Valve\\Steam", L"SteamPath");
+	if (!p.empty()) {
+		// SteamPath uses forward slashes on some installs; normalise.
+		for (wchar_t &ch : p) if (ch == L'/') ch = L'\\';
+	}
+	return p;
+}
+
+// Checks whether `candidate` is the SteamVR library root by testing for the
+// SteamVR common directory inside it.
+bool IsSteamVRRoot(const std::wstring &candidate)
+{
+	if (candidate.empty()) return false;
+	DWORD attr = GetFileAttributesW((candidate + L"\\steamapps\\common\\SteamVR").c_str());
+	return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+// Minimal libraryfolders.vdf scanner. Reads the file line by line and grabs
+// values from lines that look like:  "path"   "C:\\some\\path"
+// Tests each path for the presence of steamapps\common\SteamVR.
+// Returns the SteamVR install root, or empty if not found.
+std::wstring FindSteamVRRootFromVDF(const std::wstring &steamPath)
+{
+	if (steamPath.empty()) return {};
+
+	// The Steam install itself is always a library root.
+	if (IsSteamVRRoot(steamPath)) return steamPath;
+
+	std::wstring vdfPath = steamPath + L"\\config\\libraryfolders.vdf";
+	std::ifstream vdf(vdfPath);
+	if (!vdf.is_open()) return {};
+
+	std::string line;
+	while (std::getline(vdf, line)) {
+		// Find a line containing the key "path" (case-insensitive enough for VDF)
+		auto kpos = line.find("\"path\"");
+		if (kpos == std::string::npos) {
+			// Also accept "Path" with capital P just in case
+			kpos = line.find("\"Path\"");
+		}
+		if (kpos == std::string::npos) continue;
+		// Find the value: the next quoted string after the key
+		auto q1 = line.find('"', kpos + 6);
+		if (q1 == std::string::npos) continue;
+		auto q2 = line.find('"', q1 + 1);
+		if (q2 == std::string::npos) continue;
+		std::string raw = line.substr(q1 + 1, q2 - q1 - 1);
+		// VDF uses \\ escape; convert to single backslash
+		std::string unescaped;
+		unescaped.reserve(raw.size());
+		for (size_t i = 0; i < raw.size(); ++i) {
+			if (raw[i] == '\\' && i + 1 < raw.size() && raw[i + 1] == '\\') {
+				unescaped += '\\'; ++i;
+			} else {
+				unescaped += raw[i];
+			}
+		}
+		// Widen to wstring for the filesystem check
+		int needed = MultiByteToWideChar(CP_UTF8, 0, unescaped.c_str(), -1, nullptr, 0);
+		if (needed <= 1) continue;
+		std::wstring candidate(needed - 1, L'\0');
+		MultiByteToWideChar(CP_UTF8, 0, unescaped.c_str(), -1, candidate.data(), needed);
+		if (IsSteamVRRoot(candidate)) return candidate;
+	}
+	return {};
+}
+
+// Returns the SteamVR install root (the directory that contains
+// steamapps\common\SteamVR), or empty if discovery fails entirely.
+std::wstring DiscoverSteamVRRoot()
+{
+	std::wstring steamPath = FindSteamInstallPath();
+	std::wstring root = FindSteamVRRootFromVDF(steamPath);
+	return root; // may be empty
 }
 
 std::wstring QuotePowerShellString(const std::wstring &value)
@@ -66,7 +203,12 @@ std::string Narrow(const std::wstring &value)
 ShellContext CreateShellContext()
 {
 	ShellContext ctx;
-	ctx.installDir = L"C:\\Program Files\\OpenVR-Pair";
+
+	// --- Install dir: prefer exe's own directory over the hard-coded fallback.
+	std::wstring exeDir = ExeDir();
+	ctx.installDir = exeDir.empty()
+		? L"C:\\Program Files\\OpenVR-Pair"
+		: exeDir;
 
 	const std::wstring root = LocalAppDataLow();
 	if (!root.empty()) {
@@ -78,8 +220,19 @@ ShellContext CreateShellContext()
 		EnsureDir(ctx.logRoot);
 	}
 
-	std::wstring resources =
+	// --- Driver resources dir: discover SteamVR via registry + libraryfolders.vdf.
+	// Fall back to the hard-coded path if any step fails so that known-good
+	// installs continue to work even if the discovery logic hits an edge case.
+	static const std::wstring kFallbackResources =
 		L"C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\drivers\\01openvrpair\\resources";
+	std::wstring resources;
+	std::wstring steamvrRoot = DiscoverSteamVRRoot();
+	if (!steamvrRoot.empty()) {
+		resources = steamvrRoot + L"\\steamapps\\common\\SteamVR\\drivers\\01openvrpair\\resources";
+	}
+	if (resources.empty()) {
+		resources = kFallbackResources;
+	}
 	ctx.driverResourceDirs.push_back(resources);
 	return ctx;
 }

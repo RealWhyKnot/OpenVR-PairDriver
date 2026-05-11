@@ -139,7 +139,16 @@ namespace protocol
 	// SetDevicePrediction updates those slots now. Required so SC's
 	// per-frame calibration pushes don't clobber the Smoothing plugin's
 	// per-tracker prediction settings.
-	const uint32_t Version = 12;
+	// v13 (2026-05-11): extends FingerSmoothingConfig with per_finger_smoothness[10]
+	// so each finger gets its own strength rather than sharing a single global
+	// value. Driver no longer fits the whole config inside a single 8-byte atomic;
+	// it splits the per-finger array into a second std::atomic<uint64_t> so the
+	// UpdateSkeletonComponent detour reads two atomics per call. The brief skew
+	// window between the two acquire loads is bounded to one frame on one finger
+	// -- acceptable for a perceptual smoothing knob. Wire struct grows by 12 bytes
+	// (10 array + trailing pad); still much smaller than SetDeviceTransform, so
+	// sizeof(Request) is unchanged.
+	const uint32_t Version = 13;
 
 	// Maximum length of a tracking-system-name string (e.g., "lighthouse", "oculus",
 	// "Pimax Crystal HMD"). 32 bytes is more than enough for known systems and keeps
@@ -319,6 +328,19 @@ namespace protocol
 		// mistake it for a meaningful flag — left zero by the overlay; the
 		// driver MUST NOT read it.
 		uint8_t  _reserved;
+
+		// v13 (2026-05-11): per-finger smoothing strength (0..100), indexed the
+		// same way as finger_mask bits 0..9 (left thumb..pinky, right thumb..pinky).
+		// Replaces the role of the global `smoothness` field when v13 senders are
+		// paired with v13 drivers; the global `smoothness` above is retained as a
+		// fallback for clients that haven't been updated to write the array.
+		// Per-finger value 0 = the driver falls back to the global `smoothness`
+		// for that finger (so an all-zero array reproduces v12 behaviour exactly).
+		uint8_t  per_finger_smoothness[10];
+
+		// 2 bytes of trailing padding to round the struct to 8-byte alignment.
+		// Left zero by the overlay; the driver MUST NOT read it.
+		uint8_t  _reserved2[2];
 	};
 
 	// POD payload for RequestSetDevicePrediction. Sent by the Smoothing overlay

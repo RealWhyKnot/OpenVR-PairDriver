@@ -12,7 +12,9 @@ static void DetourTrackedDevicePoseUpdated(vr::IVRServerDriverHost * _this, uint
 // hooks gated by featureFlags (pairdriver::kFeature*). With featureFlags == 0
 // the GetGenericInterface detour itself is also skipped and the call is a
 // no-op aside from caching the driver pointer.
-void InjectHooks(ServerTrackedDeviceProvider *driver, vr::IVRDriverContext *pDriverContext, uint32_t featureFlags);
+// Returns true on success. On false the driver should return
+// vr::VRInitError_Driver_Failed from Init; DisableHooks becomes a no-op.
+bool InjectHooks(ServerTrackedDeviceProvider *driver, vr::IVRDriverContext *pDriverContext, uint32_t featureFlags);
 
 // DisableHooks removes our MinHook patches AND drains in-flight detour callers
 // before returning. After it returns no detour can be executing inside our code,

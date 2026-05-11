@@ -17,6 +17,11 @@ static ServerTrackedDeviceProvider *Driver = nullptr;
 // their feature flag is set.
 static uint32_t s_featureFlags = 0;
 
+// Set to true only when MH_Initialize succeeded and hooks were installed.
+// DisableHooks is a no-op when false so we never call MH_Uninitialize on an
+// uninitialized library (UB) if InjectHooks returned false.
+static bool s_hooksInitialized = false;
+
 // In-flight detour counter. Every detour body in this file AND in
 // SkeletalHookInjector.cpp brackets itself with DetourScope which inc/decs
 // this counter. DrainInFlightDetours spins until it hits zero so DisableHooks
@@ -132,36 +137,39 @@ static void *DetourGetGenericInterface(vr::IVRDriverContext *_this, const char *
 	return originalInterface;
 }
 
-void InjectHooks(ServerTrackedDeviceProvider *driver, vr::IVRDriverContext *pDriverContext, uint32_t featureFlags)
+bool InjectHooks(ServerTrackedDeviceProvider *driver, vr::IVRDriverContext *pDriverContext, uint32_t featureFlags)
 {
 	Driver = driver;
 	s_featureFlags = featureFlags;
 
 	if (featureFlags == 0) {
 		LOG("InjectHooks: no features enabled; skipping all hook installation");
-		return;
+		// No hooks needed; driver runs inert. Not a failure.
+		return true;
 	}
 
 	auto err = MH_Initialize();
-	if (err == MH_OK)
+	if (err != MH_OK)
 	{
-		GetGenericInterfaceHook.CreateHookInObjectVTable(pDriverContext, 0, &DetourGetGenericInterface);
-		IHook::Register(&GetGenericInterfaceHook);
+		LOG("MH_Initialize error: %s -- driver running without hooks", MH_StatusToString(err));
+		return false;
 	}
-	else
-	{
-		LOG("MH_Initialize error: %s", MH_StatusToString(err));
-	}
+
+	s_hooksInitialized = true;
+	GetGenericInterfaceHook.CreateHookInObjectVTable(pDriverContext, 0, &DetourGetGenericInterface);
+	IHook::Register(&GetGenericInterfaceHook);
+	return true;
 }
 
 void DisableHooks()
 {
-	// Inert-driver path: InjectHooks bailed before MH_Initialize so there's
-	// nothing to tear down. Skip the whole sequence rather than calling
-	// MH_Uninitialize on an uninitialized library.
-	if (s_featureFlags == 0) {
+	// Guard: only tear down if MH_Initialize actually succeeded. Without this,
+	// a failed InjectHooks (MH_Initialize error) would call IHook::DestroyAll
+	// and MH_Uninitialize on an uninitialized library -- undefined behaviour.
+	if (!s_hooksInitialized) {
 		return;
 	}
+	s_hooksInitialized = false;
 
 	// 1. Remove the MinHook patches. After DestroyAll returns, no NEW callers
 	//    can enter our detours via the hooked vtable slot (the slot is

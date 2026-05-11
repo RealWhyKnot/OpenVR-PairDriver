@@ -24,21 +24,21 @@ void IPCServer::Run()
 void IPCServer::Stop()
 {
 	TRACE("IPCServer::Stop()");
-	if (!running)
-		return;
-
-	stop = true;
-	SetEvent(connectEvent);
-	mainThread.join();
-	running = false;
-
-	// connectEvent is owned by RunThread but was never closed before; the
-	// kernel event handle leaked across each driver reload. Close it now that
-	// the worker has joined.
-	if (connectEvent) {
-		CloseHandle(connectEvent);
-		connectEvent = nullptr;
+	// Signal and join even if `running` has already been cleared by the
+	// ThreadGuard (early-exit path). A joinable thread whose destructor fires
+	// without a join calls std::terminate.
+	if (mainThread.joinable()) {
+		stop = true;
+		// Signal the event only if RunThread hasn't already closed it. The
+		// ThreadGuard swaps connectEvent to INVALID_HANDLE_VALUE before
+		// CloseHandle so we can distinguish a live handle from a gone one.
+		HANDLE ev = connectEvent;
+		if (ev && ev != INVALID_HANDLE_VALUE)
+			SetEvent(ev);
+		mainThread.join();
 	}
+	// running and connectEvent are cleared by the ThreadGuard destructor in
+	// RunThread before join() returns; nothing left to clean up here.
 
 	TRACE("IPCServer::Stop() finished");
 }
@@ -67,6 +67,24 @@ void IPCServer::ClosePipeInstance(PipeInstance *pipeInst)
 void IPCServer::RunThread(IPCServer *_this)
 {
 	_this->running = true;
+
+	// RAII guard: on any exit path (normal or error) clear `running` and close
+	// `connectEvent` once. This prevents Stop() from deadlocking on join() when
+	// the thread exits early due to a WaitForSingleObjectEx or
+	// GetOverlappedResult failure.
+	struct ThreadGuard {
+		IPCServer *server;
+		~ThreadGuard() {
+			server->running = false;
+			// Close and null-out connectEvent using INVALID_HANDLE_VALUE as a
+			// sentinel so Stop() -- which may race here -- does not double-close.
+			HANDLE ev = server->connectEvent;
+			if (ev && ev != INVALID_HANDLE_VALUE) {
+				server->connectEvent = INVALID_HANDLE_VALUE;
+				CloseHandle(ev);
+			}
+		}
+	} guard{_this};
 
 	HANDLE connectEvent = _this->connectEvent = CreateEvent(0, TRUE, TRUE, 0);
 	if (!connectEvent)
@@ -124,7 +142,7 @@ void IPCServer::RunThread(IPCServer *_this)
 		}
 		else if (wait != WAIT_IO_COMPLETION)
 		{
-			printf("WaitForSingleObjectEx failed in RunThread. Error %d", GetLastError());
+			LOG("WaitForSingleObjectEx failed in RunThread. Error: %d", GetLastError());
 			return;
 		}
 	}
