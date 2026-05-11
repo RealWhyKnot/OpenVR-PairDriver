@@ -16,6 +16,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **inputhealth:** Per-component learned compensation push (0.1.0.0) (a32e1c4)
 - **overlay:** Full UI overhaul -- sidebar, cards, theme, typography (0.1.0.0) (e6a8c8e)
 - **overlay:** Clean up Modules tab + propagate build version to SC plugin (2026.5.11.1-BD83) (0.1.0.0) (8cb45d4)
+- **protocol:** Split per-device prediction off SetDeviceTransform (v12) (b5b5e22)
 
 ### Changed
 - Rename export macro to OPENVRPAIRDRIVER_EXPORTS (c7df7e6)
@@ -25,6 +26,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **deps:** Bump SpaceCalibrator submodule for BuildStamp.h fix (0.1.0.0) (e3ef50a)
 - Revert "feat(overlay): full UI overhaul -- sidebar, cards, theme, typography" (0.1.0.0) (4582786)
 - **deps:** Bump SpaceCalibrator submodule for umbrella tab + font fixes (0.1.0.0) (e4d8e3a)
+- Rename OpenVR modules to WK variants (1ca4829)
 
 ### Fixed
 - **inputhealth:** Make observation fail open (0.1.0.0) (a01318b)
