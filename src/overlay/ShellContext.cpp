@@ -8,7 +8,9 @@
 #include <objbase.h>
 
 #include <utility>
+#include <string>
 #include <vector>
+#include <sstream>
 
 namespace openvr_pair::overlay {
 namespace {
@@ -138,7 +140,14 @@ bool ShellContext::SetFlagPresent(const char *flagFileName, bool present)
 		// User dismissed the consent prompt before it even ran, or the
 		// shell refused to launch the helper. Either way there is no
 		// process to wait on.
-		SetStatus("Module change cancelled.");
+		DWORD err = GetLastError();
+		if (err == 0) {
+			SetStatus("Module change cancelled.");
+		} else {
+			std::ostringstream oss;
+			oss << "Module change was not started (admin helper error 0x" << std::hex << std::uppercase << err << ")";
+			SetStatus(oss.str());
+		}
 		return false;
 	}
 
@@ -163,13 +172,30 @@ void ShellContext::TickToggles()
 			++it;
 			continue;
 		}
+		DWORD exitCode = 0;
+		if (!GetExitCodeProcess(it->process, &exitCode)) {
+			exitCode = 1;
+		}
 		const bool present = IsFlagPresent(it->flagFileName.c_str());
-		if (present == it->wantPresent) {
+		if (exitCode == 0 && present == it->wantPresent) {
 			SetStatus("Module change applied. SteamVR will pick up the new state the next time it loads the driver.");
+		} else if (present == it->wantPresent) {
+			std::ostringstream oss;
+			if (exitCode == 0) {
+				oss << (it->wantPresent ? "Enable did not apply: flag file was not created." :
+				                         "Disable did not apply: flag file was still present.");
+			} else {
+				oss << (it->wantPresent ? "Enable completed, but helper exit was non-zero (0x" :
+				                         "Disable completed, but helper exit was non-zero (0x");
+				oss << std::hex << std::uppercase << exitCode << ").";
+			}
+			oss << " Check that the helper process could write Program Files and that SteamVR is not holding"
+			    << (it->wantPresent ? " the driver folder open." : " the module state files.");
+			SetStatus(oss.str());
 		} else {
-			SetStatus(it->wantPresent
-				? "Enable cancelled -- flag file was not written."
-				: "Disable cancelled -- flag file still present.");
+			SetStatus(std::string(it->wantPresent
+			                      ? "Enable did not apply -- helper finished but state is still disabled."
+			                      : "Disable did not apply -- helper finished but state is still enabled."));
 		}
 		CloseHandle(it->process);
 		it = g_pendingToggles.erase(it);

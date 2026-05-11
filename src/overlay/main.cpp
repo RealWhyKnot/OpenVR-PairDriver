@@ -1,5 +1,6 @@
 #include "FeaturePlugin.h"
 #include "ShellContext.h"
+#include "UiHelpers.h"
 
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
@@ -62,7 +63,7 @@ void DrawTransientStatus(openvr_pair::overlay::ShellContext &context)
 	const float padding = ImGui::GetStyle().WindowPadding.y;
 	ImGui::SetCursorPosY(windowHeight - lineHeight * 3.0f - padding);
 	ImGui::Separator();
-	ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.40f, 1.0f), "%s", context.status.c_str());
+	openvr_pair::overlay::ui::DrawTextWrapped(context.status.c_str());
 }
 
 void DrawModules(openvr_pair::overlay::ShellContext &context,
@@ -75,7 +76,9 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 	static std::map<std::string, bool> wanted;
 
 	ImGui::TextUnformatted("Modules");
-	ImGui::TextDisabled("Toggle features on or off. Each change pops a UAC prompt; SteamVR picks the new state up the next time it loads the driver.");
+	openvr_pair::overlay::ui::DrawTextWrapped(
+		"Toggle features on or off. Each change pops a UAC prompt. "
+		"Changes take effect the next time SteamVR loads the driver.");
 	ImGui::Spacing();
 	if (ImGui::BeginTable("modules", 3,
 		ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
@@ -97,14 +100,17 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 			const bool displayState = (it != wanted.end()) ? it->second : installed;
 
 			ImGui::TableNextRow();
-			ImGui::TableNextColumn();
-			ImGui::TextUnformatted(plugin->Name());
+		ImGui::TableNextColumn();
+		ImGui::TextUnformatted(plugin->Name());
 
 			ImGui::TableNextColumn();
 			ImGui::PushID(key.c_str());
 			ImGui::BeginDisabled(isPending);
 			bool checkbox = displayState;
-			if (ImGui::Checkbox("##enabled", &checkbox)) {
+			const std::string tooltip = std::string("Enable or disable ") + plugin->Name() +
+			                            " for this profile. Takes effect next SteamVR launch.";
+			if (openvr_pair::overlay::ui::CheckboxWithTooltip(
+					"##enabled", &checkbox, tooltip.c_str())) {
 				wanted[key] = checkbox;
 				context.SetFlagPresent(plugin->FlagFileName(), checkbox);
 			}
@@ -164,6 +170,7 @@ int main(int, char **)
 	ImGui_ImplOpenGL3_Init("#version 130");
 
 	ShellContext context = CreateShellContext();
+	openvr_pair::overlay::ui::ApplyOverlayStyle();
 	auto plugins = CreatePlugins();
 	for (auto &plugin : plugins) {
 		plugin->OnStart(context);

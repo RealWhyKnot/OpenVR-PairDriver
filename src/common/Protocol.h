@@ -374,15 +374,16 @@ namespace protocol
 		bool      master_enabled;
 
 		// When true, the driver records observations and publishes snapshots
-		// but never alters component values flowing up to consumers. This is
-		// the recommended default when the feature is first enabled; the
-		// user opts into actual compensation later through the wizard.
+		// but never alters component values flowing up to consumers. Useful
+		// for triage; the overlay flips this off by default so corrections
+		// land as soon as a path crosses its readiness gate.
 		bool      diagnostics_only;
 
-		// Per-category compensation toggles. All default false. Have no
-		// effect while diagnostics_only is true. The actual implementation
-		// of these compensations lands in subsequent commits; for the v10
-		// baseline they are just config bits the driver records and acks.
+		// Per-category compensation toggles. The overlay flips these on by
+		// default; have no effect while diagnostics_only is true. The
+		// matching compensation kernels are still landing -- as of v12 these
+		// are hint bits the driver records and acks but does not consume on
+		// the input hot path.
 		bool      enable_rest_recenter;
 		bool      enable_trigger_remap;
 

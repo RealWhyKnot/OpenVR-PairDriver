@@ -30,7 +30,10 @@ void DrawStatusDot(ImU32 color)
 void DrawShellFooter(const ShellFooterStatus &status)
 {
 	const float lineH = ImGui::GetTextLineHeight();
-	const float footerH = lineH + 8.0f;
+	// Reserve two text lines so the footer still has room when the composed
+	// status string wraps on a narrow window. Single-line case leaves the
+	// second line as a small gap below the text.
+	const float footerH = lineH * 2.0f + 8.0f;
 	const float available = ImGui::GetContentRegionAvail().y;
 	if (available > footerH) {
 		ImGui::Dummy(ImVec2(0.0f, available - footerH));
@@ -40,16 +43,18 @@ void DrawShellFooter(const ShellFooterStatus &status)
 	const char *label = status.driverLabel ? status.driverLabel : "Driver";
 	const char *stamp = status.buildStamp ? status.buildStamp : OPENVR_PAIR_VERSION_STRING;
 
-	if (status.driverConnected) {
-		DrawStatusDot(IM_COL32(80, 200, 120, 255));
-		ImGui::TextColored(ImVec4(0.5f, 0.85f, 0.55f, 1.0f), "%s: connected", label);
-	} else {
-		DrawStatusDot(IM_COL32(220, 170, 60, 255));
-		ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.40f, 1.0f), "%s: waiting", label);
-	}
+	const ImU32  dotColor  = status.driverConnected ? IM_COL32(80, 200, 120, 255) : IM_COL32(220, 170, 60, 255);
+	const ImVec4 textColor = status.driverConnected ? ImVec4(0.5f, 0.85f, 0.55f, 1.0f)
+	                                                : ImVec4(0.95f, 0.80f, 0.40f, 1.0f);
+	const char  *state     = status.driverConnected ? "connected" : "waiting";
 
-	ImGui::SameLine();
-	ImGui::Text("  |  OpenVR-Pair %s", stamp);
+	DrawStatusDot(dotColor);
+	ImGui::PushStyleColor(ImGuiCol_Text, textColor);
+	// TextWrapped wraps at the right edge of the current content region, so
+	// the "Driver: connected  |  OpenVR-Pair <stamp>" line reflows instead of
+	// overflowing on a desktop-mode window that has been shrunk.
+	ImGui::TextWrapped("%s: %s  |  OpenVR-Pair %s", label, state, stamp);
+	ImGui::PopStyleColor();
 }
 
 } // namespace openvr_pair::overlay
