@@ -77,11 +77,24 @@ endif()
 add_executable(OpenVRPairOverlay WIN32
 	FeaturePlugin.cpp
 	FeaturePlugin.h
+	Fonts.cpp
+	Fonts.h
+	Icons.h
 	IpcClientBase.cpp
 	IpcClientBase.h
+	ModulesTab.cpp
+	ModulesTab.h
 	ProfileStoreBase.h
+	Sidebar.cpp
+	Sidebar.h
 	ShellContext.cpp
 	ShellContext.h
+	Theme.cpp
+	Theme.h
+	TopBar.cpp
+	TopBar.h
+	Widgets.cpp
+	Widgets.h
 	main.cpp)
 
 set_target_properties(OpenVRPairOverlay PROPERTIES OUTPUT_NAME "OpenVR-Pair")
@@ -118,4 +131,28 @@ target_compile_definitions(OpenVRPairOverlay PRIVATE
 
 if(MSVC)
 	target_link_options(OpenVRPairOverlay PRIVATE /ENTRY:mainCRTStartup)
+endif()
+
+set(OPENVR_PAIR_FONT_DIR "${CMAKE_SOURCE_DIR}/lib/fonts")
+set(OPENVR_PAIR_FONT_FILES
+	"${OPENVR_PAIR_FONT_DIR}/Inter-Regular.ttf"
+	"${OPENVR_PAIR_FONT_DIR}/Inter-Medium.ttf"
+	"${OPENVR_PAIR_FONT_DIR}/Inter-SemiBold.ttf"
+	"${OPENVR_PAIR_FONT_DIR}/JetBrainsMono-Regular.ttf"
+	"${OPENVR_PAIR_FONT_DIR}/lucide.ttf")
+foreach(font_file IN LISTS OPENVR_PAIR_FONT_FILES)
+	if(EXISTS "${font_file}")
+		add_custom_command(TARGET OpenVRPairOverlay POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"${font_file}"
+				"$<TARGET_FILE_DIR:OpenVRPairOverlay>")
+	endif()
+endforeach()
+
+set(OPENVR_PAIR_OPENVR_DLL "${OPENVR_PAIR_UI_DEPS_DIR}/openvr/bin/win64/openvr_api.dll")
+if(EXISTS "${OPENVR_PAIR_OPENVR_DLL}")
+	add_custom_command(TARGET OpenVRPairOverlay POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"${OPENVR_PAIR_OPENVR_DLL}"
+			"$<TARGET_FILE_DIR:OpenVRPairOverlay>")
 endif()
