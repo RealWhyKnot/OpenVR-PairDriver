@@ -31,3 +31,5 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 ### Fixed
 - **inputhealth:** Make observation fail open (0.1.0.0) (a01318b)
 - **build:** Wrap cmake calls with EAP='Continue' to dodge PS 5.1 ErrorRecord wrap (0.1.0.0) (bded14d)
+- **overlay:** Drop top header, move transient status to footer line (2026.5.11.5-BAE4) (0.1.0.0) (6ee20ce)
+- **overlay:** Correct module-toggle status copy for desktop-mode users (2026.5.11.2-30C9) (0.1.0.0) (4631071)
