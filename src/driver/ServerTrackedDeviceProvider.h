@@ -15,7 +15,9 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
+#include <unordered_map>
 
 
 class ServerTrackedDeviceProvider : public vr::IServerTrackedDeviceProvider
@@ -72,6 +74,12 @@ public:
 	// pattern as fingerCfgPacked so the per-tick read is a single relaxed load).
 	void SetInputHealthConfig(const protocol::InputHealthConfig &cfg);
 	protocol::InputHealthConfig GetInputHealthConfig() const;
+	void SetInputHealthCompensation(const protocol::InputHealthCompensationEntry &entry);
+	bool LookupInputHealthCompensation(
+		uint64_t serial_hash,
+		const std::string &path,
+		protocol::InputHealthCompensationEntry &out) const;
+	void ClearInputHealthCompensation(uint64_t serial_hash);
 
 	// Reset accumulated input-health stats for one device. Stage 1A stores the
 	// most recent reset request and logs it; Stage 1C+ wires this into the
@@ -250,6 +258,8 @@ private:
 	// runtime invariant is enforced by a static_assert in the .cpp where the
 	// packing happens.
 	mutable std::atomic<uint64_t>     inputHealthCfgPacked{0};
+	mutable std::shared_mutex inputHealthCompMutex;
+	std::unordered_map<uint64_t, std::unordered_map<std::string, protocol::InputHealthCompensationEntry>> inputHealthComp;
 
 	// Look up an existing fallback slot by system name (linear scan + memcmp).
 	// Returns nullptr if no slot is currently occupied with that name.

@@ -4,10 +4,22 @@
 #include "InputHealthHookInjector.h"
 #include "InterfaceHookInjector.h"
 #include "IsometryTransform.h"
+#include "inputhealth/SerialHash.h"
 #include "MotionGate.h"  // ClassifyCorrection / StillFloor — option 3 per user 2026-05-04
 
 #include <cstring>
 #include <random>
+
+namespace {
+
+std::string InputHealthPathString(const char *path)
+{
+	size_t n = 0;
+	while (n < protocol::INPUTHEALTH_PATH_LEN && path[n] != '\0') ++n;
+	return std::string(path, path + n);
+}
+
+} // namespace
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -798,6 +810,64 @@ protocol::InputHealthConfig ServerTrackedDeviceProvider::GetInputHealthConfig() 
 	protocol::InputHealthConfig cfg{};
 	std::memcpy(&cfg, &packed, sizeof(cfg));
 	return cfg;
+}
+
+void ServerTrackedDeviceProvider::SetInputHealthCompensation(const protocol::InputHealthCompensationEntry &entry)
+{
+	const std::string path = InputHealthPathString(entry.path);
+	if (entry.device_serial_hash == 0 || path.empty()) return;
+
+	std::unique_lock<std::shared_mutex> lk(inputHealthCompMutex);
+	auto serialIt = inputHealthComp.find(entry.device_serial_hash);
+	if (!entry.enabled) {
+		if (serialIt != inputHealthComp.end()) {
+			serialIt->second.erase(path);
+			if (serialIt->second.empty()) inputHealthComp.erase(serialIt);
+		}
+		LOG("[inputhealth] SetInputHealthCompensation: serial_hash=0x%016llx path='%s' enabled=0",
+			(unsigned long long)entry.device_serial_hash, path.c_str());
+		return;
+	}
+
+	inputHealthComp[entry.device_serial_hash][path] = entry;
+	LOG("[inputhealth] SetInputHealthCompensation: serial_hash=0x%016llx path='%s' enabled=1 kind=%u offset=%.5f dead=%.5f debounce_us=%u",
+		(unsigned long long)entry.device_serial_hash,
+		path.c_str(),
+		(unsigned)entry.kind,
+		entry.learned_rest_offset,
+		entry.learned_deadzone_radius,
+		(unsigned)entry.learned_debounce_us);
+}
+
+bool ServerTrackedDeviceProvider::LookupInputHealthCompensation(
+	uint64_t serial_hash,
+	const std::string &path,
+	protocol::InputHealthCompensationEntry &out) const
+{
+	if (serial_hash == 0 || path.empty()) return false;
+	std::shared_lock<std::shared_mutex> lk(inputHealthCompMutex, std::try_to_lock);
+	if (!lk.owns_lock()) return false;
+
+	auto serialIt = inputHealthComp.find(serial_hash);
+	if (serialIt == inputHealthComp.end()) return false;
+	auto pathIt = serialIt->second.find(path);
+	if (pathIt == serialIt->second.end()) return false;
+	out = pathIt->second;
+	return out.enabled != 0;
+}
+
+void ServerTrackedDeviceProvider::ClearInputHealthCompensation(uint64_t serial_hash)
+{
+	std::unique_lock<std::shared_mutex> lk(inputHealthCompMutex);
+	if (serial_hash == inputhealth::kSerialHashAllDevices) {
+		const size_t count = inputHealthComp.size();
+		inputHealthComp.clear();
+		LOG("[inputhealth] ClearInputHealthCompensation: all serials cleared=%zu", count);
+		return;
+	}
+	const size_t erased = inputHealthComp.erase(serial_hash);
+	LOG("[inputhealth] ClearInputHealthCompensation: serial_hash=0x%016llx erased=%zu",
+		(unsigned long long)serial_hash, erased);
 }
 
 void ServerTrackedDeviceProvider::HandleResetInputHealthStats(const protocol::InputHealthResetStats &req)

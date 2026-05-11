@@ -121,6 +121,8 @@ struct ComponentStats
 
 	// Latest boolean state, for transition detection.
 	bool     last_boolean = false;
+	bool     pending_state = false;
+	uint64_t last_committed_us = 0;
 };
 
 // Reset everything except the path / role / partner pairing. Used by
@@ -139,6 +141,8 @@ inline void ComponentStatsResetPassive(ComponentStats &s)
 	s.last_update_us = 0;
 	s.press_count    = 0;
 	s.last_boolean   = false;
+	s.pending_state  = false;
+	s.last_committed_us = 0;
 	s.first_update_logged = false;
 }
 

@@ -8,6 +8,8 @@
 #include "inputhealth/SerialHash.h"
 
 #include <atomic>
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <exception>
@@ -190,6 +192,56 @@ static constexpr double kRestMinDecay = 3.2e-8;
 // without including mid-pull samples.
 static constexpr float kRestThreshold = 0.1f;
 
+static float ClampFloat(float value, float lo, float hi)
+{
+	return std::max(lo, std::min(value, hi));
+}
+
+static bool PathContainsTrigger(const std::string &path)
+{
+	return path.find("trigger") != std::string::npos ||
+		path.find("Trigger") != std::string::npos;
+}
+
+static float ApplyScalarCompensation(
+	ServerTrackedDeviceProvider *driver,
+	const protocol::InputHealthCompensationEntry &entry,
+	const inputhealth::ComponentStats &stats,
+	float rawValue,
+	float partnerValue,
+	bool hasPartner,
+	const std::string &partnerPath)
+{
+	float value = rawValue - entry.learned_rest_offset;
+	const bool isStick = entry.kind == protocol::InputHealthCompStickX ||
+		entry.kind == protocol::InputHealthCompStickY;
+	const bool isTrigger = PathContainsTrigger(stats.path);
+
+	if (isStick && entry.learned_deadzone_radius > 0.0f) {
+		float radialPartner = partnerValue;
+		if (hasPartner && stats.device_serial_hash != 0 && !partnerPath.empty()) {
+			protocol::InputHealthCompensationEntry partnerEntry{};
+			if (driver->LookupInputHealthCompensation(stats.device_serial_hash, partnerPath, partnerEntry)) {
+				radialPartner = partnerValue - partnerEntry.learned_rest_offset;
+			}
+		}
+		const float radius = hasPartner
+			? std::sqrt(value * value + radialPartner * radialPartner)
+			: std::fabs(value);
+		if (radius < entry.learned_deadzone_radius) value = 0.0f;
+	}
+
+	if (isTrigger && (entry.learned_trigger_min > 0.0f || entry.learned_trigger_max > 0.0f)) {
+		const float maxValue = entry.learned_trigger_max > 0.0f ? entry.learned_trigger_max : 1.0f;
+		const float range = std::max(0.001f, maxValue - entry.learned_trigger_min);
+		value = (value - entry.learned_trigger_min) / range;
+	}
+
+	if (isStick) return ClampFloat(value, -1.0f, 1.0f);
+	if (isTrigger) return ClampFloat(value, 0.0f, 1.0f);
+	return value;
+}
+
 // =============================================================================
 // Detours.
 // =============================================================================
@@ -241,12 +293,14 @@ static vr::EVRInputError DetourUpdateBooleanComponent(
 	double fTimeOffset)
 {
 	InterfaceHooks::DetourScope _scope;
+	bool swallow = false;
 
 	auto *driver = g_driver.load(std::memory_order_acquire);
 	if (driver) {
 		try {
 			const auto cfg = driver->GetInputHealthConfig();
 			if (cfg.master_enabled) {
+				const uint64_t now_us = QpcMicros();
 				if (!g_componentMutex.try_lock()) {
 					LogHotPathLockSkip("boolean");
 				} else {
@@ -254,9 +308,26 @@ static vr::EVRInputError DetourUpdateBooleanComponent(
 					auto it = g_componentStats.find(ulComponent);
 					if (it != g_componentStats.end()) {
 						auto &s = it->second;
-						if (bNewValue && !s.last_boolean) ++s.press_count;
-						s.last_boolean    = bNewValue;
-						s.last_update_us  = QpcMicros();
+						if (bNewValue != s.pending_state) {
+							if (bNewValue) ++s.press_count;
+							s.pending_state = bNewValue;
+						}
+						if (!cfg.diagnostics_only && s.device_serial_hash != 0) {
+							protocol::InputHealthCompensationEntry entry{};
+							if (driver->LookupInputHealthCompensation(s.device_serial_hash, s.path, entry)
+								&& entry.kind == protocol::InputHealthCompBoolean
+								&& entry.learned_debounce_us != 0
+								&& bNewValue != s.last_boolean
+								&& s.last_committed_us != 0
+								&& now_us - s.last_committed_us < entry.learned_debounce_us) {
+								swallow = true;
+							}
+						}
+						if (!swallow && bNewValue != s.last_boolean) {
+							s.last_boolean = bNewValue;
+							s.last_committed_us = now_us;
+						}
+						s.last_update_us  = now_us;
 						if (!s.first_update_logged) {
 							s.first_update_logged = true;
 							LOG("[inputhealth] first UpdateBooleanComponent on handle=%llu path='%s' value=%d",
@@ -266,12 +337,15 @@ static vr::EVRInputError DetourUpdateBooleanComponent(
 				}
 			}
 		} catch (const std::exception &e) {
+			swallow = false;
 			LogHotPathObservationError("boolean", e.what());
 		} catch (...) {
+			swallow = false;
 			LogHotPathObservationError("boolean", "non-std exception");
 		}
 	}
 
+	if (swallow) return vr::VRInputError_None;
 	return UpdateBooleanHook.originalFunc(_this, ulComponent, bNewValue, fTimeOffset);
 }
 
@@ -415,6 +489,24 @@ static vr::EVRInputError DetourUpdateScalarComponent(
 							LOG("[inputhealth] first UpdateScalarComponent on handle=%llu path='%s' value=%.4f role=%d",
 								(unsigned long long)ulComponent, s.path.c_str(),
 								fNewValue, (int)s.axis_role);
+						}
+
+						if (!cfg.diagnostics_only && s.device_serial_hash != 0) {
+							protocol::InputHealthCompensationEntry entry{};
+							if (driver->LookupInputHealthCompensation(s.device_serial_hash, s.path, entry)
+								&& entry.kind != protocol::InputHealthCompBoolean) {
+								float partnerValue = 0.0f;
+								bool hasPartner = false;
+								std::string partnerPath;
+								auto pit = g_componentStats.find(s.partner_handle);
+								if (pit != g_componentStats.end()) {
+									partnerValue = pit->second.last_value;
+									hasPartner = true;
+									partnerPath = pit->second.path;
+								}
+								fNewValue = ApplyScalarCompensation(driver, entry, s,
+									fNewValue, partnerValue, hasPartner, partnerPath);
+							}
 						}
 					}
 				}
@@ -566,6 +658,7 @@ void ApplyResetRequest(const protocol::InputHealthResetStats &req)
 	const bool match_all = (req.device_serial_hash == kSerialHashAllDevices);
 	int matched = 0;
 	int reset_passive_count = 0;
+	int reset_curves_count = 0;
 	{
 		std::lock_guard<std::mutex> lk(g_componentMutex);
 		for (auto &s : snap) {
@@ -580,16 +673,20 @@ void ApplyResetRequest(const protocol::InputHealthResetStats &req)
 				ComponentStatsResetPassive(it->second);
 				++reset_passive_count;
 			}
-			// reset_active and reset_curves: nothing to do until the
-			// wizard-prior and compensation-curve state lives in this
-			// subsystem (Stage 3 / Stage 4 territory).
 		}
 	}
 
-	LOG("[inputhealth] HandleResetInputHealthStats: serial_hash=0x%016llx passive=%d active=%d curves=%d -> matched=%d passive_reset=%d total_components=%zu",
+	if (req.reset_curves) {
+		if (auto *driver = g_driver.load(std::memory_order_acquire)) {
+			driver->ClearInputHealthCompensation(req.device_serial_hash);
+			reset_curves_count = 1;
+		}
+	}
+
+	LOG("[inputhealth] HandleResetInputHealthStats: serial_hash=0x%016llx passive=%d active=%d curves=%d -> matched=%d passive_reset=%d curves_reset=%d total_components=%zu",
 		(unsigned long long)req.device_serial_hash,
 		(int)req.reset_passive, (int)req.reset_active, (int)req.reset_curves,
-		matched, reset_passive_count, snap.size());
+		matched, reset_passive_count, reset_curves_count, snap.size());
 }
 
 void TryInstallScalarBooleanHooks(void *iface)

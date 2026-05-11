@@ -128,12 +128,16 @@ namespace protocol
 	// the bump is again purely to force paired install. The driver-side hooks on
 	// UpdateBooleanComponent / UpdateScalarComponent and the snapshot publish
 	// path land in subsequent commits behind this protocol baseline.
-	const uint32_t Version = 10;
+	// v11 (2026-05-11): adds RequestSetInputHealthCompensation. Snapshot shmem
+	// stays unchanged; compensation is overlay -> driver only.
+	const uint32_t Version = 11;
 
 	// Maximum length of a tracking-system-name string (e.g., "lighthouse", "oculus",
 	// "Pimax Crystal HMD"). 32 bytes is more than enough for known systems and keeps
 	// the IPC payload compact.
 	static const size_t MaxTrackingSystemNameLen = 32;
+
+	static const uint32_t INPUTHEALTH_PATH_LEN = 64;
 
 	enum RequestType
 	{
@@ -156,6 +160,7 @@ namespace protocol
 		// the wizard's "start fresh" button and by the user's "Don't ask
 		// for this device" / "I just got new hardware" flows.
 		RequestResetInputHealthStats,
+		RequestSetInputHealthCompensation,
 	};
 
 	enum ResponseType
@@ -371,6 +376,29 @@ namespace protocol
 		uint8_t  _reserved[5];
 	};
 
+	enum InputHealthCompensationKind : uint8_t
+	{
+		InputHealthCompScalarSingle = 0,
+		InputHealthCompStickX       = 1,
+		InputHealthCompStickY       = 2,
+		InputHealthCompBoolean      = 3,
+	};
+
+	struct InputHealthCompensationEntry
+	{
+		uint64_t device_serial_hash;
+		char     path[INPUTHEALTH_PATH_LEN];
+		uint8_t  kind;
+		uint8_t  enabled;
+		uint8_t  _pad[2];
+		float    learned_rest_offset;
+		float    learned_trigger_min;
+		float    learned_trigger_max;
+		float    learned_deadzone_radius;
+		uint16_t learned_debounce_us;
+		uint16_t _reserved;
+	};
+
 	struct Request
 	{
 		RequestType type;
@@ -392,12 +420,16 @@ namespace protocol
 			// ignored RequestType in the dispatcher's default branch.
 			InputHealthConfig setInputHealthConfig;
 			InputHealthResetStats resetInputHealthStats;
+			InputHealthCompensationEntry setInputHealthCompensation;
 		};
 
 		Request() : type(RequestInvalid), setAlignmentSpeedParams({}) { }
 		Request(RequestType type) : type(type), setAlignmentSpeedParams({}) { }
 		Request(AlignmentSpeedParams params) : type(RequestType::RequestSetAlignmentSpeedParams), setAlignmentSpeedParams(params) {}
 	};
+
+	static_assert(sizeof(InputHealthCompensationEntry) <= sizeof(SetDeviceTransform),
+		"InputHealthCompensationEntry must not grow Request");
 
 	struct Response
 	{
@@ -723,11 +755,6 @@ namespace protocol
 	// stability is enforced here -- the source-side enum could change
 	// independently as long as both sides recompile against this header.
 	static const uint32_t INPUTHEALTH_POLAR_BIN_COUNT = 36;
-
-	// Maximum component path length stored in the snapshot (bytes, includes
-	// trailing NUL). OpenVR component paths are short (e.g. "/input/joystick/x");
-	// 64 is generous.
-	static const uint32_t INPUTHEALTH_PATH_LEN = 64;
 
 	// Maximum number of component slots in the shmem table. 256 covers any
 	// realistic OpenVR topology (Index Knuckles publishes ~50 components per

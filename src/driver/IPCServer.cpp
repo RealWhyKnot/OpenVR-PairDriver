@@ -87,6 +87,16 @@ void IPCServer::HandleRequest(const protocol::Request &request, protocol::Respon
 		}
 		break;
 
+	case protocol::RequestSetInputHealthCompensation:
+		if (mask & pairdriver::kFeatureInputHealth) {
+			driver->SetInputHealthCompensation(request.setInputHealthCompensation);
+			response.type = protocol::ResponseSuccess;
+		} else {
+			LOG("IPC[%s]: rejected RequestSetInputHealthCompensation; pipe not bound to inputhealth", pipeName.c_str());
+			response.type = protocol::ResponseInvalid;
+		}
+		break;
+
 	default:
 		LOG("IPC[%s]: invalid request type %d", pipeName.c_str(), request.type);
 		response.type = protocol::ResponseInvalid;
