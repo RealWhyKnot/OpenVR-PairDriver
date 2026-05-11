@@ -61,17 +61,17 @@ constexpr double kLargeStillFloor  = 0.90;
 
 // Classify a pending correction by its magnitude.
 //
-// Per the 2026-05-04 user spec, classification uses the OR of pos/rot:
-//   - Large takes precedence: catastrophic correction in EITHER axis means
-//     we need to snap regardless of the other.
-//   - Tiny: noise in EITHER axis — even a 2 mm pos correction is treated as
-//     noise-region if its rot delta is sub-arc-minute (matches user's
-//     "1 mm OR 0.05°" wording).
+//   - Large takes precedence: a catastrophic correction in EITHER axis means
+//     we need to snap regardless of the other (OR).
+//   - Tiny requires BOTH axes to be in the noise region (AND). A 4 mm pure
+//     translation with no rotation is a real correction, not noise, and
+//     should not be dampened to the Tiny still-floor just because the
+//     rot delta is sub-arc-minute. This supersedes the earlier OR rule.
 constexpr Regime ClassifyCorrection(double posDeltaMm, double rotDeltaDeg) {
     if (posDeltaMm > kLargeMinPosMm || rotDeltaDeg > kLargeMinRotDeg) {
         return Regime::Large;
     }
-    if (posDeltaMm <= kTinyMaxPosMm || rotDeltaDeg <= kTinyMaxRotDeg) {
+    if (posDeltaMm <= kTinyMaxPosMm && rotDeltaDeg <= kTinyMaxRotDeg) {
         return Regime::Tiny;
     }
     return Regime::Normal;
