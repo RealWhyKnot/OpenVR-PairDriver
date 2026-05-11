@@ -22,6 +22,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - Rename driver entry files to OpenVR-PairDriver (0.1.0.0) (52e05f7)
 - **inputhealth:** Split hook injector by concern (0.1.0.0) (102a28c)
 - **repo:** Become the glue that composes feature modules into one binary (0.1.0.0) (9d493f7)
+- **deps:** Bump SpaceCalibrator submodule for BuildStamp.h fix (0.1.0.0) (e3ef50a)
 
 ### Fixed
 - **inputhealth:** Make observation fail open (0.1.0.0) (a01318b)
