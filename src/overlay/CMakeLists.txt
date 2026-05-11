@@ -82,6 +82,8 @@ add_executable(OpenVRPairOverlay WIN32
 	ProfileStoreBase.h
 	ShellContext.cpp
 	ShellContext.h
+	ShellFooter.cpp
+	ShellFooter.h
 	main.cpp)
 
 set_target_properties(OpenVRPairOverlay PROPERTIES OUTPUT_NAME "OpenVR-Pair")
