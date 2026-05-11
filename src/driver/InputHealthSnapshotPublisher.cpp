@@ -1,6 +1,6 @@
 #include "InputHealthSnapshotPublisher.h"
 
-#include "InputHealthHookInjector.h"
+#include "InputHealthSnapshotStaging.h"
 #include "Logging.h"
 #include "Protocol.h"
 

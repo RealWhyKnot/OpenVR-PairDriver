@@ -1,23 +1,19 @@
 #include "InputHealthHookInjector.h"
 
 #include "Hooking.h"
+#include "InputHealthCompensation.h"
+#include "InputHealthComponentRegistry.h"
+#include "InputHealthObservation.h"
+#include "InputHealthState.h"
 #include "InterfaceHookInjector.h"   // InterfaceHooks::DetourScope
 #include "Logging.h"
 #include "ServerTrackedDeviceProvider.h"
-#include "inputhealth/PerComponentStats.h"
-#include "inputhealth/SerialHash.h"
 
 #include <atomic>
-#include <algorithm>
-#include <cmath>
 #include <cstdint>
-#include <cstring>
 #include <exception>
 #include <mutex>
 #include <string>
-#include <unordered_map>
-#include <utility>
-#include <vector>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -39,9 +35,9 @@
 // the snapshots.
 // =============================================================================
 
-static std::atomic<ServerTrackedDeviceProvider *> g_driver{nullptr};
-static std::unordered_map<vr::VRInputComponentHandle_t, inputhealth::ComponentStats> g_componentStats;
-static std::mutex                                                                    g_componentMutex;
+std::atomic<ServerTrackedDeviceProvider *> g_driver{nullptr};
+std::unordered_map<vr::VRInputComponentHandle_t, inputhealth::ComponentStats> g_componentStats;
+std::mutex                                                                    g_componentMutex;
 
 // One-shot install / probe log markers.
 static std::atomic<bool> g_firstCreateBoolLogged{false};
@@ -110,42 +106,6 @@ static uint64_t QpcMicros()
 	return static_cast<uint64_t>(t.QuadPart * 1000000ULL / s_freq.QuadPart);
 }
 
-// Find an existing scalar handle whose path stem and complementary axis role
-// match the new handle. Caller must hold g_componentMutex. Returns 0 (the
-// invalid component handle) if no partner exists yet.
-static vr::VRInputComponentHandle_t FindStickPartner_locked(
-	const std::string &stem,
-	inputhealth::AxisRole this_role,
-	vr::PropertyContainerHandle_t container)
-{
-	const inputhealth::AxisRole want = (this_role == inputhealth::AxisRole::StickX)
-		? inputhealth::AxisRole::StickY
-		: inputhealth::AxisRole::StickX;
-	for (auto &kv : g_componentStats) {
-		auto &peer = kv.second;
-		if (!peer.is_scalar) continue;
-		if (peer.axis_role != want) continue;
-		if (peer.container_handle != container) continue;
-		// Match on stem: peer's path with its trailing /x or /y stripped.
-		std::string peerStem;
-		(void)inputhealth::ClassifyAxisRole(peer.path, peerStem);
-		if (peerStem == stem) return kv.first;
-	}
-	return 0;
-}
-
-static uint64_t ResolveSerialHash(vr::PropertyContainerHandle_t container)
-{
-	if (container == vr::k_ulInvalidPropertyContainer) return 0;
-	auto *helpers = vr::VRProperties();
-	if (!helpers) return 0;
-
-	vr::ETrackedPropertyError err = vr::TrackedProp_Success;
-	std::string serial = helpers->GetStringProperty(container, vr::Prop_SerialNumber_String, &err);
-	if (err != vr::TrackedProp_Success || serial.empty()) return 0;
-	return inputhealth::Fnv1a64(serial);
-}
-
 static void LogHotPathLockSkip(const char *kind)
 {
 	const uint64_t n = g_hotPathLockSkips.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -163,83 +123,6 @@ static void LogHotPathObservationError(const char *kind, const char *what)
 			kind, what ? what : "unknown",
 			(unsigned long long)n);
 	}
-}
-
-// Tunable Page-Hinkley parameters. Defaults from the research doc Q3:
-// alpha set so the EWMA half-life is ~30s at 250 Hz observation rate;
-// delta = 0.002 (1/5 of a typical "still considered rest" envelope of 0.01);
-// lambda = 0.05 (gives ARL ~10 hours for a step shift of 0.01, per Q8).
-// These are starting points; per-category retuning lands once the snapshot
-// publish path exists and field telemetry can be sampled.
-static inline inputhealth::PageHinkleyParams DefaultDriftParams()
-{
-	inputhealth::PageHinkleyParams p;
-	p.alpha               = 0.0001;  // ~30s half-life at 250 Hz: 1 - exp(-1/(250*30)) ~ 1.3e-4
-	p.delta               = 0.002;
-	p.lambda              = 0.05;
-	p.one_sided_positive  = false;
-	return p;
-}
-
-// Asymmetric rolling-min decay: 24-hour half-life at 250 Hz works out to
-// alpha ~3.2e-8 per sample. Picks up genuinely stuck triggers without being
-// fooled by transient near-zero crossings.
-static constexpr double kRestMinDecay = 3.2e-8;
-
-// Threshold below which a sample is treated as "in rest" for the purposes
-// of updating rest_min. Conservative: 0.1 catches the rest band of typical
-// analog triggers (factory-stocked rest near 0.0, noise typically <0.05)
-// without including mid-pull samples.
-static constexpr float kRestThreshold = 0.1f;
-
-static float ClampFloat(float value, float lo, float hi)
-{
-	return std::max(lo, std::min(value, hi));
-}
-
-static bool PathContainsTrigger(const std::string &path)
-{
-	return path.find("trigger") != std::string::npos ||
-		path.find("Trigger") != std::string::npos;
-}
-
-static float ApplyScalarCompensation(
-	ServerTrackedDeviceProvider *driver,
-	const protocol::InputHealthCompensationEntry &entry,
-	const inputhealth::ComponentStats &stats,
-	float rawValue,
-	float partnerValue,
-	bool hasPartner,
-	const std::string &partnerPath)
-{
-	float value = rawValue - entry.learned_rest_offset;
-	const bool isStick = entry.kind == protocol::InputHealthCompStickX ||
-		entry.kind == protocol::InputHealthCompStickY;
-	const bool isTrigger = PathContainsTrigger(stats.path);
-
-	if (isStick && entry.learned_deadzone_radius > 0.0f) {
-		float radialPartner = partnerValue;
-		if (hasPartner && stats.device_serial_hash != 0 && !partnerPath.empty()) {
-			protocol::InputHealthCompensationEntry partnerEntry{};
-			if (driver->LookupInputHealthCompensation(stats.device_serial_hash, partnerPath, partnerEntry)) {
-				radialPartner = partnerValue - partnerEntry.learned_rest_offset;
-			}
-		}
-		const float radius = hasPartner
-			? std::sqrt(value * value + radialPartner * radialPartner)
-			: std::fabs(value);
-		if (radius < entry.learned_deadzone_radius) value = 0.0f;
-	}
-
-	if (isTrigger && (entry.learned_trigger_min > 0.0f || entry.learned_trigger_max > 0.0f)) {
-		const float maxValue = entry.learned_trigger_max > 0.0f ? entry.learned_trigger_max : 1.0f;
-		const float range = std::max(0.001f, maxValue - entry.learned_trigger_min);
-		value = (value - entry.learned_trigger_min) / range;
-	}
-
-	if (isStick) return ClampFloat(value, -1.0f, 1.0f);
-	if (isTrigger) return ClampFloat(value, 0.0f, 1.0f);
-	return value;
 }
 
 // =============================================================================
@@ -269,14 +152,7 @@ static vr::EVRInputError DetourCreateBooleanComponent(
 		&& pchName)
 	{
 		try {
-			std::lock_guard<std::mutex> lk(g_componentMutex);
-			auto &stats = g_componentStats[*pHandle];
-			stats.path             = pchName;
-			stats.is_boolean       = true;
-			stats.is_scalar        = false;
-			stats.first_update_logged = false;
-			stats.container_handle = ulContainer;
-			stats.device_serial_hash = ResolveSerialHash(ulContainer);
+			inputhealth::RegisterBooleanComponent(*pHandle, ulContainer, pchName);
 		} catch (const std::exception &e) {
 			LogHotPathObservationError("boolean-create", e.what());
 		} catch (...) {
@@ -308,18 +184,11 @@ static vr::EVRInputError DetourUpdateBooleanComponent(
 					auto it = g_componentStats.find(ulComponent);
 					if (it != g_componentStats.end()) {
 						auto &s = it->second;
-						if (bNewValue != s.pending_state) {
-							if (bNewValue) ++s.press_count;
-							s.pending_state = bNewValue;
-						}
+						inputhealth::ObserveBooleanSample(s, bNewValue);
 						if (!cfg.diagnostics_only && s.device_serial_hash != 0) {
 							protocol::InputHealthCompensationEntry entry{};
 							if (driver->LookupInputHealthCompensation(s.device_serial_hash, s.path, entry)
-								&& entry.kind == protocol::InputHealthCompBoolean
-								&& entry.learned_debounce_us != 0
-								&& bNewValue != s.last_boolean
-								&& s.last_committed_us != 0
-								&& now_us - s.last_committed_us < entry.learned_debounce_us) {
+								&& inputhealth::ShouldSwallowBooleanUpdate(s, entry, bNewValue, now_us)) {
 								swallow = true;
 							}
 						}
@@ -375,32 +244,7 @@ static vr::EVRInputError DetourCreateScalarComponent(
 		&& pchName)
 	{
 		try {
-			std::string path = pchName;
-			std::string stem;
-			const auto role = inputhealth::ClassifyAxisRole(path, stem);
-
-			std::lock_guard<std::mutex> lk(g_componentMutex);
-			auto &stats = g_componentStats[*pHandle];
-			stats.path             = std::move(path);
-			stats.is_boolean       = false;
-			stats.is_scalar        = true;
-			stats.first_update_logged = false;
-			stats.axis_role        = role;
-			stats.partner_handle   = 0;
-			stats.container_handle = ulContainer;
-			stats.device_serial_hash = ResolveSerialHash(ulContainer);
-
-			if (role == inputhealth::AxisRole::StickX || role == inputhealth::AxisRole::StickY) {
-				vr::VRInputComponentHandle_t partner = FindStickPartner_locked(stem, role, ulContainer);
-				if (partner != 0) {
-					stats.partner_handle                       = partner;
-					g_componentStats[partner].partner_handle   = *pHandle;
-					LOG("[inputhealth] paired stick axes: stem='%s' xHandle=%llu yHandle=%llu",
-						stem.c_str(),
-						role == inputhealth::AxisRole::StickX ? (unsigned long long)*pHandle  : (unsigned long long)partner,
-						role == inputhealth::AxisRole::StickY ? (unsigned long long)*pHandle  : (unsigned long long)partner);
-				}
-			}
+			inputhealth::RegisterScalarComponent(*pHandle, ulContainer, pchName);
 		} catch (const std::exception &e) {
 			LogHotPathObservationError("scalar-create", e.what());
 		} catch (...) {
@@ -431,58 +275,11 @@ static vr::EVRInputError DetourUpdateScalarComponent(
 					auto it = g_componentStats.find(ulComponent);
 					if (it != g_componentStats.end()) {
 						auto &s = it->second;
+						inputhealth::ComponentStats *partnerStats = nullptr;
+						auto pit = g_componentStats.find(s.partner_handle);
+						if (pit != g_componentStats.end()) partnerStats = &pit->second;
 
-						// Stage 1D per-tick budget keeps to the items the research
-						// doc Q6 admits onto the detour thread: ring push (skipped
-						// for now -- ring-buffer wiring lands with the snapshot
-						// path), Welford update, Page-Hinkley update, EWMA-min
-						// update for rest samples, polar bin update for paired
-						// axes. Heavy work (geometric median, hull rebuild, SPRT)
-						// runs on the background worker (also not yet wired).
-						WelfordUpdate(s.welford, static_cast<double>(fNewValue));
-						if (!s.scalar_range_initialized) {
-							s.scalar_range_initialized = true;
-							s.observed_min = fNewValue;
-							s.observed_max = fNewValue;
-						} else {
-							if (fNewValue < s.observed_min) s.observed_min = fNewValue;
-							if (fNewValue > s.observed_max) s.observed_max = fNewValue;
-						}
-						const auto driftParams = DefaultDriftParams();
-						PageHinkleyUpdate(s.ph_drift, driftParams, static_cast<double>(fNewValue));
-						if (fNewValue < kRestThreshold && fNewValue > -kRestThreshold) {
-							EWMARollingMinUpdate(s.rest_min,
-								static_cast<double>(fNewValue),
-								kRestMinDecay);
-						}
-
-						// Polar histogram is owned by the X-side of a paired stick.
-						// On a Y-side update, look up the X partner and update its
-						// histogram with the (partner_last_x, this_y) tuple. On an
-						// X-side update, do the same with this value as x and the
-						// partner's last value as y. The histogram thus integrates
-						// samples from both axes against a slight (~1 tick) cross-
-						// axis lag, which is well below the 10 deg bin resolution.
-						if (s.axis_role == inputhealth::AxisRole::StickX) {
-							float partner_y = 0.0f;
-							auto pit = g_componentStats.find(s.partner_handle);
-							if (pit != g_componentStats.end()) partner_y = pit->second.last_value;
-							PolarHistogramUpdate(s.polar,
-								static_cast<double>(fNewValue),
-								static_cast<double>(partner_y),
-								now_us, kRestMinDecay);
-						} else if (s.axis_role == inputhealth::AxisRole::StickY) {
-							auto pit = g_componentStats.find(s.partner_handle);
-							if (pit != g_componentStats.end() && pit->second.axis_role == inputhealth::AxisRole::StickX) {
-								PolarHistogramUpdate(pit->second.polar,
-									static_cast<double>(pit->second.last_value),
-									static_cast<double>(fNewValue),
-									now_us, kRestMinDecay);
-							}
-						}
-
-						s.last_value     = fNewValue;
-						s.last_update_us = now_us;
+						inputhealth::ObserveScalarSample(s, fNewValue, now_us, partnerStats);
 
 						if (!s.first_update_logged) {
 							s.first_update_logged = true;
@@ -498,13 +295,12 @@ static vr::EVRInputError DetourUpdateScalarComponent(
 								float partnerValue = 0.0f;
 								bool hasPartner = false;
 								std::string partnerPath;
-								auto pit = g_componentStats.find(s.partner_handle);
-								if (pit != g_componentStats.end()) {
-									partnerValue = pit->second.last_value;
+								if (partnerStats) {
+									partnerValue = partnerStats->last_value;
 									hasPartner = true;
-									partnerPath = pit->second.path;
+									partnerPath = partnerStats->path;
 								}
-								fNewValue = ApplyScalarCompensation(driver, entry, s,
+								fNewValue = inputhealth::ApplyScalarCompensation(driver, entry, s,
 									fNewValue, partnerValue, hasPartner, partnerPath);
 							}
 						}
@@ -550,143 +346,6 @@ void Shutdown()
 	// g_driver intentionally NOT cleared (same rationale as skeletal
 	// subsystem: ServerTrackedDeviceProvider outlives the DLL across reload).
 	LOG("[inputhealth] Shutdown: subsystem disarmed");
-}
-
-// Helper: copy one ComponentStats into the wire-format snapshot body. The
-// caller owns the body; this function only translates fields. Path is
-// truncated to fit INPUTHEALTH_PATH_LEN-1 bytes; OpenVR component paths are
-// well under that in practice.
-static void FillSnapshotBody(
-	vr::VRInputComponentHandle_t handle,
-	const ComponentStats &s,
-	protocol::InputHealthSnapshotBody &out)
-{
-	std::memset(&out, 0, sizeof(out));
-
-	out.handle             = static_cast<uint64_t>(handle);
-	out.container_handle   = static_cast<uint64_t>(s.container_handle);
-	out.device_serial_hash = s.device_serial_hash;
-	out.partner_handle     = static_cast<uint64_t>(s.partner_handle);
-
-	const size_t plen = std::min<size_t>(s.path.size(),
-		protocol::INPUTHEALTH_PATH_LEN - 1);
-	if (plen > 0) std::memcpy(out.path, s.path.data(), plen);
-	out.path[plen] = '\0';
-
-	out.is_scalar              = s.is_scalar  ? 1 : 0;
-	out.is_boolean             = s.is_boolean ? 1 : 0;
-	out.axis_role              = static_cast<uint8_t>(s.axis_role);
-	out.ph_initialized         = s.ph_drift.initialized        ? 1 : 0;
-	out.ph_triggered           = s.ph_drift.triggered          ? 1 : 0;
-	out.ph_triggered_positive  = s.ph_drift.triggered_positive ? 1 : 0;
-	out.rest_min_initialized   = s.rest_min.initialized        ? 1 : 0;
-	out.last_boolean           = s.last_boolean ? 1 : 0;
-
-	out.welford_count = s.welford.count;
-	out.welford_mean  = s.welford.mean;
-	out.welford_m2    = s.welford.m2;
-
-	out.ph_mean = s.ph_drift.mean;
-	out.ph_pos  = s.ph_drift.ph_pos;
-	out.ph_neg  = s.ph_drift.ph_neg;
-
-	out.rest_min = s.rest_min.value;
-
-	out.last_value     = s.last_value;
-	out.last_update_us = s.last_update_us;
-	out.press_count    = s.press_count;
-	out.scalar_range_initialized = s.scalar_range_initialized ? 1 : 0;
-	out.observed_min   = s.observed_min;
-	out.observed_max   = s.observed_max;
-
-	for (int i = 0; i < protocol::INPUTHEALTH_POLAR_BIN_COUNT && i < kBinCount; ++i) {
-		out.polar_max_r[i]          = s.polar.bins[i].max_r;
-		out.polar_count[i]          = s.polar.bins[i].count;
-		out.polar_last_update_us[i] = s.polar.bins[i].last_update_us;
-	}
-	out.polar_global_max_r = s.polar.global_max_r;
-}
-
-void StageSnapshots(std::vector<StagedSnapshot> &out)
-{
-	std::lock_guard<std::mutex> lk(g_componentMutex);
-	out.reserve(out.size() + g_componentStats.size());
-	for (const auto &kv : g_componentStats) {
-		StagedSnapshot rec;
-		rec.handle = static_cast<uint64_t>(kv.first);
-		FillSnapshotBody(kv.first, kv.second, rec.body);
-		out.push_back(rec);
-	}
-}
-
-void ApplyResetRequest(const protocol::InputHealthResetStats &req)
-{
-	// Pass 1: snapshot (handle, container, cached_hash) without holding the
-	// mutex during the VRProperties query. The detour path is a hot path so
-	// we keep the critical section short.
-	struct Snapshot {
-		vr::VRInputComponentHandle_t handle;
-		vr::PropertyContainerHandle_t container;
-		uint64_t                      hash;
-	};
-	std::vector<Snapshot> snap;
-	{
-		std::lock_guard<std::mutex> lk(g_componentMutex);
-		snap.reserve(g_componentStats.size());
-		for (const auto &kv : g_componentStats) {
-			snap.push_back({kv.first, kv.second.container_handle, kv.second.device_serial_hash});
-		}
-	}
-
-	// Pass 2: lazily resolve any unresolved hashes via VRProperties.
-	auto *helpers = vr::VRProperties();
-	for (auto &s : snap) {
-		if (s.hash != 0) continue;
-		if (s.container == vr::k_ulInvalidPropertyContainer) continue;
-		if (!helpers) continue;
-		vr::ETrackedPropertyError err = vr::TrackedProp_Success;
-		std::string serial = helpers->GetStringProperty(s.container, vr::Prop_SerialNumber_String, &err);
-		if (err == vr::TrackedProp_Success && !serial.empty()) {
-			s.hash = Fnv1a64(serial);
-		}
-	}
-
-	// Pass 3: re-take the mutex, fold resolved hashes back in, and reset
-	// matching entries. Entries that were added or removed between passes
-	// are handled correctly: we only act on handles still present in the
-	// map.
-	const bool match_all = (req.device_serial_hash == kSerialHashAllDevices);
-	int matched = 0;
-	int reset_passive_count = 0;
-	int reset_curves_count = 0;
-	{
-		std::lock_guard<std::mutex> lk(g_componentMutex);
-		for (auto &s : snap) {
-			auto it = g_componentStats.find(s.handle);
-			if (it == g_componentStats.end()) continue;
-			if (s.hash != 0 && it->second.device_serial_hash == 0) {
-				it->second.device_serial_hash = s.hash;
-			}
-			if (!match_all && it->second.device_serial_hash != req.device_serial_hash) continue;
-			++matched;
-			if (req.reset_passive) {
-				ComponentStatsResetPassive(it->second);
-				++reset_passive_count;
-			}
-		}
-	}
-
-	if (req.reset_curves) {
-		if (auto *driver = g_driver.load(std::memory_order_acquire)) {
-			driver->ClearInputHealthCompensation(req.device_serial_hash);
-			reset_curves_count = 1;
-		}
-	}
-
-	LOG("[inputhealth] HandleResetInputHealthStats: serial_hash=0x%016llx passive=%d active=%d curves=%d -> matched=%d passive_reset=%d curves_reset=%d total_components=%zu",
-		(unsigned long long)req.device_serial_hash,
-		(int)req.reset_passive, (int)req.reset_active, (int)req.reset_curves,
-		matched, reset_passive_count, reset_curves_count, snap.size());
 }
 
 void TryInstallScalarBooleanHooks(void *iface)

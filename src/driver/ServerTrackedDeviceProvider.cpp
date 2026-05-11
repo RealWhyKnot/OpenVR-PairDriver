@@ -1,9 +1,9 @@
 #include "ServerTrackedDeviceProvider.h"
 #include "FeatureFlags.h"
-#include "Logging.h"
-#include "InputHealthHookInjector.h"
+#include "InputHealthSnapshotStaging.h"
 #include "InterfaceHookInjector.h"
 #include "IsometryTransform.h"
+#include "Logging.h"
 #include "inputhealth/SerialHash.h"
 #include "MotionGate.h"  // ClassifyCorrection / StillFloor — option 3 per user 2026-05-04
 
