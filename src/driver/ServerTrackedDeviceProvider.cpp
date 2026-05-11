@@ -1,14 +1,23 @@
 #include "ServerTrackedDeviceProvider.h"
 #include "FeatureFlags.h"
-#include "InputHealthSnapshotStaging.h"
 #include "InterfaceHookInjector.h"
 #include "IsometryTransform.h"
 #include "Logging.h"
 #include "inputhealth/SerialHash.h"
-#include "MotionGate.h"  // ClassifyCorrection / StillFloor — option 3 per user 2026-05-04
+#include "MotionGate.h"  // ClassifyCorrection / StillFloor -- option 3 per user 2026-05-04
 
 #include <cstring>
 #include <random>
+
+#ifndef OPENVR_PAIR_HAS_CALIBRATION_DRIVER
+#define OPENVR_PAIR_HAS_CALIBRATION_DRIVER 0
+#endif
+#ifndef OPENVR_PAIR_HAS_SMOOTHING_DRIVER
+#define OPENVR_PAIR_HAS_SMOOTHING_DRIVER 0
+#endif
+#ifndef OPENVR_PAIR_HAS_INPUTHEALTH_DRIVER
+#define OPENVR_PAIR_HAS_INPUTHEALTH_DRIVER 0
+#endif
 
 namespace {
 
@@ -40,6 +49,29 @@ vr::EVRInitError ServerTrackedDeviceProvider::Init(vr::IVRDriverContext *pDriver
 	// the driver runs inert -- still loaded by SteamVR, but no hooks, no IPC,
 	// no shmem.
 	featureFlags = pairdriver::DetectFeatureFlags();
+
+	activeModules.clear();
+	DriverModuleContext moduleContext{this, pDriverContext, featureFlags};
+	auto activateModule = [&](std::unique_ptr<DriverModule> module) {
+		if (!module) return;
+		if ((featureFlags & module->FeatureMask()) == 0) return;
+		if (!module->Init(moduleContext)) {
+			LOG("Driver module '%s' failed to initialize", module->Name());
+			return;
+		}
+		LOG("Driver module '%s' initialized", module->Name());
+		activeModules.push_back(std::move(module));
+	};
+
+#if OPENVR_PAIR_HAS_CALIBRATION_DRIVER
+	activateModule(calibration::CreateDriverModule());
+#endif
+#if OPENVR_PAIR_HAS_SMOOTHING_DRIVER
+	activateModule(smoothing::CreateDriverModule());
+#endif
+#if OPENVR_PAIR_HAS_INPUTHEALTH_DRIVER
+	activateModule(inputhealth::CreateDriverModule());
+#endif
 
 	if (featureFlags & pairdriver::kFeatureCalibration) {
 		// Calibration setup: speed thresholds, pose telemetry shmem, IPC pipe.
@@ -119,11 +151,41 @@ void ServerTrackedDeviceProvider::Cleanup()
 	//   3. shmem.Close -- safe now because no detour can read it.
 	//   4. VR_CLEANUP_SERVER_DRIVER_CONTEXT -- finalize.
 	DisableHooks();
+	for (auto it = activeModules.rbegin(); it != activeModules.rend(); ++it) {
+		(*it)->Shutdown();
+	}
+	activeModules.clear();
 	if (inputHealthServer) inputHealthServer->Stop();
 	if (smoothingServer) smoothingServer->Stop();
 	if (calibrationServer) calibrationServer->Stop();
 	shmem.Close();
 	VR_CLEANUP_SERVER_DRIVER_CONTEXT();
+}
+
+bool ServerTrackedDeviceProvider::HandleIpcRequest(
+	uint32_t featureMask,
+	const protocol::Request &request,
+	protocol::Response &response)
+{
+	if (request.type == protocol::RequestHandshake) {
+		response.type = protocol::ResponseHandshake;
+		response.protocol.version = protocol::Version;
+		return true;
+	}
+
+	for (auto &module : activeModules) {
+		if ((module->FeatureMask() & featureMask) == 0) continue;
+		if (module->HandleRequest(request, response)) return true;
+	}
+
+	return false;
+}
+
+void ServerTrackedDeviceProvider::OnGetGenericInterface(const char *pchInterface, void *iface)
+{
+	for (auto &module : activeModules) {
+		module->OnGetGenericInterface(pchInterface, iface);
+	}
 }
 
 namespace {
@@ -190,13 +252,13 @@ ServerTrackedDeviceProvider::DeltaSize ServerTrackedDeviceProvider::GetTransform
 	const auto target_pose = target * deviceWorldPose;
 
 	// Use .norm() (linear metres) here, NOT .squaredNorm(). The thresholds
-	// (alignmentSpeedParams.thr_trans_*) are populated everywhere — driver
-	// Init(), overlay defaults, the user-tunable UI sliders — as linear
+	// (alignmentSpeedParams.thr_trans_*) are populated everywhere -- driver
+	// Init(), overlay defaults, the user-tunable UI sliders -- as linear
 	// distances in metres. Comparing squaredNorm against linear thresholds
 	// silently squared the gate: a 20 mm threshold required a 141 mm offset
 	// to trip, so currentRate was permanently TINY (= 0.05 lerp) for any
 	// realistic continuous-cal correction. The runtime cost of the sqrt is
-	// well under 1 µs per call; this hot path runs at ~kHz, the math budget
+	// well under 1 us per call; this hot path runs at ~kHz, the math budget
 	// is microseconds. .angularDistance() is already linear (radians).
 	const auto trans_delta = (src_pose.translation - target_pose.translation).norm();
 	const auto rot_delta = src_pose.rotation.angularDistance(target_pose.rotation);
@@ -226,7 +288,7 @@ double ServerTrackedDeviceProvider::GetTransformRate(DeltaSize delta) const {
 /**
  * Smoothly interpolates the device active transform towards the target transform.
  * When recalibrateOnMovement is enabled on the slot, the lerp rate is gated by
- * per-frame motion magnitude — a stationary device gets ~zero blend progress, a
+ * per-frame motion magnitude -- a stationary device gets ~zero blend progress, a
  * moving one gets the full time-based rate. This hides calibration shifts in
  * the user's natural motion instead of producing visible "phantom drift" while
  * the user is still (a noticeable issue when lying down).
@@ -234,7 +296,7 @@ double ServerTrackedDeviceProvider::GetTransformRate(DeltaSize delta) const {
  * 2026-05-04: per option 3 of feedback_calibration_blending_request.md, the
  * gate is now max(motionGate, regimeFloor) where regimeFloor depends on the
  * pending correction size (|targetTransform - transform|). This unfreezes
- * the lerp when the user is still — small corrections drift slowly (10%
+ * the lerp when the user is still -- small corrections drift slowly (10%
  * floor), normal corrections at moderate speed (50%), and catastrophic
  * corrections (post-stall, Quest re-localization) effectively snap (90%).
  * Previously the lerp froze at 0 when the user wasn't moving and they had
@@ -254,7 +316,7 @@ void ServerTrackedDeviceProvider::BlendTransform(DeviceTransform& device, const 
 	if (device.recalibrateOnMovement) {
 		if (!device.blendMotionInitialized) {
 			// First frame since the flag was enabled: capture the reference pose
-			// and skip blend progress this tick — there's nothing to compute a
+			// and skip blend progress this tick -- there's nothing to compute a
 			// meaningful delta against yet, and we don't want a stale prior pose
 			// (from before re-enable) to produce a giant phantom motion gate.
 			device.lastBlendWorldPos = deviceWorldPose.translation;
@@ -264,7 +326,7 @@ void ServerTrackedDeviceProvider::BlendTransform(DeviceTransform& device, const 
 		} else {
 			// Per-frame motion magnitude in normalized units. kPosFullScale and
 			// kRotFullScale are the per-frame deltas at which the gate is fully
-			// open — small typical-jitter motions produce partial gate, sustained
+			// open -- small typical-jitter motions produce partial gate, sustained
 			// natural motion produces gate=1 (full time-based rate).
 			constexpr double kPosFullScale = 0.005;   // 5 mm
 			constexpr double kRotFullScale = 0.0175;  // ~1 deg in radians
@@ -273,7 +335,7 @@ void ServerTrackedDeviceProvider::BlendTransform(DeviceTransform& device, const 
 			const double motionGate = std::min(1.0,
 				std::max(devPosDelta / kPosFullScale, devRotDelta / kRotFullScale));
 
-			// Correction magnitude — how far the active transform has to travel
+			// Correction magnitude -- how far the active transform has to travel
 			// to reach the target. Distinct from the device-motion deltas above:
 			// motionGate asks "is the user moving?", regime asks "how big is the
 			// pending shift?". Convert to mm + degrees to match the thresholds
@@ -287,7 +349,7 @@ void ServerTrackedDeviceProvider::BlendTransform(DeviceTransform& device, const 
 			const double regimeFloor = spacecal::motiongate::StillFloor(regime);
 
 			// Effective gate: take whichever is higher. When moving, motionGate
-			// dominates (≈1); when still, regimeFloor sets the minimum so the
+			// dominates (approx1); when still, regimeFloor sets the minimum so the
 			// lerp doesn't freeze at 0.
 			const double effectiveGate = std::max(motionGate, regimeFloor);
 			lerp *= effectiveGate;
@@ -296,7 +358,7 @@ void ServerTrackedDeviceProvider::BlendTransform(DeviceTransform& device, const 
 			device.lastBlendWorldRot = deviceWorldPose.rotation;
 		}
 	} else if (device.blendMotionInitialized) {
-		// Flag was on but is now off — reset so re-enabling later doesn't see a
+		// Flag was on but is now off -- reset so re-enabling later doesn't see a
 		// stale prior pose.
 		device.blendMotionInitialized = false;
 	}
@@ -355,7 +417,7 @@ void ServerTrackedDeviceProvider::SetDeviceTransform(const protocol::SetDeviceTr
 		while (len < maxLen && newTransform.target_system[len] != '\0') ++len;
 		deviceSystem[newTransform.openVRID].assign(newTransform.target_system, len);
 		// Mark the lookup state so the pose-hook thread doesn't re-query the
-		// property store for this slot. Empty target_system means "unknown" —
+		// property store for this slot. Empty target_system means "unknown" --
 		// fall back to NotTried so the lazy lookup can still try (and then
 		// throttle if it keeps failing).
 		lookupState[newTransform.openVRID] = (len > 0) ? LookupState::Cached : LookupState::NotTried;
@@ -527,7 +589,7 @@ bool ServerTrackedDeviceProvider::HandleDevicePoseUpdated(uint32_t openVRID, vr:
 	// against the IPC server thread's SetDeviceTransform / SetTrackingSystemFallback
 	// handlers. IPC writes are infrequent (once per ScanAndApplyProfile tick at
 	// most ~1 Hz) and brief, so contention is negligible at the hook's hundreds-of-
-	// pose-updates-per-second cadence. Held for the full hook body — simpler than
+	// pose-updates-per-second cadence. Held for the full hook body -- simpler than
 	// copy-out-under-lock + math-without-lock + write-back. shmem.SetPose writes
 	// to a different-process ring buffer (overlay reader) so the mutex doesn't
 	// synchronize that path; the lock only matters for in-process state.
@@ -536,7 +598,7 @@ bool ServerTrackedDeviceProvider::HandleDevicePoseUpdated(uint32_t openVRID, vr:
 	// can briefly release the mutex around its `vr::VRProperties()` call. That
 	// OpenVR API call lands inside SteamVR and can block for milliseconds on
 	// the runtime's own state lock. Holding our mutex across it stalled every
-	// other tracked device's pose-update path — the documented cause of "70+
+	// other tracked device's pose-update path -- the documented cause of "70+
 	// HMD stalls per session" the user reported. We re-acquire before touching
 	// any in-process state again.
 	std::unique_lock<std::mutex> lock(stateMutex);
@@ -607,7 +669,7 @@ bool ServerTrackedDeviceProvider::HandleDevicePoseUpdated(uint32_t openVRID, vr:
 	}
 	else
 	{
-		// Per-ID transform is disabled. Check for a per-tracking-system fallback —
+		// Per-ID transform is disabled. Check for a per-tracking-system fallback --
 		// this lets a tracker that connected after the last overlay scan inherit
 		// the calibrated offset on its very first pose update.
 		//
@@ -633,7 +695,7 @@ bool ServerTrackedDeviceProvider::HandleDevicePoseUpdated(uint32_t openVRID, vr:
 				// can block for milliseconds. Drop our mutex for the duration
 				// so other devices' pose-update paths aren't stalled behind us
 				// (the cause of the user's reported 70+ HMD stalls/session).
-				// We've already read everything we needed under the lock —
+				// We've already read everything we needed under the lock --
 				// the in-process state we care about (deviceSystem[],
 				// lookupState[], transforms[]) is untouched between unlock and
 				// the re-lock below; reads/writes of `tf` earlier in the
@@ -870,7 +932,3 @@ void ServerTrackedDeviceProvider::ClearInputHealthCompensation(uint64_t serial_h
 		(unsigned long long)serial_hash, erased);
 }
 
-void ServerTrackedDeviceProvider::HandleResetInputHealthStats(const protocol::InputHealthResetStats &req)
-{
-	inputhealth::ApplyResetRequest(req);
-}

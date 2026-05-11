@@ -5,102 +5,9 @@
 
 void IPCServer::HandleRequest(const protocol::Request &request, protocol::Response &response)
 {
-	// Each request type is gated by the feature mask the pipe was opened
-	// under. RequestHandshake works on every pipe so an overlay can probe
-	// the protocol version regardless of which feature it cares about.
-	const uint32_t mask = featureMask;
-
-	switch (request.type)
-	{
-	case protocol::RequestHandshake:
-		response.type = protocol::ResponseHandshake;
-		response.protocol.version = protocol::Version;
-		break;
-
-	case protocol::RequestSetDeviceTransform:
-		if (mask & pairdriver::kFeatureCalibration) {
-			driver->SetDeviceTransform(request.setDeviceTransform);
-			response.type = protocol::ResponseSuccess;
-		} else {
-			LOG("IPC[%s]: rejected RequestSetDeviceTransform; pipe not bound to calibration", pipeName.c_str());
-			response.type = protocol::ResponseInvalid;
-		}
-		break;
-
-	case protocol::RequestDebugOffset:
-		if (mask & pairdriver::kFeatureCalibration) {
-			driver->HandleApplyRandomOffset();
-			response.type = protocol::ResponseSuccess;
-		} else {
-			LOG("IPC[%s]: rejected RequestDebugOffset; pipe not bound to calibration", pipeName.c_str());
-			response.type = protocol::ResponseInvalid;
-		}
-		break;
-
-	case protocol::RequestSetAlignmentSpeedParams:
-		if (mask & pairdriver::kFeatureCalibration) {
-			driver->HandleSetAlignmentSpeedParams(request.setAlignmentSpeedParams);
-			response.type = protocol::ResponseSuccess;
-		} else {
-			LOG("IPC[%s]: rejected RequestSetAlignmentSpeedParams; pipe not bound to calibration", pipeName.c_str());
-			response.type = protocol::ResponseInvalid;
-		}
-		break;
-
-	case protocol::RequestSetTrackingSystemFallback:
-		if (mask & pairdriver::kFeatureCalibration) {
-			driver->SetTrackingSystemFallback(request.setTrackingSystemFallback);
-			response.type = protocol::ResponseSuccess;
-		} else {
-			LOG("IPC[%s]: rejected RequestSetTrackingSystemFallback; pipe not bound to calibration", pipeName.c_str());
-			response.type = protocol::ResponseInvalid;
-		}
-		break;
-
-	case protocol::RequestSetFingerSmoothing:
-		if (mask & pairdriver::kFeatureSmoothing) {
-			driver->SetFingerSmoothingConfig(request.setFingerSmoothing);
-			response.type = protocol::ResponseSuccess;
-		} else {
-			LOG("IPC[%s]: rejected RequestSetFingerSmoothing; pipe not bound to smoothing", pipeName.c_str());
-			response.type = protocol::ResponseInvalid;
-		}
-		break;
-
-	case protocol::RequestSetInputHealthConfig:
-		if (mask & pairdriver::kFeatureInputHealth) {
-			driver->SetInputHealthConfig(request.setInputHealthConfig);
-			response.type = protocol::ResponseSuccess;
-		} else {
-			LOG("IPC[%s]: rejected RequestSetInputHealthConfig; pipe not bound to inputhealth", pipeName.c_str());
-			response.type = protocol::ResponseInvalid;
-		}
-		break;
-
-	case protocol::RequestResetInputHealthStats:
-		if (mask & pairdriver::kFeatureInputHealth) {
-			driver->HandleResetInputHealthStats(request.resetInputHealthStats);
-			response.type = protocol::ResponseSuccess;
-		} else {
-			LOG("IPC[%s]: rejected RequestResetInputHealthStats; pipe not bound to inputhealth", pipeName.c_str());
-			response.type = protocol::ResponseInvalid;
-		}
-		break;
-
-	case protocol::RequestSetInputHealthCompensation:
-		if (mask & pairdriver::kFeatureInputHealth) {
-			driver->SetInputHealthCompensation(request.setInputHealthCompensation);
-			response.type = protocol::ResponseSuccess;
-		} else {
-			LOG("IPC[%s]: rejected RequestSetInputHealthCompensation; pipe not bound to inputhealth", pipeName.c_str());
-			response.type = protocol::ResponseInvalid;
-		}
-		break;
-
-	default:
+	if (!driver->HandleIpcRequest(featureMask, request, response)) {
 		LOG("IPC[%s]: invalid request type %d", pipeName.c_str(), request.type);
 		response.type = protocol::ResponseInvalid;
-		break;
 	}
 }
 
@@ -196,7 +103,7 @@ void IPCServer::RunThread(IPCServer *_this)
 				if (!success)
 				{
 					LOG("GetOverlappedResult failed in RunThread. Error: %d", GetLastError());
-					// Close the still-pending pipe handle before bailing —
+					// Close the still-pending pipe handle before bailing --
 					// neither CreatePipeInstance (which would have taken
 					// ownership) nor any other path runs on this branch.
 					// Without this, the kernel handle leaks every time the

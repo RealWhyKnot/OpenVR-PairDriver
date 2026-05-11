@@ -54,6 +54,32 @@ find_library(OPENVR_LIBRARIES
 	PATH_SUFFIXES win${PLATFORM}
 	NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
 
+set(OPENVR_PAIRDRIVER_ROOT ${CMAKE_SOURCE_DIR} CACHE PATH "OpenVR-PairDriver checkout" FORCE)
+set(OPENVR_PAIR_FEATURE_LIBS "")
+set(OPENVR_PAIR_FEATURE_DEFINES "")
+
+set(OPENVR_PAIR_INPUTHEALTH_DIR "${CMAKE_SOURCE_DIR}/features/OpenVR-InputHealth")
+set(OPENVR_PAIR_SMOOTHING_DIR "${CMAKE_SOURCE_DIR}/features/OpenVR-Smoothing")
+set(OPENVR_PAIR_CALIBRATION_DIR "${CMAKE_SOURCE_DIR}/features/OpenVR-SpaceCalibrator")
+
+if(EXISTS "${OPENVR_PAIR_INPUTHEALTH_DIR}/src/driver/CMakeLists.txt")
+	add_subdirectory("${OPENVR_PAIR_INPUTHEALTH_DIR}/src/driver" "${CMAKE_BINARY_DIR}/features/inputhealth-driver")
+	list(APPEND OPENVR_PAIR_FEATURE_LIBS openvr_pair_feature_inputhealth_driver)
+	list(APPEND OPENVR_PAIR_FEATURE_DEFINES OPENVR_PAIR_HAS_INPUTHEALTH_DRIVER=1)
+endif()
+
+if(EXISTS "${OPENVR_PAIR_SMOOTHING_DIR}/src/driver/CMakeLists.txt")
+	add_subdirectory("${OPENVR_PAIR_SMOOTHING_DIR}/src/driver" "${CMAKE_BINARY_DIR}/features/smoothing-driver")
+	list(APPEND OPENVR_PAIR_FEATURE_LIBS openvr_pair_feature_smoothing_driver)
+	list(APPEND OPENVR_PAIR_FEATURE_DEFINES OPENVR_PAIR_HAS_SMOOTHING_DRIVER=1)
+endif()
+
+if(EXISTS "${OPENVR_PAIR_CALIBRATION_DIR}/src/driver/CMakeLists.txt")
+	add_subdirectory("${OPENVR_PAIR_CALIBRATION_DIR}/src/driver" "${CMAKE_BINARY_DIR}/features/calibration-driver")
+	list(APPEND OPENVR_PAIR_FEATURE_LIBS openvr_pair_feature_calibration_driver)
+	list(APPEND OPENVR_PAIR_FEATURE_DEFINES OPENVR_PAIR_HAS_CALIBRATION_DRIVER=1)
+endif()
+
 file(GLOB_RECURSE SOURCES_DRIVER ${CMAKE_SOURCE_DIR}/src/driver "*.c" "*.h" "*.hpp" "*.cpp")
 file(GLOB_RECURSE SOURCES_COMMON ${CMAKE_SOURCE_DIR}/src/common "*.h" "*.hpp")
 
@@ -80,7 +106,8 @@ target_include_directories(OpenVRPairDriver
 
 target_link_libraries(OpenVRPairDriver
 	PRIVATE ${OPENVR_LIBRARIES}
-	PRIVATE minhook)
+	PRIVATE minhook
+	PRIVATE ${OPENVR_PAIR_FEATURE_LIBS})
 
 # Pull the build version stamp from version.txt at the repo root and inject
 # it as PAIRDRIVER_VERSION_STRING. build.ps1 writes this file for every build
@@ -92,6 +119,7 @@ target_compile_definitions(OpenVRPairDriver
 	PRIVATE NOMINMAX
 	PRIVATE UNICODE
 	PRIVATE OPENVRPAIRDRIVER_EXPORTS
+	PRIVATE ${OPENVR_PAIR_FEATURE_DEFINES}
 	PRIVATE "PAIRDRIVER_VERSION_STRING=\"${PAIRDRIVER_VERSION_STAMP}\"")
 
 set_target_properties(OpenVRPairDriver PROPERTIES OUTPUT_NAME ${DRIVER_NAME})

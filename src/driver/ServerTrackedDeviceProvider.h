@@ -2,6 +2,7 @@
 
 #define EIGEN_MPL2_ONLY
 
+#include "DriverModule.h"
 #include "IPCServer.h"
 #include "Protocol.h"
 #include "IsometryTransform.h"
@@ -18,6 +19,7 @@
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 
 class ServerTrackedDeviceProvider : public vr::IServerTrackedDeviceProvider
@@ -58,6 +60,8 @@ public:
 	void HandleSetAlignmentSpeedParams(const protocol::AlignmentSpeedParams params) {
 		alignmentSpeedParams = params;
 	}
+	bool HandleIpcRequest(uint32_t featureMask, const protocol::Request &request, protocol::Response &response);
+	void OnGetGenericInterface(const char *pchInterface, void *iface);
 
 	// Finger-smoothing config cache. Written by IPCServer when the overlay
 	// pushes a new config (rare -- only on UI changes). Read by the
@@ -81,11 +85,6 @@ public:
 		protocol::InputHealthCompensationEntry &out) const;
 	void ClearInputHealthCompensation(uint64_t serial_hash);
 
-	// Reset accumulated input-health stats for one device. Stage 1A stores the
-	// most recent reset request and logs it; Stage 1C+ wires this into the
-	// per-device-serial stat tables maintained by the background worker.
-	void HandleResetInputHealthStats(const protocol::InputHealthResetStats &req);
-
 private:
 	// Per-feature IPC servers, allocated only when the matching enable_*.flag
 	// is detected at Init. Any may be null in feature-disabled builds; the
@@ -93,6 +92,7 @@ private:
 	std::unique_ptr<IPCServer> calibrationServer;
 	std::unique_ptr<IPCServer> smoothingServer;
 	std::unique_ptr<IPCServer> inputHealthServer;
+	std::vector<std::unique_ptr<DriverModule>> activeModules;
 
 	// Pose telemetry shmem, only created when calibration is enabled. The
 	// calibration overlay opens this segment to read driver-side pose
@@ -134,7 +134,7 @@ private:
 		// When true, BlendTransform's lerp toward targetTransform only advances
 		// proportional to detected per-frame motion magnitude. A stationary user
 		// (lying down, sitting still) sees no calibration drift even when the
-		// math has updated — the catch-up happens during the user's next motion,
+		// math has updated -- the catch-up happens during the user's next motion,
 		// hidden by the natural movement instead of looking like a phantom body
 		// shift. Default false; the overlay enables it per-device when the
 		// recalibrateOnMovement profile setting is on.
@@ -230,8 +230,8 @@ private:
 	protocol::AlignmentSpeedParams alignmentSpeedParams;
 
 	// Finger-smoothing config packed into an atomic uint64_t. Single-writer
-	// (IPC thread, on user UI input — rare) / many-reader (skeletal hook
-	// detour, ~340 Hz/hand × 2 hands = 680 Hz). The previous version used
+	// (IPC thread, on user UI input -- rare) / many-reader (skeletal hook
+	// detour, ~340 Hz/hand x 2 hands = 680 Hz). The previous version used
 	// a mutex around the 6-byte struct; for a hot read at 680 Hz that's
 	// gratuitous contention on a tiny POD that fits in a single cache line.
 	// More importantly any future LOG() drift inside the critical section

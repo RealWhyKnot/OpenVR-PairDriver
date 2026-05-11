@@ -4,3 +4,12 @@
 [submodule "lib/minhook"]
 	path = lib/minhook
 	url = https://github.com/bdunderscore/minhook.git
+[submodule "features/OpenVR-InputHealth"]
+	path = features/OpenVR-InputHealth
+	url = ../OpenVR-InputHealth
+[submodule "features/OpenVR-Smoothing"]
+	path = features/OpenVR-Smoothing
+	url = ../OpenVR-Smoothing
+[submodule "features/OpenVR-SpaceCalibrator"]
+	path = features/OpenVR-SpaceCalibrator
+	url = ../OpenVR-SpaceCalibrator
