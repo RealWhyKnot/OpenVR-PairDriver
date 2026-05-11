@@ -55,6 +55,12 @@ public:
 	ServerTrackedDeviceProvider() = default;
 	void SetDeviceTransform(const protocol::SetDeviceTransform &newTransform);
 	void SetTrackingSystemFallback(const protocol::SetTrackingSystemFallback &newFallback);
+	// v12: per-device pose-prediction push from the Smoothing overlay. Updates
+	// the predictionSmoothness + recalibrateOnMovement slots without touching
+	// transform/scale/enabled. SetDeviceTransform from SC stopped writing those
+	// slots when this message was introduced, so the two overlays no longer
+	// clobber each other.
+	void SetDevicePrediction(const protocol::SetDevicePrediction &cfg);
 	bool HandleDevicePoseUpdated(uint32_t openVRID, vr::DriverPose_t &pose);
 	void HandleApplyRandomOffset();
 	void HandleSetAlignmentSpeedParams(const protocol::AlignmentSpeedParams params) {

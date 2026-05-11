@@ -428,12 +428,16 @@ void ServerTrackedDeviceProvider::SetDeviceTransform(const protocol::SetDeviceTr
 	// calls will re-evaluate fallback eligibility.
 	tf.fallbackActive = false;
 
-	// Prediction-smoothness strength (0..100). Cheap to update unconditionally;
-	// HandleDevicePoseUpdated reads it once per pose update.
-	tf.predictionSmoothness = newTransform.predictionSmoothness;
+	// predictionSmoothness used to be copied from newTransform here. From
+	// Protocol v12 (2026-05-11) onward that slot is owned by the Smoothing
+	// overlay and updated exclusively through SetDevicePrediction (see below).
+	// The field still travels inside SetDeviceTransform for wire
+	// compatibility, but the driver ignores it here so SC's per-frame
+	// calibration pushes can't clobber what Smoothing last wrote.
 
-	// Motion-gated blend. When the flag transitions off, reset the captured
-	// previous-frame pose so a future re-enable doesn't see a stale delta.
+	// Motion-gated blend stays owned by SC -- the lerp it gates is the
+	// calibration blend, not pose prediction. SetDeviceTransform remains the
+	// authoritative path for this flag.
 	if (tf.recalibrateOnMovement && !newTransform.recalibrateOnMovement) {
 		tf.blendMotionInitialized = false;
 	}
@@ -528,6 +532,20 @@ ServerTrackedDeviceProvider::FallbackSlot* ServerTrackedDeviceProvider::AcquireF
 	return nullptr;
 }
 
+void ServerTrackedDeviceProvider::SetDevicePrediction(const protocol::SetDevicePrediction &cfg)
+{
+	if (cfg.openVRID >= vr::k_unMaxTrackedDeviceCount) return;
+
+	std::lock_guard<std::mutex> lock(stateMutex);
+
+	auto &tf = transforms[cfg.openVRID];
+
+	// Cheap to write unconditionally; HandleDevicePoseUpdated reads it once
+	// per pose update for the velocity / acceleration / poseTimeOffset
+	// scaling. 0 = pose untouched, 100 = predictor fully defeated.
+	tf.predictionSmoothness = cfg.predictionSmoothness;
+}
+
 void ServerTrackedDeviceProvider::SetTrackingSystemFallback(const protocol::SetTrackingSystemFallback& newFallback)
 {
 	size_t maxLen = sizeof newFallback.system_name;
@@ -569,7 +587,10 @@ void ServerTrackedDeviceProvider::SetTrackingSystemFallback(const protocol::SetT
 	slot->tf.transform.rotation = Eigen::Quaterniond(
 		newFallback.rotation.w, newFallback.rotation.x, newFallback.rotation.y, newFallback.rotation.z);
 	slot->tf.scale = newFallback.scale;
-	slot->tf.predictionSmoothness = newFallback.predictionSmoothness;
+	// predictionSmoothness from the fallback path is ignored from
+	// Protocol v12 onward (2026-05-11). Per-device prediction is now
+	// owned by the Smoothing overlay's SetDevicePrediction; the
+	// FallbackTransform field stays in the struct for wire compat.
 	slot->tf.recalibrateOnMovement = newFallback.recalibrateOnMovement;
 }
 
@@ -654,7 +675,19 @@ bool ServerTrackedDeviceProvider::HandleDevicePoseUpdated(uint32_t openVRID, vr:
 		shmem.IncrementTelemetry(protocol::DriverPoseShmem::TELEMETRY_QUASH_APPLY);
 	} else if (tf.enabled)
 	{
-		// @TODO: Offset, scale, and re-offset
+		// Scale is applied to driver-local position before the calibration
+		// transform (rotation + translation) is composed in below. This
+		// scales positions around the driver-local origin, which is correct
+		// only when the calibration anchor coincides with that origin --
+		// true for the common case of a 1.0 scale, increasingly wrong as
+		// scale diverges from 1.0 and the user's playspace shifts away
+		// from the driver origin. A proper fix needs an explicit anchor
+		// field on DeviceTransform: subtract anchor, scale, add anchor
+		// back. The upstream SC driver carries the same limitation
+		// (compare git history at e0d9eaf); the right anchor semantics
+		// (calibration reference position? per-device rest pose?) were
+		// never specified, so leave the naive form in place until that
+		// decision is made rather than guess and break tracking.
 		pose.vecPosition[0] *= tf.scale;
 		pose.vecPosition[1] *= tf.scale;
 		pose.vecPosition[2] *= tf.scale;

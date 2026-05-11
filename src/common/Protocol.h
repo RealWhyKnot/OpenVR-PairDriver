@@ -130,7 +130,16 @@ namespace protocol
 	// path land in subsequent commits behind this protocol baseline.
 	// v11 (2026-05-11): adds RequestSetInputHealthCompensation. Snapshot shmem
 	// stays unchanged; compensation is overlay -> driver only.
-	const uint32_t Version = 11;
+	// v12 (2026-05-11): adds RequestSetDevicePrediction. Splits per-device
+	// pose-prediction smoothness off SetDeviceTransform so the Smoothing
+	// overlay can own those fields independently of SpaceCalibrator's
+	// transform/scale writes. Driver continues to accept the
+	// predictionSmoothness / recalibrateOnMovement fields inside
+	// SetDeviceTransform for wire compatibility but ignores them; only
+	// SetDevicePrediction updates those slots now. Required so SC's
+	// per-frame calibration pushes don't clobber the Smoothing plugin's
+	// per-tracker prediction settings.
+	const uint32_t Version = 12;
 
 	// Maximum length of a tracking-system-name string (e.g., "lighthouse", "oculus",
 	// "Pimax Crystal HMD"). 32 bytes is more than enough for known systems and keeps
@@ -161,6 +170,12 @@ namespace protocol
 		// for this device" / "I just got new hardware" flows.
 		RequestResetInputHealthStats,
 		RequestSetInputHealthCompensation,
+		// v12 (2026-05-11): per-device pose-prediction smoothness push from
+		// the Smoothing overlay. Driver updates predictionSmoothness +
+		// recalibrateOnMovement on the addressed device's transform slot
+		// without touching transform / scale / enabled. Lets Smoothing own
+		// these fields while SpaceCalibrator keeps owning calibration.
+		RequestSetDevicePrediction,
 	};
 
 	enum ResponseType
@@ -306,6 +321,24 @@ namespace protocol
 		uint8_t  _reserved;
 	};
 
+	// POD payload for RequestSetDevicePrediction. Sent by the Smoothing overlay
+	// (v12+) to set per-device pose-prediction suppression without touching the
+	// calibration transform that SpaceCalibrator owns. The driver updates
+	// transforms[openVRID].predictionSmoothness and nothing else; transform,
+	// scale, enabled, quash, target_system, recalibrateOnMovement stay where
+	// SC last left them.
+	//
+	// predictionSmoothness still travels inside SetDeviceTransform for v11
+	// wire compatibility, but the driver ignores it there from v12 onward;
+	// only this message updates the slot. recalibrateOnMovement is a
+	// calibration-blend concept and stays owned by SetDeviceTransform.
+	struct SetDevicePrediction
+	{
+		uint32_t openVRID;
+		uint8_t  predictionSmoothness;   // 0..100, see SetDeviceTransform notes
+		uint8_t  _reserved[3];           // pad to 8-byte alignment; must be 0
+	};
+
 	// Per-tracking-system fallback transform. Applied to any device whose tracking
 	// system matches `system_name` and that doesn't currently have an active per-ID
 	// transform. Lets newly connected trackers inherit the calibrated offset
@@ -421,6 +454,9 @@ namespace protocol
 			InputHealthConfig setInputHealthConfig;
 			InputHealthResetStats resetInputHealthStats;
 			InputHealthCompensationEntry setInputHealthCompensation;
+			// v12: per-device prediction smoothness from the Smoothing overlay.
+			// Much smaller than SetDeviceTransform so the union does not grow.
+			SetDevicePrediction setDevicePrediction;
 		};
 
 		Request() : type(RequestInvalid), setAlignmentSpeedParams({}) { }
