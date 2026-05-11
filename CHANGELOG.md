@@ -15,6 +15,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **driver:** Seed InputHealth subsystem (Stage 1A scaffold) (0.1.0.0) (26c42a4)
 - **driver:** Split per-feature pipes and gate subsystems on enable_*.flag (d731767)
 - **inputhealth:** Share snapshot diagnostics helpers (0.1.0.0) (5f2d770)
+- **inputhealth:** Per-component learned compensation push (0.1.0.0) (a32e1c4)
 
 ### Changed
 - Rename export macro to OPENVRPAIRDRIVER_EXPORTS (c7df7e6)
