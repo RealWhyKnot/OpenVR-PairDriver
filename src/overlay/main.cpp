@@ -68,10 +68,11 @@ void DrawTransientStatus(openvr_pair::overlay::ShellContext &context)
 void DrawModules(openvr_pair::overlay::ShellContext &context,
 	std::vector<std::unique_ptr<openvr_pair::overlay::FeaturePlugin>> &plugins)
 {
-	// Sticky "intent" so the checkbox does not snap back to the disk state
-	// during the brief window between the user accepting the UAC prompt and
-	// the file appearing on disk. Cleared once the disk state catches up.
-	static std::map<std::string, bool> pending;
+	// Visual intent: the value the checkbox should display while the
+	// elevated helper is in flight. Cleared as soon as ShellContext is no
+	// longer tracking a pending toggle for this flag (process exited, with
+	// or without writing the file).
+	static std::map<std::string, bool> wanted;
 
 	ImGui::TextUnformatted("Modules");
 	ImGui::TextDisabled("Toggle features on or off. Each change pops a UAC prompt; SteamVR picks the new state up the next time it loads the driver.");
@@ -86,13 +87,14 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 		for (auto &plugin : plugins) {
 			const bool installed = plugin->IsInstalled(context);
 			const std::string key = plugin->FlagFileName();
+			const bool isPending = context.IsTogglePending(key.c_str());
 
-			auto it = pending.find(key);
-			if (it != pending.end() && it->second == installed) {
-				pending.erase(it);
-				it = pending.end();
+			auto it = wanted.find(key);
+			if (!isPending && it != wanted.end()) {
+				wanted.erase(it);
+				it = wanted.end();
 			}
-			const bool wanted = (it != pending.end()) ? it->second : installed;
+			const bool displayState = (it != wanted.end()) ? it->second : installed;
 
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
@@ -100,18 +102,20 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 
 			ImGui::TableNextColumn();
 			ImGui::PushID(key.c_str());
-			bool checkbox = wanted;
+			ImGui::BeginDisabled(isPending);
+			bool checkbox = displayState;
 			if (ImGui::Checkbox("##enabled", &checkbox)) {
-				pending[key] = checkbox;
+				wanted[key] = checkbox;
 				context.SetFlagPresent(plugin->FlagFileName(), checkbox);
 			}
+			ImGui::EndDisabled();
 			ImGui::PopID();
 
 			ImGui::TableNextColumn();
-			if (it != pending.end()) {
+			if (isPending) {
 				ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.4f, 1.0f),
 					"%s -- takes effect on next SteamVR launch",
-					it->second ? "Enabling" : "Disabling");
+					(it != wanted.end() && it->second) ? "Enabling" : "Disabling");
 			} else if (installed) {
 				ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "Enabled");
 			} else {
@@ -167,6 +171,8 @@ int main(int, char **)
 
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
+
+		context.TickToggles();
 
 		for (auto &plugin : plugins) {
 			if (plugin->IsInstalled(context)) plugin->Tick(context);

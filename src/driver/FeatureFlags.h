@@ -6,9 +6,9 @@
 // resources directory at Init() and only wires up the matching subsystems.
 // Each consumer overlay's installer drops the appropriate flag:
 //
-//   resources/enable_calibration.flag  -- OpenVR-SpaceCalibrator
-//   resources/enable_smoothing.flag    -- OpenVR-Smoothing
-//   resources/enable_inputhealth.flag  -- OpenVR-InputHealth
+//   resources/enable_calibration.flag  -- OpenVR-WKSpaceCalibrator
+//   resources/enable_smoothing.flag    -- OpenVR-WKSmoothing
+//   resources/enable_inputhealth.flag  -- OpenVR-WKInputHealth
 //
 // Any subset (including the empty subset) may be present. With no flags the
 // driver loads but stays inert (no hooks installed, no pipes opened, no

@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Wiki
-    url: https://github.com/RealWhyKnot/OpenVR-PairDriver/wiki
+    url: https://github.com/RealWhyKnot/OpenVR-WKPairDriver/wiki
     about: Setup, troubleshooting, and project notes live in the wiki.
   - name: Security report
-    url: https://github.com/RealWhyKnot/OpenVR-PairDriver/security/advisories/new
+    url: https://github.com/RealWhyKnot/OpenVR-WKPairDriver/security/advisories/new
     about: Report vulnerabilities privately instead of opening a public issue.

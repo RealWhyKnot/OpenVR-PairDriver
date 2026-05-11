@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-project("OpenVR-PairDriver")
+project("OpenVR-WKPairDriver")
 
 # Build artifacts go under build/artifacts so we can find them from build.ps1
 # and the consumer repos' deploy scripts without grepping.

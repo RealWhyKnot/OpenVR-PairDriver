@@ -53,10 +53,10 @@ Write-Host "Build version: $Version"
 # in the calibration UI's version line even though the umbrella binary
 # itself reports the real stamp. The file is generated; the SC repo tracks a
 # fallback that this overwrite replaces only for the umbrella build.
-$ScBuildStamp = Join-Path $PSScriptRoot "features/OpenVR-SpaceCalibrator/src/overlay/BuildStamp.h"
+$ScBuildStamp = Join-Path $PSScriptRoot "features/OpenVR-WKSpaceCalibrator/src/overlay/BuildStamp.h"
 if (Test-Path (Split-Path -Parent $ScBuildStamp)) {
 	Set-Content -Path $ScBuildStamp -Value @"
-// Overwritten by OpenVR-PairDriver/build.ps1 with the umbrella binary's
+// Overwritten by OpenVR-WKPairDriver/build.ps1 with the umbrella binary's
 // per-build stamp so SC's version footer reads the same string the
 // umbrella top header reports.
 #pragma once
@@ -132,13 +132,13 @@ if ($Release) {
 		throw "Staged shared driver DLL not found at $loaderDriverDll"
 	}
 
-	$zipName = "OpenVR-PairDriver-v$Version.zip"
+	$zipName = "OpenVR-WKPairDriver-v$Version.zip"
 	$zipPath = Join-Path "release" $zipName
 	if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 	Compress-Archive -Path "$stageDir/*" -DestinationPath $zipPath -CompressionLevel Optimal
 	$zipItem = Get-Item $zipPath
 
-	$manifestName = "OpenVR-PairDriver-v$Version.manifest.tsv"
+	$manifestName = "OpenVR-WKPairDriver-v$Version.manifest.tsv"
 	$manifestPath = Join-Path "release" $manifestName
 	$rootLength = (Resolve-Path $stageDir).Path.Length + 1
 	$rows = Get-ChildItem $stageDir -Recurse -File | ForEach-Object {

@@ -10,7 +10,7 @@ narrative path. If a release needs content that the auto-generator can't
 produce, the only supported path is the [extras file](#extras-file).
 
 This repo is the shared SteamVR driver consumed by sibling consumer
-overlays (OpenVR-SpaceCalibrator, OpenVR-Smoothing, OpenVR-InputHealth)
+overlays (OpenVR-WKSpaceCalibrator, OpenVR-WKSmoothing, OpenVR-WKInputHealth)
 via submodule. End users typically receive this driver as part of one of
 those overlays' installers; standalone driver releases here are mainly
 for paired-bump coordination across the consumer overlays.
@@ -31,7 +31,7 @@ The release body is the verbatim output of
 [Generate-ReleaseNotes.ps1](scripts/Generate-ReleaseNotes.ps1). Layout:
 
 ```
-# OpenVR-PairDriver <tag>
+# OpenVR-WKPairDriver <tag>
 
 ## What's Changed
 
@@ -159,8 +159,8 @@ When this driver releases, the consumer overlays (SpaceCalibrator,
 Smoothing, InputHealth) typically need a paired bump:
 
 1. Tag this driver: `git tag -a v2026.M.D.N origin/main && git push origin v2026.M.D.N`.
-2. In each consumer's checkout: `git submodule update --remote OpenVR-PairDriver`,
-   commit the new submodule SHA with a `chore(deps): bump OpenVR-PairDriver to <sha>`
+2. In each consumer's checkout: `git submodule update --remote OpenVR-WKPairDriver`,
+   commit the new submodule SHA with a `chore(deps): bump OpenVR-WKPairDriver to <sha>`
    subject, push.
 3. Tag and release each consumer at its own version when ready.
 

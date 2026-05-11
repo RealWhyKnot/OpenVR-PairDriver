@@ -8,9 +8,19 @@
 #include <objbase.h>
 
 #include <utility>
+#include <vector>
 
 namespace openvr_pair::overlay {
 namespace {
+
+struct PendingToggle
+{
+	std::string flagFileName;
+	bool wantPresent;
+	HANDLE process;
+};
+
+std::vector<PendingToggle> g_pendingToggles;
 
 std::wstring LocalAppDataLow()
 {
@@ -116,13 +126,54 @@ bool ShellContext::SetFlagPresent(const char *flagFileName, bool present)
 	}
 
 	std::wstring args = L"-NoProfile -ExecutionPolicy Bypass -Command " + QuotePowerShellString(command);
-	HINSTANCE result = ShellExecuteW(nullptr, L"runas", L"powershell.exe", args.c_str(), nullptr, SW_HIDE);
-	if ((INT_PTR)result <= 32) {
-		SetStatus("Unable to start elevated flag update.");
+
+	SHELLEXECUTEINFOW sei{};
+	sei.cbSize = sizeof(sei);
+	sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+	sei.lpVerb = L"runas";
+	sei.lpFile = L"powershell.exe";
+	sei.lpParameters = args.c_str();
+	sei.nShow = SW_HIDE;
+	if (!ShellExecuteExW(&sei) || sei.hProcess == nullptr) {
+		// User dismissed the consent prompt before it even ran, or the
+		// shell refused to launch the helper. Either way there is no
+		// process to wait on.
+		SetStatus("Module change cancelled.");
 		return false;
 	}
+
+	g_pendingToggles.push_back({flagFileName, present, sei.hProcess});
 	SetStatus("Module change queued. SteamVR will pick up the new state the next time it loads the driver.");
 	return true;
+}
+
+bool ShellContext::IsTogglePending(const char *flagFileName) const
+{
+	if (!flagFileName) return false;
+	for (const auto &entry : g_pendingToggles) {
+		if (entry.flagFileName == flagFileName) return true;
+	}
+	return false;
+}
+
+void ShellContext::TickToggles()
+{
+	for (auto it = g_pendingToggles.begin(); it != g_pendingToggles.end();) {
+		if (WaitForSingleObject(it->process, 0) != WAIT_OBJECT_0) {
+			++it;
+			continue;
+		}
+		const bool present = IsFlagPresent(it->flagFileName.c_str());
+		if (present == it->wantPresent) {
+			SetStatus("Module change applied. SteamVR will pick up the new state the next time it loads the driver.");
+		} else {
+			SetStatus(it->wantPresent
+				? "Enable cancelled -- flag file was not written."
+				: "Disable cancelled -- flag file still present.");
+		}
+		CloseHandle(it->process);
+		it = g_pendingToggles.erase(it);
+	}
 }
 
 void ShellContext::SetStatus(std::string message)

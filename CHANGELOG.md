@@ -1,6 +1,6 @@
 # Changelog
 
-All notable user-visible changes to OpenVR-PairDriver. The "Unreleased" section is auto-appended by `.github/workflows/changelog-append.yml` from conventional-commit subjects on `main`; tagged sections are promoted by `.github/workflows/release.yml` on a `v*` tag push.
+All notable user-visible changes to OpenVR-WKPairDriver. The "Unreleased" section is auto-appended by `.github/workflows/changelog-append.yml` from conventional-commit subjects on `main`; tagged sections are promoted by `.github/workflows/release.yml` on a `v*` tag push.
 
 The `release.yml` body for each tag is composed mechanically from the slice between the prior tag and the new tag plus the templated sections under `.github/release-template/`. Hand-writing release bodies is not part of the workflow.
 
@@ -21,7 +21,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 
 ### Changed
 - Rename export macro to OPENVRPAIRDRIVER_EXPORTS (c7df7e6)
-- Rename driver entry files to OpenVR-PairDriver (0.1.0.0) (52e05f7)
+- Rename driver entry files to OpenVR-WKPairDriver (0.1.0.0) (52e05f7)
 - **inputhealth:** Split hook injector by concern (0.1.0.0) (102a28c)
 - **repo:** Become the glue that composes feature modules into one binary (0.1.0.0) (9d493f7)
 - **deps:** Bump SpaceCalibrator submodule for BuildStamp.h fix (0.1.0.0) (e3ef50a)

@@ -16,6 +16,8 @@ struct ShellContext
 	std::wstring FlagPath(const char *flagFileName) const;
 	bool IsFlagPresent(const char *flagFileName) const;
 	bool SetFlagPresent(const char *flagFileName, bool present);
+	bool IsTogglePending(const char *flagFileName) const;
+	void TickToggles();
 	void SetStatus(std::string message);
 };
 

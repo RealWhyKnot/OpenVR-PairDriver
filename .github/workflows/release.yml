@@ -64,10 +64,10 @@ jobs:
         id: zip
         shell: pwsh
         run: |
-          $zip = Get-ChildItem release/OpenVR-PairDriver-*.zip | Select-Object -First 1
+          $zip = Get-ChildItem release/OpenVR-WKPairDriver-*.zip | Select-Object -First 1
           if (-not $zip) { throw "No release zip found in release/ -- build.ps1 -Release did not produce one." }
           $hash = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash
-          $manifest = Get-ChildItem release/OpenVR-PairDriver-*.manifest.tsv | Select-Object -First 1
+          $manifest = Get-ChildItem release/OpenVR-WKPairDriver-*.manifest.tsv | Select-Object -First 1
           if (-not $manifest) { throw "No manifest found in release/ -- build.ps1 -Release did not produce one." }
           "path=$($zip.FullName)"           >> $env:GITHUB_OUTPUT
           "name=$($zip.Name)"               >> $env:GITHUB_OUTPUT
@@ -96,10 +96,10 @@ jobs:
           & $makensis "/DVERSION=$version" installer.nsi
           if ($LASTEXITCODE -ne 0) { throw "makensis exited $LASTEXITCODE" }
           Pop-Location
-          $installer = Get-ChildItem install/OpenVR-PairDriver-Setup.exe
+          $installer = Get-ChildItem install/OpenVR-WKPairDriver-Setup.exe
           # Rename to include the version stamp so the release asset has a
-          # versioned filename like OpenVR-PairDriver-vN-Setup.exe.
-          $versioned = "release/OpenVR-PairDriver-v$version-Setup.exe"
+          # versioned filename like OpenVR-WKPairDriver-vN-Setup.exe.
+          $versioned = "release/OpenVR-WKPairDriver-v$version-Setup.exe"
           Move-Item $installer.FullName $versioned -Force
           $hash = (Get-FileHash $versioned -Algorithm SHA256).Hash
           "path=$((Resolve-Path $versioned).Path)" >> $env:GITHUB_OUTPUT

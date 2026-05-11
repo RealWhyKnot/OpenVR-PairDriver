@@ -1,6 +1,6 @@
-# OpenVR-PairDriver
+# OpenVR-WKPairDriver
 
-The shared SteamVR driver DLL for the OpenVR-SpaceCalibrator, OpenVR-Smoothing, and OpenVR-InputHealth consumer overlays.
+The shared SteamVR driver DLL for the OpenVR-WKSpaceCalibrator, OpenVR-WKSmoothing, and OpenVR-WKInputHealth consumer overlays.
 
 Each consumer project pulls this in as a git submodule, builds the same `driver_openvrpair.dll`, and installs it to `<SteamVR>\drivers\01openvrpair\`. The driver decides at startup which subsystems to wire up by checking for marker files in its `resources/` folder:
 
@@ -16,17 +16,17 @@ A SteamVR driver hooks into `vrserver.exe` via MinHook. MinHook is process-globa
 
 ## Consumer repos
 
-- [OpenVR-SpaceCalibrator](https://github.com/RealWhyKnot/OpenVR-SpaceCalibrator) -- calibration overlay, drops `enable_calibration.flag`.
-- [OpenVR-Smoothing](https://github.com/RealWhyKnot/OpenVR-Smoothing) -- finger-smoothing overlay, drops `enable_smoothing.flag`.
-- [OpenVR-InputHealth](https://github.com/RealWhyKnot/OpenVR-InputHealth) -- input deadzone / drift / degradation overlay, drops `enable_inputhealth.flag`.
+- [OpenVR-WKSpaceCalibrator](https://github.com/RealWhyKnot/OpenVR-WKSpaceCalibrator) -- calibration overlay, drops `enable_calibration.flag`.
+- [OpenVR-WKSmoothing](https://github.com/RealWhyKnot/OpenVR-WKSmoothing) -- finger-smoothing overlay, drops `enable_smoothing.flag`.
+- [OpenVR-WKInputHealth](https://github.com/RealWhyKnot/OpenVR-WKInputHealth) -- input deadzone / drift / degradation overlay, drops `enable_inputhealth.flag`.
 
 ## Build
 
 Requires CMake 3.15+, MSVC (Visual Studio 2022 recommended), and submodules initialized.
 
 ```
-git clone --recursive https://github.com/RealWhyKnot/OpenVR-PairDriver
-cd OpenVR-PairDriver
+git clone --recursive https://github.com/RealWhyKnot/OpenVR-WKPairDriver
+cd OpenVR-WKPairDriver
 ./build.ps1
 ```
 
@@ -35,8 +35,8 @@ Output lands at `build/driver_openvrpair/bin/win64/driver_openvrpair.dll`.
 ## Pipes
 
 - `\\.\pipe\OpenVR-Calibration` -- calibration overlay <-> driver
-- `\\.\pipe\OpenVR-Smoothing` -- smoothing overlay <-> driver
-- `\\.\pipe\OpenVR-InputHealth` -- input-health overlay <-> driver
+- `\\.\pipe\OpenVR-WKSmoothing` -- smoothing overlay <-> driver
+- `\\.\pipe\OpenVR-WKInputHealth` -- input-health overlay <-> driver
 
 Wire format defined in [src/common/Protocol.h](src/common/Protocol.h). Each consumer's overlay sends only its own request types; the driver routes by request type and rejects messages on the wrong pipe.
 

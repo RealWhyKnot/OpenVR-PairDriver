@@ -8,7 +8,7 @@ set(TARGET_NAME 01openvrpair)
 set(DRIVER_NAME "driver_openvrpair")
 
 project(OpenVRPairDriver)
-message("OpenVR-PairDriver - Driver")
+message("OpenVR-WKPairDriver - Driver")
 
 function(GroupSourcesByFolder target)
 	set(SOURCE_GROUP_DELIMITER "/")
@@ -54,13 +54,13 @@ find_library(OPENVR_LIBRARIES
 	PATH_SUFFIXES win${PLATFORM}
 	NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
 
-set(OPENVR_PAIRDRIVER_ROOT ${CMAKE_SOURCE_DIR} CACHE PATH "OpenVR-PairDriver checkout" FORCE)
+set(OPENVR_PAIRDRIVER_ROOT ${CMAKE_SOURCE_DIR} CACHE PATH "OpenVR-WKPairDriver checkout" FORCE)
 set(OPENVR_PAIR_FEATURE_LIBS "")
 set(OPENVR_PAIR_FEATURE_DEFINES "")
 
-set(OPENVR_PAIR_INPUTHEALTH_DIR "${CMAKE_SOURCE_DIR}/features/OpenVR-InputHealth")
-set(OPENVR_PAIR_SMOOTHING_DIR "${CMAKE_SOURCE_DIR}/features/OpenVR-Smoothing")
-set(OPENVR_PAIR_CALIBRATION_DIR "${CMAKE_SOURCE_DIR}/features/OpenVR-SpaceCalibrator")
+set(OPENVR_PAIR_INPUTHEALTH_DIR "${CMAKE_SOURCE_DIR}/features/OpenVR-WKInputHealth")
+set(OPENVR_PAIR_SMOOTHING_DIR "${CMAKE_SOURCE_DIR}/features/OpenVR-WKSmoothing")
+set(OPENVR_PAIR_CALIBRATION_DIR "${CMAKE_SOURCE_DIR}/features/OpenVR-WKSpaceCalibrator")
 
 if(EXISTS "${OPENVR_PAIR_INPUTHEALTH_DIR}/src/driver/CMakeLists.txt")
 	add_subdirectory("${OPENVR_PAIR_INPUTHEALTH_DIR}/src/driver" "${CMAKE_BINARY_DIR}/features/inputhealth-driver")
