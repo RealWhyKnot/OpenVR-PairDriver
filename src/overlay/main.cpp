@@ -10,6 +10,7 @@
 
 #include <cstdio>
 #include <exception>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -63,32 +64,55 @@ void DrawStatus(openvr_pair::overlay::ShellContext &context)
 void DrawModules(openvr_pair::overlay::ShellContext &context,
 	std::vector<std::unique_ptr<openvr_pair::overlay::FeaturePlugin>> &plugins)
 {
-	ImGui::TextUnformatted("Installed modules");
+	// Sticky "intent" so the checkbox does not snap back to the disk state
+	// during the brief window between the user accepting the UAC prompt and
+	// the file appearing on disk. Cleared once the disk state catches up.
+	static std::map<std::string, bool> pending;
+
+	ImGui::TextUnformatted("Modules");
+	ImGui::TextDisabled("Toggle features on or off. Each change pops a UAC prompt; restart SteamVR for it to take effect.");
 	ImGui::Spacing();
-	if (ImGui::BeginTable("modules", 4, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg)) {
-		ImGui::TableSetupColumn("Module");
-		ImGui::TableSetupColumn("Enabled");
-		ImGui::TableSetupColumn("Flag file");
-		ImGui::TableSetupColumn("Pipe");
+	if (ImGui::BeginTable("modules", 3,
+		ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+		ImGui::TableSetupColumn("Module", ImGuiTableColumnFlags_WidthStretch, 0.40f);
+		ImGui::TableSetupColumn("Enabled", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+		ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthStretch, 0.60f);
 		ImGui::TableHeadersRow();
 
 		for (auto &plugin : plugins) {
-			bool installed = plugin->IsInstalled(context);
+			const bool installed = plugin->IsInstalled(context);
+			const std::string key = plugin->FlagFileName();
+
+			auto it = pending.find(key);
+			if (it != pending.end() && it->second == installed) {
+				pending.erase(it);
+				it = pending.end();
+			}
+			const bool wanted = (it != pending.end()) ? it->second : installed;
+
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
 			ImGui::TextUnformatted(plugin->Name());
+
 			ImGui::TableNextColumn();
-			ImGui::PushID(plugin->FlagFileName());
-			bool wanted = installed;
-			if (ImGui::Checkbox("##enabled", &wanted) && wanted != installed) {
-				context.SetFlagPresent(plugin->FlagFileName(), wanted);
+			ImGui::PushID(key.c_str());
+			bool checkbox = wanted;
+			if (ImGui::Checkbox("##enabled", &checkbox)) {
+				pending[key] = checkbox;
+				context.SetFlagPresent(plugin->FlagFileName(), checkbox);
 			}
 			ImGui::PopID();
+
 			ImGui::TableNextColumn();
-			std::string flagPath = openvr_pair::overlay::Narrow(context.FlagPath(plugin->FlagFileName()));
-			ImGui::TextWrapped("%s", flagPath.c_str());
-			ImGui::TableNextColumn();
-			ImGui::TextUnformatted(plugin->PipeName());
+			if (it != pending.end()) {
+				ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.4f, 1.0f),
+					"%s -- restart SteamVR to apply",
+					it->second ? "Enabling" : "Disabling");
+			} else if (installed) {
+				ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "Active");
+			} else {
+				ImGui::TextDisabled("Disabled");
+			}
 		}
 		ImGui::EndTable();
 	}

@@ -48,6 +48,24 @@ if ($Version -eq "") {
 Set-Content -Path "version.txt" -Value $Version -NoNewline
 Write-Host "Build version: $Version"
 
+# Stamp the SpaceCalibrator feature plugin's BuildStamp.h with the same
+# version. Without this, the standalone SC fallback ("0.0.0.0-DEV") shows up
+# in the calibration UI's version line even though the umbrella binary
+# itself reports the real stamp. The file is generated; the SC repo tracks a
+# fallback that this overwrite replaces only for the umbrella build.
+$ScBuildStamp = Join-Path $PSScriptRoot "features/OpenVR-SpaceCalibrator/src/overlay/BuildStamp.h"
+if (Test-Path (Split-Path -Parent $ScBuildStamp)) {
+	Set-Content -Path $ScBuildStamp -Value @"
+// Overwritten by OpenVR-PairDriver/build.ps1 with the umbrella binary's
+// per-build stamp so SC's version footer reads the same string the
+// umbrella top header reports.
+#pragma once
+
+#define SPACECAL_BUILD_STAMP "$Version"
+#define SPACECAL_BUILD_CHANNEL "dev"
+"@
+}
+
 # Configure (skippable for incremental edits). The CMAKE_POLICY_VERSION_MINIMUM
 # bump is needed because the minhook submodule pins cmake_minimum_required at
 # 2.8 and current CMake versions reject anything below 3.5.
