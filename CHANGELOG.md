@@ -25,6 +25,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **repo:** Become the glue that composes feature modules into one binary (0.1.0.0) (9d493f7)
 - **deps:** Bump SpaceCalibrator submodule for BuildStamp.h fix (0.1.0.0) (e3ef50a)
 - Revert "feat(overlay): full UI overhaul -- sidebar, cards, theme, typography" (0.1.0.0) (4582786)
+- **deps:** Bump SpaceCalibrator submodule for umbrella tab + font fixes (0.1.0.0) (e4d8e3a)
 
 ### Fixed
 - **inputhealth:** Make observation fail open (0.1.0.0) (a01318b)
