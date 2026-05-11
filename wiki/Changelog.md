@@ -18,6 +18,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **overlay:** Clean up Modules tab + propagate build version to SC plugin (2026.5.11.1-BD83) (0.1.0.0) (8cb45d4)
 - **protocol:** Split per-device prediction off SetDeviceTransform (v12) (b5b5e22)
 - **overlay:** Shared ShellFooter helper for feature plugins (2026.5.11.8-6B5C) (488501b)
+- **shell:** Shared UI helpers, wrapping footer, end-to-end deploy (d274d2a)
 
 ### Changed
 - Rename export macro to OPENVRPAIRDRIVER_EXPORTS (c7df7e6)
