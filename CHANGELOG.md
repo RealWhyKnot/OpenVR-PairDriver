@@ -20,6 +20,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 ### Changed
 - Rename export macro to OPENVRPAIRDRIVER_EXPORTS (c7df7e6)
 - Rename driver entry files to OpenVR-PairDriver (0.1.0.0) (52e05f7)
+- **inputhealth:** Split hook injector by concern (0.1.0.0) (102a28c)
 
 ### Fixed
 - **inputhealth:** Make observation fail open (0.1.0.0) (a01318b)
