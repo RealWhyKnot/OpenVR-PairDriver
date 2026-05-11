@@ -70,7 +70,7 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 	static std::map<std::string, bool> pending;
 
 	ImGui::TextUnformatted("Modules");
-	ImGui::TextDisabled("Toggle features on or off. Each change pops a UAC prompt; restart SteamVR for it to take effect.");
+	ImGui::TextDisabled("Toggle features on or off. Each change pops a UAC prompt; SteamVR picks the new state up the next time it loads the driver.");
 	ImGui::Spacing();
 	if (ImGui::BeginTable("modules", 3,
 		ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
@@ -106,10 +106,10 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 			ImGui::TableNextColumn();
 			if (it != pending.end()) {
 				ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.4f, 1.0f),
-					"%s -- restart SteamVR to apply",
+					"%s -- takes effect on next SteamVR launch",
 					it->second ? "Enabling" : "Disabling");
 			} else if (installed) {
-				ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "Active");
+				ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "Enabled");
 			} else {
 				ImGui::TextDisabled("Disabled");
 			}

@@ -121,7 +121,7 @@ bool ShellContext::SetFlagPresent(const char *flagFileName, bool present)
 		SetStatus("Unable to start elevated flag update.");
 		return false;
 	}
-	SetStatus("Elevated flag update started. Restart SteamVR for driver module changes to take effect.");
+	SetStatus("Module change queued. SteamVR will pick up the new state the next time it loads the driver.");
 	return true;
 }
 
