@@ -19,6 +19,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **overlay:** Full UI overhaul -- sidebar, cards, theme, typography (0.1.0.0) (e6a8c8e)
 - **overlay:** Clean up Modules tab + propagate build version to SC plugin (2026.5.11.1-BD83) (0.1.0.0) (8cb45d4)
 - **protocol:** Split per-device prediction off SetDeviceTransform (v12) (b5b5e22)
+- **overlay:** Shared ShellFooter helper for feature plugins (2026.5.11.8-6B5C) (488501b)
 
 ### Changed
 - Rename export macro to OPENVRPAIRDRIVER_EXPORTS (c7df7e6)
