@@ -103,9 +103,6 @@ if ($Release) {
 	if (Test-Path $stageDir) { Remove-Item -Recurse -Force $stageDir }
 	New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
 	Copy-Item -Recurse -Path "$driverTree/*" -Destination $stageDir
-	if (Test-Path "lib/fonts") {
-		Copy-Item -Path "lib/fonts/*.ttf" -Destination $stageDir -Force
-	}
 
 	$stagedDriverBin = Join-Path $stageDir "bin/win64"
 	$bareDriverDll = Join-Path $stagedDriverBin "driver_openvrpair.dll"

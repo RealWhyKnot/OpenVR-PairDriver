@@ -1,11 +1,5 @@
 #include "FeaturePlugin.h"
-#include "Fonts.h"
-#include "ModulesTab.h"
-#include "Sidebar.h"
 #include "ShellContext.h"
-#include "Theme.h"
-#include "TopBar.h"
-#include "Widgets.h"
 
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
@@ -55,21 +49,49 @@ std::vector<std::unique_ptr<openvr_pair::overlay::FeaturePlugin>> CreatePlugins(
 	return plugins;
 }
 
-bool IsSelectedPluginValid(openvr_pair::overlay::ShellContext &context,
-	const std::vector<std::unique_ptr<openvr_pair::overlay::FeaturePlugin>> &plugins,
-	int selected_plugin)
+void DrawStatus(openvr_pair::overlay::ShellContext &context)
 {
-	if (selected_plugin < 0 || selected_plugin >= static_cast<int>(plugins.size())) return false;
-	return plugins[static_cast<size_t>(selected_plugin)]->IsInstalled(context);
+	ImGui::TextUnformatted("OpenVR-Pair");
+	ImGui::SameLine();
+	ImGui::TextDisabled("%s", OPENVR_PAIR_VERSION_STRING);
+	ImGui::Separator();
+	if (!context.status.empty()) {
+		ImGui::TextWrapped("%s", context.status.c_str());
+	}
 }
 
-int FirstInstalledPlugin(openvr_pair::overlay::ShellContext &context,
-	const std::vector<std::unique_ptr<openvr_pair::overlay::FeaturePlugin>> &plugins)
+void DrawModules(openvr_pair::overlay::ShellContext &context,
+	std::vector<std::unique_ptr<openvr_pair::overlay::FeaturePlugin>> &plugins)
 {
-	for (int i = 0; i < static_cast<int>(plugins.size()); ++i) {
-		if (plugins[static_cast<size_t>(i)]->IsInstalled(context)) return i;
+	ImGui::TextUnformatted("Installed modules");
+	ImGui::Spacing();
+	if (ImGui::BeginTable("modules", 4, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg)) {
+		ImGui::TableSetupColumn("Module");
+		ImGui::TableSetupColumn("Enabled");
+		ImGui::TableSetupColumn("Flag file");
+		ImGui::TableSetupColumn("Pipe");
+		ImGui::TableHeadersRow();
+
+		for (auto &plugin : plugins) {
+			bool installed = plugin->IsInstalled(context);
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			ImGui::TextUnformatted(plugin->Name());
+			ImGui::TableNextColumn();
+			ImGui::PushID(plugin->FlagFileName());
+			bool wanted = installed;
+			if (ImGui::Checkbox("##enabled", &wanted) && wanted != installed) {
+				context.SetFlagPresent(plugin->FlagFileName(), wanted);
+			}
+			ImGui::PopID();
+			ImGui::TableNextColumn();
+			std::string flagPath = openvr_pair::overlay::Narrow(context.FlagPath(plugin->FlagFileName()));
+			ImGui::TextWrapped("%s", flagPath.c_str());
+			ImGui::TableNextColumn();
+			ImGui::TextUnformatted(plugin->PipeName());
+		}
+		ImGui::EndTable();
 	}
-	return -1;
 }
 
 } // namespace
@@ -86,7 +108,7 @@ int main(int, char **)
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-	GLFWwindow *window = glfwCreateWindow(1320, 820, "OpenVR-Pair", nullptr, nullptr);
+	GLFWwindow *window = glfwCreateWindow(1200, 780, "OpenVR-Pair", nullptr, nullptr);
 	if (!window) {
 		glfwTerminate();
 		return 1;
@@ -103,24 +125,17 @@ int main(int, char **)
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImPlot::CreateContext();
-	ImGuiIO &io = ImGui::GetIO();
-	io.IniFilename = nullptr;
-	std::string font_warning;
-	FontSet fonts = LoadFonts(io, &font_warning);
-	openvr_pair::ui::Apply(io);
+	ImGui::StyleColorsDark();
+	ImGui::GetIO().IniFilename = nullptr;
 
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
 	ImGui_ImplOpenGL3_Init("#version 130");
 
 	ShellContext context = CreateShellContext();
-	context.fontSet = fonts;
-	if (!font_warning.empty()) context.SetStatus(font_warning);
 	auto plugins = CreatePlugins();
 	for (auto &plugin : plugins) {
 		plugin->OnStart(context);
 	}
-	int selected_plugin = FirstInstalledPlugin(context, plugins);
-	bool modules_selected = selected_plugin < 0;
 
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
@@ -133,11 +148,6 @@ int main(int, char **)
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
-		if (!modules_selected && !IsSelectedPluginValid(context, plugins, selected_plugin)) {
-			selected_plugin = FirstInstalledPlugin(context, plugins);
-			modules_selected = selected_plugin < 0;
-		}
-
 		const ImGuiViewport *vp = ImGui::GetMainViewport();
 		ImGui::SetNextWindowPos(vp->WorkPos);
 		ImGui::SetNextWindowSize(vp->WorkSize);
@@ -145,54 +155,32 @@ int main(int, char **)
 			ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
 			ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
 			ImGuiWindowFlags_NoBringToFrontOnFocus;
-		ImGui::PushStyleColor(ImGuiCol_WindowBg, openvr_pair::ui::Colors().bg);
 		ImGui::Begin("OpenVR-Pair", nullptr, flags);
 
-		DrawSidebar(context, plugins, selected_plugin, modules_selected);
-		ImGui::SameLine(0.0f, 0.0f);
-
-		openvr_pair::overlay::FeaturePlugin *selected = nullptr;
-		if (!modules_selected && IsSelectedPluginValid(context, plugins, selected_plugin)) {
-			selected = plugins[static_cast<size_t>(selected_plugin)].get();
+		DrawStatus(context);
+		if (ImGui::BeginTabBar("tabs")) {
+			for (auto &plugin : plugins) {
+				if (!plugin->IsInstalled(context)) continue;
+				if (ImGui::BeginTabItem(plugin->Name())) {
+					plugin->DrawTab(context);
+					ImGui::EndTabItem();
+				}
+			}
+			if (ImGui::BeginTabItem("Modules")) {
+				DrawModules(context, plugins);
+				ImGui::EndTabItem();
+			}
+			ImGui::EndTabBar();
 		}
-
-		const char *title = modules_selected || !selected ? "Modules" : selected->Name();
-		const char *subtitle = modules_selected || !selected ? "Toggle features on/off" : selected->Subtitle();
-		const bool driver_ok = selected ? selected->DriverStatusOk(context) : !context.driverResourceDirs.empty();
-		const bool ipc_ok = selected ? selected->IpcStatusOk(context) : true;
-		const bool shmem_ok = selected ? selected->SharedMemoryStatusOk(context) : true;
-
-		ImGui::BeginGroup();
-		DrawTopBar(context, title, subtitle, driver_ok, ipc_ok, shmem_ok);
-		ImGui::PushStyleColor(ImGuiCol_ChildBg, openvr_pair::ui::Colors().bg);
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0f, 24.0f));
-		ImGui::BeginChild("##body", ImVec2(0.0f, 0.0f),
-			ImGuiChildFlags_AlwaysUseWindowPadding,
-			ImGuiWindowFlags_NoCollapse);
-		if (!context.status.empty()) {
-			openvr_pair::ui::StatusDot(context.status.c_str(), openvr_pair::ui::Status::Warning);
-			ImGui::Spacing();
-		}
-		if (modules_selected || !selected) {
-			DrawModulesTab(context, plugins);
-		} else {
-			selected->DrawTab(context);
-		}
-		ImGui::EndChild();
-		ImGui::PopStyleVar();
-		ImGui::PopStyleColor();
-		ImGui::EndGroup();
 
 		ImGui::End();
-		ImGui::PopStyleColor();
 		ImGui::Render();
 
 		int fbw = 0;
 		int fbh = 0;
 		glfwGetFramebufferSize(window, &fbw, &fbh);
 		glViewport(0, 0, fbw, fbh);
-		const ImVec4 bg = openvr_pair::ui::Colors().bg;
-		glClearColor(bg.x, bg.y, bg.z, bg.w);
+		glClearColor(0.07f, 0.07f, 0.08f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 		glfwSwapBuffers(window);
