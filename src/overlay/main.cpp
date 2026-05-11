@@ -50,15 +50,19 @@ std::vector<std::unique_ptr<openvr_pair::overlay::FeaturePlugin>> CreatePlugins(
 	return plugins;
 }
 
-void DrawStatus(openvr_pair::overlay::ShellContext &context)
+void DrawTransientStatus(openvr_pair::overlay::ShellContext &context)
 {
-	ImGui::TextUnformatted("OpenVR-Pair");
-	ImGui::SameLine();
-	ImGui::TextDisabled("%s", OPENVR_PAIR_VERSION_STRING);
+	// Transient feedback (elevated module toggles, IPC heartbeat hiccups)
+	// drawn as a thin coloured line just above the bottom edge. The version
+	// stamp and driver-status dot live on each plugin's own footer (SC,
+	// InputHealth, Smoothing) so the shell doesn't duplicate them.
+	if (context.status.empty()) return;
+	const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
+	const float windowHeight = ImGui::GetWindowHeight();
+	const float padding = ImGui::GetStyle().WindowPadding.y;
+	ImGui::SetCursorPosY(windowHeight - lineHeight * 3.0f - padding);
 	ImGui::Separator();
-	if (!context.status.empty()) {
-		ImGui::TextWrapped("%s", context.status.c_str());
-	}
+	ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.40f, 1.0f), "%s", context.status.c_str());
 }
 
 void DrawModules(openvr_pair::overlay::ShellContext &context,
@@ -181,7 +185,6 @@ int main(int, char **)
 			ImGuiWindowFlags_NoBringToFrontOnFocus;
 		ImGui::Begin("OpenVR-Pair", nullptr, flags);
 
-		DrawStatus(context);
 		if (ImGui::BeginTabBar("tabs")) {
 			for (auto &plugin : plugins) {
 				if (!plugin->IsInstalled(context)) continue;
@@ -196,6 +199,8 @@ int main(int, char **)
 			}
 			ImGui::EndTabBar();
 		}
+
+		DrawTransientStatus(context);
 
 		ImGui::End();
 		ImGui::Render();
