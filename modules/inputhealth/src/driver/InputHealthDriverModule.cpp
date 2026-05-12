@@ -1,0 +1,78 @@
+#include "DriverModule.h"
+#include "FeatureFlags.h"
+#include "InputHealthHookInjector.h"
+#include "InputHealthSnapshotPublisher.h"
+#include "InputHealthSnapshotStaging.h"
+#include "Logging.h"
+#include "ServerTrackedDeviceProvider.h"
+
+#include <string>
+
+namespace inputhealth {
+namespace {
+
+class InputHealthDriverModule final : public DriverModule
+{
+public:
+	const char *Name() const override { return "Input Health"; }
+	uint32_t FeatureMask() const override { return pairdriver::kFeatureInputHealth; }
+	const char *PipeName() const override { return OPENVR_PAIRDRIVER_INPUTHEALTH_PIPE_NAME; }
+
+	bool Init(DriverModuleContext &context) override
+	{
+		provider_ = context.provider;
+		inputhealth::Init(provider_);
+		inputhealth::SnapshotPublisherInit();
+		return true;
+	}
+
+	void Shutdown() override
+	{
+		inputhealth::SnapshotPublisherShutdown();
+		inputhealth::Shutdown();
+		provider_ = nullptr;
+	}
+
+	void OnGetGenericInterface(const char *pchInterface, void *iface) override
+	{
+		if (!pchInterface || !iface) return;
+		std::string name(pchInterface);
+		if (name.find("IVRDriverInput_") != std::string::npos &&
+			name.find("Internal") == std::string::npos) {
+			inputhealth::TryInstallScalarBooleanHooks(iface);
+		}
+	}
+
+	bool HandleRequest(const protocol::Request &request, protocol::Response &response) override
+	{
+		if (!provider_) return false;
+		switch (request.type) {
+		case protocol::RequestSetInputHealthConfig:
+			provider_->SetInputHealthConfig(request.setInputHealthConfig);
+			response.type = protocol::ResponseSuccess;
+			return true;
+		case protocol::RequestResetInputHealthStats:
+			inputhealth::ApplyResetRequest(request.resetInputHealthStats);
+			response.type = protocol::ResponseSuccess;
+			return true;
+		case protocol::RequestSetInputHealthCompensation:
+			provider_->SetInputHealthCompensation(request.setInputHealthCompensation);
+			response.type = protocol::ResponseSuccess;
+			return true;
+		default:
+			return false;
+		}
+	}
+
+private:
+	ServerTrackedDeviceProvider *provider_ = nullptr;
+};
+
+} // namespace
+
+std::unique_ptr<DriverModule> CreateDriverModule()
+{
+	return std::make_unique<InputHealthDriverModule>();
+}
+
+} // namespace inputhealth
