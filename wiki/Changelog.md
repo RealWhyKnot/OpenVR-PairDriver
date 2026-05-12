@@ -20,6 +20,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **overlay:** Shared ShellFooter helper for feature plugins (2026.5.11.8-6B5C) (488501b)
 - **shell:** Shared UI helpers, wrapping footer, end-to-end deploy (d274d2a)
 - **driver:** Protocol v13 + cross-module robustness pass (d660034)
+- **protocol:** Bump Version 13 -> 14 for InputHealthConfig shrinking (0e72bf9)
 
 ### Changed
 - Rename export macro to OPENVRPAIRDRIVER_EXPORTS (c7df7e6)
