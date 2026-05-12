@@ -20,6 +20,32 @@ $ErrorActionPreference = "Stop"
 # consistently regardless of how the script is invoked.
 Set-Location $PSScriptRoot
 
+function Clear-StaleCMakeGeneratorInstance {
+	param([Parameter(Mandatory=$true)][string]$BuildDir)
+
+	$cachePath = Join-Path $BuildDir "CMakeCache.txt"
+	if (-not (Test-Path -LiteralPath $cachePath)) { return }
+
+	$instancePath = $null
+	foreach ($line in Get-Content -LiteralPath $cachePath) {
+		if ($line -match '^CMAKE_GENERATOR_INSTANCE:[^=]*=(.*)$') {
+			$instancePath = $Matches[1]
+			break
+		}
+	}
+	if (-not $instancePath) { return }
+
+	if (-not (Test-Path -LiteralPath $instancePath)) {
+		Write-Host "CMake cached Visual Studio instance no longer exists: $instancePath" -ForegroundColor Yellow
+		Write-Host "Clearing generated CMake configure cache under $BuildDir" -ForegroundColor Yellow
+		Remove-Item -LiteralPath $cachePath -Force
+		$cmakeFiles = Join-Path $BuildDir "CMakeFiles"
+		if (Test-Path -LiteralPath $cmakeFiles) {
+			Remove-Item -LiteralPath $cmakeFiles -Recurse -Force
+		}
+	}
+}
+
 # Activate the repo's tracked git hooks the first time the build runs in a
 # clone. Idempotent: only writes when the value would change.
 $currentHooksPath = & git config --get core.hooksPath 2>$null
@@ -97,6 +123,7 @@ function Invoke-NativeQuiet {
 }
 
 if (-not $SkipConfigure) {
+	Clear-StaleCMakeGeneratorInstance -BuildDir "build"
 	Invoke-NativeQuiet { cmake -S . -B build -A x64 "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" -Wno-dev }
 	if ($LASTEXITCODE -ne 0) { throw "CMake configure failed (exit $LASTEXITCODE)" }
 }
