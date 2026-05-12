@@ -81,13 +81,17 @@ jobs:
 
           $ScBuildStamp = "modules/calibration/src/overlay/BuildStamp.h"
           if (Test-Path (Split-Path -Parent $ScBuildStamp)) {
+            # Indent the here-string contents to match the surrounding YAML
+            # block scalar indent (10 spaces). YAML strips the common indent
+            # before the runner sees the script, so PowerShell receives a
+            # column-0 here-string that satisfies the "@ at column 0 rule.
             Set-Content -Path $ScBuildStamp -Value @"
-// Overwritten by release.yml with the umbrella binary's per-build stamp.
-#pragma once
+          // Overwritten by release.yml with the umbrella binary's per-build stamp.
+          #pragma once
 
-#define SPACECAL_BUILD_STAMP "$version"
-#define SPACECAL_BUILD_CHANNEL "release"
-"@
+          #define SPACECAL_BUILD_STAMP "$version"
+          #define SPACECAL_BUILD_CHANNEL "release"
+          "@
           }
 
           cmake --build build --config Release --parallel
