@@ -39,6 +39,32 @@ std::string PathFromBody(const protocol::InputHealthSnapshotBody &b)
 	return std::string(b.path, b.path + path_len);
 }
 
+// Detects whether a snapshot body's path looks like it comes from a real
+// hand controller (Index / Touch / Reverb / WMR / Vive). Used to filter out
+// HMD-class devices and SteamVR's synthetic input sources (proximity sensor,
+// "remote", "tap" pseudo-buttons) from the InputHealth per-device list -- the
+// snapshot wire format does not carry TrackedDeviceClass, so we infer from
+// the component path. A device with at least one controller-like path keeps
+// all its rows; a device with none is hidden entirely so the list shows the
+// user's actual controllers and trackers, not the noise.
+bool PathLooksLikeControllerInput(const protocol::InputHealthSnapshotBody &b)
+{
+	const std::string path = diag::LowerPath(b);
+	static const char *const kControllerNeedles[] = {
+		"/trigger",
+		"/grip",
+		"/trackpad",
+		"/joystick",
+		"/thumbstick",
+		"/skeleton",
+		"/squeeze",  // OpenXR-style grip
+	};
+	for (const char *needle : kControllerNeedles) {
+		if (path.find(needle) != std::string::npos) return true;
+	}
+	return false;
+}
+
 void DrawRangeCell(const protocol::InputHealthSnapshotBody &b)
 {
 	if (!b.is_scalar || !b.scalar_range_initialized) {
@@ -272,6 +298,22 @@ void DrawDiagnosticsTab(InputHealthPlugin &ui)
 		const uint64_t serial_hash = sorted[begin]->body.device_serial_hash;
 		size_t end = begin + 1;
 		while (end < sorted.size() && sorted[end]->body.device_serial_hash == serial_hash) ++end;
+
+		// Skip devices that only expose non-controller components (HMD
+		// proximity sensor, SteamVR's "remote"/"tap" synthetic devices).
+		// They surfaced in the table as serial-hash rows the user had no
+		// way to identify and added no diagnostic value.
+		bool anyController = false;
+		for (size_t i = begin; i < end; ++i) {
+			if (PathLooksLikeControllerInput(sorted[i]->body)) {
+				anyController = true;
+				break;
+			}
+		}
+		if (!anyController) {
+			begin = end;
+			continue;
+		}
 
 		DrawDeviceHeader(ui.profiles_, ui.engine_, serial_hash);
 

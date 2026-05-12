@@ -717,7 +717,12 @@ void CCal_DrawSettings() {
 		ImGui::TextDisabled("ArcticFox");
 		ImGui::TextDisabled("hekky");
 		ImGui::TextDisabled("pimaker");
-		ImGui::TextDisabled("WhyKnot");
+
+		// Current maintainer rendered in a brighter accent + label so it
+		// reads as the active fork owner rather than another past contributor.
+		ImGui::TextColored(ImVec4(0.55f, 0.75f, 0.95f, 1.0f), "WhyKnot");
+		ImGui::SameLine();
+		ImGui::TextDisabled("- current maintainer");
 
 		ImGui::EndGroupPanel();
 	}

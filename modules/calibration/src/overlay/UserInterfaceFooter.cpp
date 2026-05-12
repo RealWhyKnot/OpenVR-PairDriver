@@ -10,6 +10,7 @@
 
 extern SCIPCClient Driver;
 extern bool runningInOverlay;
+extern bool s_inUmbrella;
 
 namespace spacecal::ui {
 
@@ -37,10 +38,26 @@ void ShowVersionLine() {
 	//   row 2: Driver: ...   |   Space Calibrator <build>   |   mode
 	// The hover tip sits above so the more-prominent status row is
 	// visually anchored to the bottom edge of the window.
+	//
+	// Two positioning modes:
+	//   - Standalone: absolute-positioned at GetWindowHeight() - footerH so
+	//     the footer floats above scrolled content.
+	//   - Umbrella: rendered inline at the current cursor position. Caller
+	//     (BuildMainWindowContents) is expected to have ended the scrollable
+	//     content child before calling us, so the footer sits as a normal
+	//     layout element below the scroll region rather than floating over
+	//     it. Floating mode collided with the credits panel at the bottom
+	//     of the Advanced tab.
 	const float lineH  = ImGui::GetTextLineHeight();
 	const float footerH = lineH * 2.0f + 12.0f;
-	ImGui::SetNextWindowPos(ImVec2(10.0f, ImGui::GetWindowHeight() - footerH));
-	if (!ImGui::BeginChild("bottom line", ImVec2(ImGui::GetWindowWidth() - 20.0f, footerH), ImGuiChildFlags_None)) {
+	if (s_inUmbrella) {
+		ImGui::Separator();
+	} else {
+		ImGui::SetNextWindowPos(ImVec2(10.0f, ImGui::GetWindowHeight() - footerH));
+	}
+	const float footerW = s_inUmbrella ? ImGui::GetContentRegionAvail().x
+	                                   : (ImGui::GetWindowWidth() - 20.0f);
+	if (!ImGui::BeginChild("bottom line", ImVec2(footerW, footerH), ImGuiChildFlags_None)) {
 		ImGui::EndChild();
 		return;
 	}

@@ -1,4 +1,5 @@
 #include "FeaturePlugin.h"
+#include "ManifestRegistration.h"
 #include "ShellContext.h"
 #include "UiHelpers.h"
 
@@ -14,6 +15,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #ifndef OPENVR_PAIR_VERSION_STRING
@@ -84,10 +86,12 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 		ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
 		// Module name stretches left so Status + Enabled hug the right edge.
 		// Status is wide enough to hold "Enabling -- takes effect on next
-		// SteamVR launch" without wrapping; Enabled is just the checkbox.
+		// SteamVR launch" without wrapping; Enabled holds the checkbox plus
+		// the "Enabled" header without ImGui ellipsizing it (the 70 px the
+		// column originally had ate the header text).
 		ImGui::TableSetupColumn("Module",  ImGuiTableColumnFlags_WidthStretch, 1.0f);
 		ImGui::TableSetupColumn("Status",  ImGuiTableColumnFlags_WidthFixed,  340.0f);
-		ImGui::TableSetupColumn("Enabled", ImGuiTableColumnFlags_WidthFixed,   70.0f);
+		ImGui::TableSetupColumn("Enabled", ImGuiTableColumnFlags_WidthFixed,  100.0f);
 		ImGui::TableHeadersRow();
 
 		for (auto &plugin : plugins) {
@@ -165,9 +169,34 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 
 } // namespace
 
-int main(int, char **)
+int main(int argc, char **argv)
 {
 	using namespace openvr_pair::overlay;
+
+	// Headless command modes. The installer calls --register-only as a
+	// post-install step, and the uninstaller calls --unregister-only before
+	// deleting the exe so SteamVR does not end up holding an autolaunch
+	// pointer at a deleted binary. Both exit before GLFW touches the screen.
+	bool registerOnly = false;
+	bool unregisterOnly = false;
+	for (int i = 1; i < argc; ++i) {
+		const std::string_view arg(argv[i]);
+		if (arg == "--register-only")   registerOnly = true;
+		if (arg == "--unregister-only") unregisterOnly = true;
+	}
+
+	if (unregisterOnly) {
+		UnregisterApplicationManifest();
+		return 0;
+	}
+
+	// Register vrmanifest with SteamVR if not already installed. Idempotent;
+	// no-ops on subsequent launches and when the runtime is unavailable.
+	RegisterApplicationManifest();
+
+	if (registerOnly) {
+		return 0;
+	}
 
 	glfwSetErrorCallback(GlfwErrorCallback);
 	if (!glfwInit()) return 1;

@@ -160,20 +160,13 @@ void SmoothingPlugin::DrawPredictionTab()
 	}
 
 	ImGui::Spacing();
+	// Headline kept short -- the slider tooltips below carry the detail
+	// about 0 vs 100, the HMD lock, and what suppressing calibration
+	// trackers does to the SC math. Avoids a wall of intro text on entry.
 	ImGui::TextWrapped(
-		"Prediction smoothness scales each tracker's reported velocity / acceleration "
-		"down toward zero. 0 leaves the pose untouched (raw motion, sharp response). 100 "
-		"fully zeros velocity, which defeats SteamVR's pose extrapolation entirely (smoothest "
-		"motion at the cost of a tiny lag). Pick a value between to trade response for jitter.");
-	ImGui::TextWrapped(
-		"The HMD is locked at 0 -- suppressing it would cause judder in your view. If you're "
-		"running Space Calibrator, do not suppress your calibration reference or target "
-		"trackers either: doing so corrupts the calibration math that reads their velocity.");
+		"Per-tracker prediction suppression. 0 = raw motion, 100 = fully suppressed.");
 	ImGui::Spacing();
 	ImGui::SeparatorText("Per-tracker smoothness");
-	ImGui::TextWrapped(
-		"Settings stick to a tracker by serial number, so a device that disconnects and "
-		"reconnects keeps its slider value.");
 	ImGui::Spacing();
 
 	auto *vrSystem = vr::VRSystem();

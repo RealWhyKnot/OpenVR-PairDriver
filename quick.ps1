@@ -40,41 +40,49 @@ if (-not $SkipBuild) {
 # Build outputs we care about. The umbrella exe lands here; the driver DLL is
 # emitted under the staged driver tree with its bare name (the loader-renamed
 # "01openvrpair" prefix is applied only inside the release zip stage dir).
-$srcExe = Join-Path $PSScriptRoot "build\artifacts\Release\OpenVR-Pair.exe"
-$srcDll = Join-Path $PSScriptRoot "build\driver_openvrpair\bin\win64\driver_openvrpair.dll"
+$srcExe      = Join-Path $PSScriptRoot "build\artifacts\Release\OpenVR-Pair.exe"
+$srcDll      = Join-Path $PSScriptRoot "build\driver_openvrpair\bin\win64\driver_openvrpair.dll"
+$srcManifest = Join-Path $PSScriptRoot "build\artifacts\Release\manifest.vrmanifest"
 
-foreach ($p in @($srcExe, $srcDll)) {
+foreach ($p in @($srcExe, $srcDll, $srcManifest)) {
 	if (-not (Test-Path -LiteralPath $p)) { throw "Build artifact missing: $p" }
 }
 
 # Deployed copies.
 $dstExe       = Join-Path $InstallDir "OpenVR-Pair.exe"
+$dstManifest  = Join-Path $InstallDir "manifest.vrmanifest"
 $dstDriverDir = Join-Path $SteamVRDriversDir "01openvrpair\bin\win64"
 $dstDll       = Join-Path $dstDriverDir "driver_01openvrpair.dll"
 
-$srcExeSha = Get-Sha $srcExe
-$srcDllSha = Get-Sha $srcDll
-$dstExeSha = Get-Sha $dstExe
-$dstDllSha = Get-Sha $dstDll
+$srcExeSha      = Get-Sha $srcExe
+$srcDllSha      = Get-Sha $srcDll
+$srcManifestSha = Get-Sha $srcManifest
+$dstExeSha      = Get-Sha $dstExe
+$dstDllSha      = Get-Sha $dstDll
+$dstManifestSha = Get-Sha $dstManifest
 
 Write-Host ""
-Write-Host ("Source exe:      {0}" -f $srcExeSha)
-Write-Host ("Deployed exe:    {0}" -f $dstExeSha)
-Write-Host ("Source DLL:      {0}" -f $srcDllSha)
-Write-Host ("Deployed DLL:    {0}" -f $dstDllSha)
+Write-Host ("Source exe:        {0}" -f $srcExeSha)
+Write-Host ("Deployed exe:      {0}" -f $dstExeSha)
+Write-Host ("Source DLL:        {0}" -f $srcDllSha)
+Write-Host ("Deployed DLL:      {0}" -f $dstDllSha)
+Write-Host ("Source manifest:   {0}" -f $srcManifestSha)
+Write-Host ("Deployed manifest: {0}" -f $dstManifestSha)
 
-$exeStale    = ($srcExeSha -ne $dstExeSha)
-$driverStale = ($srcDllSha -ne $dstDllSha)
+$exeStale      = ($srcExeSha -ne $dstExeSha)
+$driverStale   = ($srcDllSha -ne $dstDllSha)
+$manifestStale = ($srcManifestSha -ne $dstManifestSha)
 
-if (-not $exeStale -and -not $driverStale) {
+if (-not $exeStale -and -not $driverStale -and -not $manifestStale) {
 	Write-Host ""
 	Write-Host "Already up to date. Deployed build: $(Resolve-Version $dstExe)"
 	exit 0
 }
 
 Write-Host ""
-if ($exeStale)    { Write-Host "Overlay exe needs redeploy." }
-if ($driverStale) { Write-Host "Driver DLL needs redeploy." }
+if ($exeStale)      { Write-Host "Overlay exe needs redeploy." }
+if ($driverStale)   { Write-Host "Driver DLL needs redeploy." }
+if ($manifestStale) { Write-Host "vrmanifest needs redeploy." }
 
 if (-not $Yes) {
 	$reply = Read-Host "Continue with elevated copy? [y/N]"
@@ -109,9 +117,14 @@ try {
 	}
 	Copy-Item -LiteralPath '$srcDll' -Destination '$dstDll' -Force
 
-	`$exeSha = (Get-FileHash -LiteralPath '$dstExe' -Algorithm SHA256).Hash
-	`$dllSha = (Get-FileHash -LiteralPath '$dstDll' -Algorithm SHA256).Hash
-	Set-Content -LiteralPath '$resultFile' -Value ("OK`n" + `$exeSha + "`n" + `$dllSha)
+	# vrmanifest sits next to the exe so OpenVR-Pair.exe can resolve it via
+	# GetModuleFileName + replace_filename at startup.
+	Copy-Item -LiteralPath '$srcManifest' -Destination '$dstManifest' -Force
+
+	`$exeSha      = (Get-FileHash -LiteralPath '$dstExe' -Algorithm SHA256).Hash
+	`$dllSha      = (Get-FileHash -LiteralPath '$dstDll' -Algorithm SHA256).Hash
+	`$manifestSha = (Get-FileHash -LiteralPath '$dstManifest' -Algorithm SHA256).Hash
+	Set-Content -LiteralPath '$resultFile' -Value ("OK`n" + `$exeSha + "`n" + `$dllSha + "`n" + `$manifestSha)
 	exit 0
 } catch {
 	Set-Content -LiteralPath '$resultFile' -Value ("ERR`n" + `$_.Exception.Message)
@@ -145,20 +158,24 @@ if ($resultLines.Count -lt 1 -or $resultLines[0] -ne "OK") {
 # Re-verify destination SHA against source. The helper already reported a
 # value but we re-read from disk so partial writes or post-write tampering
 # get caught.
-$postExeSha = Get-Sha $dstExe
-$postDllSha = Get-Sha $dstDll
+$postExeSha      = Get-Sha $dstExe
+$postDllSha      = Get-Sha $dstDll
+$postManifestSha = Get-Sha $dstManifest
 
-$exeOk = ($postExeSha -eq $srcExeSha)
-$dllOk = ($postDllSha -eq $srcDllSha)
+$exeOk      = ($postExeSha -eq $srcExeSha)
+$dllOk      = ($postDllSha -eq $srcDllSha)
+$manifestOk = ($postManifestSha -eq $srcManifestSha)
 
 Write-Host ""
-Write-Host ("Post-copy exe:   {0} {1}" -f $postExeSha, ($(if ($exeOk) { "OK" } else { "MISMATCH" })))
-Write-Host ("Post-copy DLL:   {0} {1}" -f $postDllSha, ($(if ($dllOk) { "OK" } else { "MISMATCH" })))
+Write-Host ("Post-copy exe:      {0} {1}" -f $postExeSha,      ($(if ($exeOk)      { "OK" } else { "MISMATCH" })))
+Write-Host ("Post-copy DLL:      {0} {1}" -f $postDllSha,      ($(if ($dllOk)      { "OK" } else { "MISMATCH" })))
+Write-Host ("Post-copy manifest: {0} {1}" -f $postManifestSha, ($(if ($manifestOk) { "OK" } else { "MISMATCH" })))
 
-if (-not $exeOk -or -not $dllOk) {
+if (-not $exeOk -or -not $dllOk -or -not $manifestOk) {
 	$detail = @()
-	if (-not $exeOk) { $detail += "exe at $dstExe still does not match source" }
-	if (-not $dllOk) { $detail += "driver DLL at $dstDll still does not match source" }
+	if (-not $exeOk)      { $detail += "exe at $dstExe still does not match source" }
+	if (-not $dllOk)      { $detail += "driver DLL at $dstDll still does not match source" }
+	if (-not $manifestOk) { $detail += "manifest at $dstManifest still does not match source" }
 	throw ("Deploy did not converge: " + ($detail -join "; "))
 }
 

@@ -116,6 +116,9 @@ jobs:
           if (-not (Test-Path "$driverSrc/bin/win64/driver_openvrpair.dll")) {
             throw "driver_openvrpair.dll not found at $driverSrc/bin/win64"
           }
+          if (-not (Test-Path "$artifacts/manifest.vrmanifest")) {
+            throw "manifest.vrmanifest not found at $artifacts (build step copies it from core/src/overlay/)"
+          }
 
           # --- Assemble the driver tree into a staging directory ----------
           # The installer convention: the DLL is renamed driver_01openvrpair.dll

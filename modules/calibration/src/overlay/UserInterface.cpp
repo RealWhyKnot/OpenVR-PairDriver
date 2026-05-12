@@ -113,6 +113,32 @@ static void BuildMainWindowContents(bool runningInOverlay_)
 
 	ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImGui::GetStyleColorVec4(ImGuiCol_Button));
 
+	// In umbrella mode the SC body lives inside an ImGui tab item. The
+	// previous layout let SC content scroll on the umbrella's outer window
+	// AND on an inner BeginChild in continuous mode -- that's the "two
+	// scrollbars" report. Wrap the body in a single sized child so:
+	//   - there's exactly one scrollable region inside this tab,
+	//   - the ShowVersionLine footer below sits as a normal layout element
+	//     (no absolute positioning), and so cannot overlap the credits
+	//     panel at the bottom of the Advanced tab.
+	// Standalone mode keeps the old behavior unchanged.
+	const float lineH    = ImGui::GetTextLineHeight();
+	const float footerH  = lineH * 2.0f + 12.0f;
+	bool bodyChildOpen = false;
+	if (s_inUmbrella) {
+		const float availY = ImGui::GetContentRegionAvail().y;
+		const float bodyH  = (availY > footerH + 16.0f) ? (availY - footerH - 4.0f) : 0.0f;
+		bodyChildOpen = ImGui::BeginChild("SCTabBody",
+			ImVec2(0.0f, bodyH),
+			ImGuiChildFlags_None);
+		if (!bodyChildOpen) {
+			ImGui::EndChild();
+			spacecal::ui::ShowVersionLine();
+			ImGui::PopStyleColor();
+			return;
+		}
+	}
+
 	// Drawn before everything else so it's always visible; the banner is a
 	// no-op until the first GitHub check completes (a few seconds after
 	// startup) and an update is actually available.
@@ -214,6 +240,10 @@ static void BuildMainWindowContents(bool runningInOverlay_)
 		}
 	}
 
+	if (s_inUmbrella && bodyChildOpen) {
+		ImGui::EndChild();
+	}
+
 	spacecal::ui::ShowVersionLine();
 
 	ImGui::PopStyleColor();
@@ -238,14 +268,24 @@ void BuildContinuousCalDisplay() {
 		}
 	}
 
-	ImVec2 contentRegion;
-	contentRegion.x = ImGui::GetWindowContentRegionWidth();
-	contentRegion.y = ImGui::GetWindowHeight() - ImGui::GetFrameHeightWithSpacing() * 2.1f;
+	// Standalone window draws an inner CCalDisplayFrame child sized against
+	// GetWindowHeight() so the standalone window's footer has reserved
+	// space below the tab bar. In umbrella mode the outer SCTabBody child
+	// (BuildMainWindowContents) already reserves footer space, and the
+	// caller will draw the footer afterwards -- a second nested child
+	// here produces the double scrollbar + duplicate footer rendering.
+	bool ccalChildOpen = true;
+	if (!s_inUmbrella) {
+		ImVec2 contentRegion;
+		contentRegion.x = ImGui::GetWindowContentRegionWidth();
+		contentRegion.y = ImGui::GetWindowHeight() - ImGui::GetFrameHeightWithSpacing() * 2.1f;
 
-	if (!ImGui::BeginChild("CCalDisplayFrame", contentRegion, ImGuiChildFlags_None)) {
-		ImGui::EndChild();
-		if (!s_inUmbrella) ImGui::End();
-		return;
+		ccalChildOpen = ImGui::BeginChild("CCalDisplayFrame", contentRegion, ImGuiChildFlags_None);
+		if (!ccalChildOpen) {
+			ImGui::EndChild();
+			ImGui::End();
+			return;
+		}
 	}
 
 	// (Mode pill moved to the global footer alongside the driver-status dot;
@@ -292,11 +332,14 @@ void BuildContinuousCalDisplay() {
 		ImGui::EndTabBar();
 	}
 
-	ImGui::EndChild();
-
-	spacecal::ui::ShowVersionLine();
-
-	if (!s_inUmbrella) ImGui::End();
+	if (!s_inUmbrella) {
+		ImGui::EndChild();
+		spacecal::ui::ShowVersionLine();
+		ImGui::End();
+	}
+	// Umbrella path: BuildMainWindowContents owns both the SCTabBody child
+	// wrapper and the single ShowVersionLine call, so this function only
+	// emits the tab bar's contents.
 }
 
 // ScaledDragFloat, AddResetContextMenu, CCal_DrawSettings moved to UserInterfaceTabsAdvanced.cpp

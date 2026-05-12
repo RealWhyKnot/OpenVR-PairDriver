@@ -1,0 +1,16 @@
+{
+	"source" : "builtin",
+	"applications": [{
+		"app_key": "wk.openvr-pair",
+		"launch_type": "binary",
+		"binary_path_windows": "OpenVR-Pair.exe",
+		"is_dashboard_overlay": true,
+
+		"strings": {
+			"en_us": {
+				"name": "OpenVR-Pair",
+				"description": "Umbrella overlay for calibration, smoothing, and input health"
+			}
+		}
+	}]
+}

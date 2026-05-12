@@ -28,6 +28,8 @@ add_executable(OpenVRPairOverlay WIN32
 	FeaturePlugin.h
 	IpcClientBase.cpp
 	IpcClientBase.h
+	ManifestRegistration.cpp
+	ManifestRegistration.h
 	ProfileStoreBase.h
 	ShellContext.cpp
 	ShellContext.h
@@ -71,3 +73,10 @@ target_compile_definitions(OpenVRPairOverlay PRIVATE
 if(MSVC)
 	target_link_options(OpenVRPairOverlay PRIVATE /ENTRY:mainCRTStartup)
 endif()
+
+# Stage manifest.vrmanifest next to the umbrella exe so SteamVR can find it
+# via the absolute path the exe passes to AddApplicationManifest.
+add_custom_command(TARGET OpenVRPairOverlay POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		"${CMAKE_CURRENT_LIST_DIR}/manifest.vrmanifest"
+		"$<TARGET_FILE_DIR:OpenVRPairOverlay>/manifest.vrmanifest")

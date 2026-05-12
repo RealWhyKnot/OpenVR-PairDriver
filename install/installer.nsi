@@ -77,6 +77,10 @@ Section "Install"
 
 	SetOutPath "$INSTDIR"
 	File /oname=OpenVR-Pair.exe "${ARTIFACTS_BASEDIR}\OpenVR-Pair.exe"
+	; manifest.vrmanifest sits next to the exe so RegisterApplicationManifest
+	; in OpenVR-Pair can resolve it via GetModuleFileName + replace_filename
+	; on first launch and register the overlay with SteamVR for auto-start.
+	File "${ARTIFACTS_BASEDIR}\manifest.vrmanifest"
 	File "..\LICENSE"
 	File /oname=README.md "..\README.md"
 
@@ -97,6 +101,15 @@ Section "Install"
 	WriteRegStr HKLM "Software\OpenVR-Pair\Main" "" "$INSTDIR"
 	WriteRegStr HKLM "Software\OpenVR-Pair\Driver" "" "$vrRuntimePath"
 	WriteRegStr HKLM "Software\OpenVR-Pair\Main" "Version" "${VERSION}"
+
+	; Register the overlay manifest with SteamVR and flip autolaunch on,
+	; so the first SteamVR start after install opens OpenVR-Pair without
+	; the user having to launch the exe by hand. --register-only exits as
+	; soon as the in-process registration call completes (no GLFW window).
+	DetailPrint "Registering OpenVR-Pair overlay with SteamVR..."
+	ExecWait '"$INSTDIR\OpenVR-Pair.exe" --register-only' $0
+	DetailPrint "Registration exit code: $0"
+
 	WriteUninstaller "$INSTDIR\Uninstall.exe"
 	WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenVR-Pair" "DisplayName" "OpenVR-Pair"
 	WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenVR-Pair" "DisplayVersion" "${VERSION}"
@@ -109,6 +122,13 @@ Section "Uninstall"
 	StrCmp $0 0 +3
 		MessageBox MB_OK|MB_ICONEXCLAMATION "SteamVR is still running. Close SteamVR and try again."
 		Abort
+
+	; Unregister with SteamVR while the exe + manifest still exist on disk.
+	; Skipping this would leave wk.openvr-pair pointing at the deleted exe
+	; and SteamVR would keep trying to autolaunch a missing binary.
+	IfFileExists "$INSTDIR\OpenVR-Pair.exe" 0 +3
+		DetailPrint "Unregistering OpenVR-Pair overlay from SteamVR..."
+		ExecWait '"$INSTDIR\OpenVR-Pair.exe" --unregister-only' $0
 
 	ReadRegStr $vrRuntimePath HKLM "Software\OpenVR-Pair\Driver" ""
 	StrCmp $vrRuntimePath "" skipDriver
@@ -124,6 +144,7 @@ Section "Uninstall"
 	skipDriver:
 
 	Delete "$INSTDIR\OpenVR-Pair.exe"
+	Delete "$INSTDIR\manifest.vrmanifest"
 	Delete "$INSTDIR\LICENSE"
 	Delete "$INSTDIR\README.md"
 	Delete "$INSTDIR\Uninstall.exe"

@@ -120,7 +120,12 @@ void SmoothingPlugin::DrawTab(openvr_pair::overlay::ShellContext &)
 
 	if (ImGui::BeginTabBar("smoothing_tabs")) {
 		if (ImGui::BeginTabItem("Settings")) { DrawSettingsTab(); ImGui::EndTabItem(); }
-		if (ImGui::BeginTabItem("Advanced")) { DrawAdvancedTab(); ImGui::EndTabItem(); }
+		// Advanced tab is a placeholder with no knobs of its own right now.
+		// Commented out (not deleted) so the DrawAdvancedTab() implementation
+		// below is preserved for the next time we have an advanced knob to
+		// land -- re-enable this tab item rather than re-discovering where
+		// the entry point lives.
+		// if (ImGui::BeginTabItem("Advanced")) { DrawAdvancedTab(); ImGui::EndTabItem(); }
 		if (ImGui::BeginTabItem("Logs"))     { DrawLogsTab();     ImGui::EndTabItem(); }
 		ImGui::EndTabBar();
 	}
