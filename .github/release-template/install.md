@@ -1,9 +1,12 @@
 ## Install (fresh)
 
-End users do not install this driver directly. It ships inside the consumer overlays as a submodule, and either overlay's installer drops the matching `enable_*.flag` to wire up its features at SteamVR startup.
+Download the zip for the feature you want from the appropriate release page and extract it into your SteamVR drivers folder:
 
-- For room calibration: install [OpenVR-WKSpaceCalibrator](https://github.com/RealWhyKnot/OpenVR-WKSpaceCalibrator/releases/latest).
-- For finger smoothing on Index Knuckles: install [OpenVR-WKSmoothing](https://github.com/RealWhyKnot/OpenVR-WKSmoothing/releases/latest).
-- Install both for both features. The shared driver is a single DLL under `<SteamVR>\drivers\01openvrpair\` regardless; only one MinHook install per target function, no conflict.
+- **Room calibration only**: [OpenVR-WKSpaceCalibrator releases](https://github.com/RealWhyKnot/OpenVR-WKSpaceCalibrator/releases/latest) -- zip includes `enable_calibration.flag`.
+- **Finger smoothing only**: [OpenVR-WKSmoothing releases](https://github.com/RealWhyKnot/OpenVR-WKSmoothing/releases/latest) -- zip includes `enable_smoothing.flag`.
+- **Input health monitoring only**: [OpenVR-WKInputHealth releases](https://github.com/RealWhyKnot/OpenVR-WKInputHealth/releases/latest) -- zip includes `enable_inputhealth.flag`.
+- **All features**: download and extract all three zips into the same driver folder; each adds its own flag file.
 
-If you maintain a build of either consumer, bump that repo's `OpenVR-WKPairDriver` submodule pointer to commit `{commit-sha-short}` (this release's tag) and rebuild. The bundled DLL in your installer will then match what shipped here.
+Or download this repo's `OpenVR-Pair-{version}.zip` (no flag files) and add the flag files yourself.
+
+Extract into: `<SteamVR runtime>\drivers\01openvrpair\`. Restart SteamVR. The driver loads the features whose flag files it finds.

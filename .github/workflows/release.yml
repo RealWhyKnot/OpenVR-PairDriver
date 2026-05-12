@@ -1,16 +1,29 @@
+# This workflow publishes a release on this repo AND mirrors per-feature
+# zips to the three sibling repos (OpenVR-WKSpaceCalibrator,
+# OpenVR-WKSmoothing, OpenVR-WKInputHealth). The mirror step needs a
+# token with contents:write on those three repos, stored as the secret
+# MIRROR_RELEASE_TOKEN. Provision via:
+#   1. github.com -> Settings -> Developer settings -> Fine-grained PAT
+#   2. Resource owner: RealWhyKnot. Repos: OpenVR-WKSpaceCalibrator,
+#      OpenVR-WKSmoothing, OpenVR-WKInputHealth (only these three).
+#   3. Permissions: Contents = Read and write.
+#   4. Copy token, then in this repo: Settings -> Secrets and variables
+#      -> Actions -> New repository secret -> name MIRROR_RELEASE_TOKEN.
+# Without this secret, the umbrella release publishes successfully but
+# the mirror steps fail (acceptable for a smoke test; fix before promoting).
+
 name: Release
 
-# Triggered by pushing a tag like v2026.5.6.0. Builds driver_openvrpair.dll
-# via build.ps1 on a Windows runner (CMake + MSVC), packages it with its
-# resources into a zip, attaches the zip to a GitHub release, and writes the
-# release body from the auto-changelog slice between prev tag and this tag
-# plus the templated section content under .github/release-template/.
+# Triggered by pushing a tag like v2026.5.12.0. Builds the umbrella binary
+# (OpenVR-Pair.exe) and driver (driver_openvrpair.dll) via CMake + MSVC,
+# runs the test suite, packages an umbrella zip and three per-feature mirror
+# zips, publishes the umbrella release on this repo, and pushes a mirror
+# release to each sibling repo.
 #
-# Changelog promotion: before the build runs, .github/scripts/Update-Changelog.ps1
-# renames the "## Unreleased" heading in CHANGELOG.md and wiki/Changelog.md to
-# "## [vTAG] -- DATE". After the GitHub release is created the promoted files
-# are pushed directly back to main (this repo has no required CI checks on
-# main, so a bot push is accepted).
+# Changelog promotion: before the build, Update-Changelog.ps1 renames the
+# "## Unreleased" heading to "## [vTAG] -- DATE". After the GitHub release
+# is created those promoted files are pushed back to main via the GraphQL
+# createCommitOnBranch mutation (signed server-side).
 on:
   push:
     tags:
@@ -20,8 +33,8 @@ permissions:
   contents: write
 
 # Share a concurrency group with changelog-append so the appender can't run
-# during a release build and add entries to main's Unreleased that the release
-# itself doesn't contain. Only one of these two workflows runs at a time.
+# during a release and add entries to main's Unreleased that the release
+# itself doesn't contain.
 concurrency:
   group: changelog-append
   cancel-in-progress: false
@@ -30,7 +43,7 @@ jobs:
   release:
     name: Build and publish release
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -46,37 +59,144 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           ./.github/scripts/Update-Changelog.ps1 -Mode Promote -Version '${{ github.ref_name }}'
-          # Stash promoted files so the post-publish push reflects exactly the
-          # bytes that shipped in the release zip.
           New-Item -ItemType Directory -Force -Path .changelog-stash/wiki | Out-Null
           Copy-Item CHANGELOG.md       .changelog-stash/CHANGELOG.md       -Force
           Copy-Item wiki/Changelog.md  .changelog-stash/wiki/Changelog.md  -Force
 
-      - name: Build driver
+      - name: Configure
+        # The minhook submodule declares cmake_minimum_required(2.8.12) which
+        # CMake 4.x rejects. -DCMAKE_POLICY_VERSION_MINIMUM=3.5 lets us configure
+        # without forking. -Wno-dev silences developer-mode warnings from minhook.
+        run: cmake -G "Visual Studio 17 2022" -A x64 -B build -S . -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -Wno-dev
+
+      - name: Stamp version and build
         shell: pwsh
         env:
           TAG_NAME: ${{ github.ref_name }}
         run: |
           $version = $env:TAG_NAME -replace '^v', ''
-          ./build.ps1 -Version $version -Release
+          # Stamp version.txt and BuildStamp.h (same logic as build.ps1).
+          Set-Content -Path version.txt -Value $version -NoNewline
 
-      - name: Locate release artifacts
-        id: zip
+          $ScBuildStamp = "modules/calibration/src/overlay/BuildStamp.h"
+          if (Test-Path (Split-Path -Parent $ScBuildStamp)) {
+            Set-Content -Path $ScBuildStamp -Value @"
+// Overwritten by release.yml with the umbrella binary's per-build stamp.
+#pragma once
+
+#define SPACECAL_BUILD_STAMP "$version"
+#define SPACECAL_BUILD_CHANNEL "release"
+"@
+          }
+
+          cmake --build build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)" }
+
+      - name: Run tests
         shell: pwsh
         run: |
-          $zip = Get-ChildItem release/OpenVR-WKPairDriver-*.zip | Select-Object -First 1
-          if (-not $zip) { throw "No release zip found in release/ -- build.ps1 -Release did not produce one." }
-          $hash = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash
-          $manifest = Get-ChildItem release/OpenVR-WKPairDriver-*.manifest.tsv | Select-Object -First 1
-          if (-not $manifest) { throw "No manifest found in release/ -- build.ps1 -Release did not produce one." }
-          "path=$($zip.FullName)"           >> $env:GITHUB_OUTPUT
-          "name=$($zip.Name)"               >> $env:GITHUB_OUTPUT
-          "size=$($zip.Length)"             >> $env:GITHUB_OUTPUT
-          "sha256=$hash"                    >> $env:GITHUB_OUTPUT
-          "manifest=$($manifest.FullName)"  >> $env:GITHUB_OUTPUT
-          Write-Host "Release zip:      $($zip.Name)"
-          Write-Host "Release manifest: $($manifest.Name)"
-          Write-Host "SHA256:           $hash"
+          $exe = "build/artifacts/Release/spacecal_tests.exe"
+          if (-not (Test-Path $exe)) { throw "Test binary not found at $exe" }
+          & $exe --gtest_brief=1
+          if ($LASTEXITCODE -ne 0) { throw "Tests failed (exit $LASTEXITCODE)" }
+
+      - name: Package umbrella and mirror zips
+        id: zips
+        shell: pwsh
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          $version   = $env:TAG_NAME -replace '^v', ''
+          $artifacts = "build/artifacts/Release"
+          $driverSrc = "build/driver_openvrpair"
+
+          if (-not (Test-Path "$artifacts/OpenVR-Pair.exe")) {
+            throw "OpenVR-Pair.exe not found at $artifacts"
+          }
+          if (-not (Test-Path "$driverSrc/bin/win64/driver_openvrpair.dll")) {
+            throw "driver_openvrpair.dll not found at $driverSrc/bin/win64"
+          }
+
+          # --- Assemble the driver tree into a staging directory ----------
+          # The installer convention: the DLL is renamed driver_01openvrpair.dll
+          # so SteamVR's alphabetic-sort loads it after any existing drivers.
+          $stage = "release/_stage_$version"
+          if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+          New-Item -ItemType Directory -Force -Path "$stage/driver_openvrpair/bin/win64" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$stage/driver_openvrpair/resources/settings" | Out-Null
+
+          Copy-Item "$driverSrc/driver.vrdrivermanifest"                  "$stage/driver_openvrpair/driver.vrdrivermanifest"
+          Copy-Item "$driverSrc/resources/driver.vrresources"              "$stage/driver_openvrpair/resources/driver.vrresources"
+          Copy-Item "$driverSrc/resources/settings/default.vrsettings"    "$stage/driver_openvrpair/resources/settings/default.vrsettings"
+          Copy-Item "$driverSrc/bin/win64/driver_openvrpair.dll"           "$stage/driver_openvrpair/bin/win64/driver_01openvrpair.dll"
+
+          Copy-Item "$artifacts/OpenVR-Pair.exe"   "$stage/OpenVR-Pair.exe"
+          Copy-Item "$artifacts/openvr_api.dll"    "$stage/openvr_api.dll"
+
+          New-Item -ItemType Directory -Force -Path "release" | Out-Null
+
+          # Helper: build a zip + manifest for a given staging directory.
+          function New-ReleaseZip {
+            param([string]$StageDir, [string]$ZipPath)
+            if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
+            Compress-Archive -Path "$StageDir/*" -DestinationPath $ZipPath -CompressionLevel Optimal
+            $item     = Get-Item $ZipPath
+            $hash     = (Get-FileHash $ZipPath -Algorithm SHA256).Hash
+            $rootLen  = (Resolve-Path $StageDir).Path.Length + 1
+            $rows     = Get-ChildItem $StageDir -Recurse -File | ForEach-Object {
+              $rel = $_.FullName.Substring($rootLen).Replace('\', '/')
+              $h   = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+              "{0}`t{1}`t{2}" -f $h, $_.Length, $rel
+            }
+            $maniPath = [IO.Path]::ChangeExtension($ZipPath, "manifest.tsv") -replace '\.zip\.manifest', '.manifest'
+            $enc = [System.Text.UTF8Encoding]::new($false)
+            [System.IO.File]::WriteAllLines((Resolve-Path (Split-Path $maniPath)).Path + "\" + (Split-Path -Leaf $maniPath), $rows, $enc)
+            return [pscustomobject]@{
+              Path     = (Resolve-Path $ZipPath).Path
+              Name     = $item.Name
+              Size     = $item.Length
+              Sha256   = $hash
+              Manifest = (Resolve-Path $maniPath).Path
+            }
+          }
+
+          # --- Umbrella zip (all three flag files absent; installer drops them) ---
+          $umbrellaZipPath = "release/OpenVR-Pair-$version.zip"
+          $umbrella = New-ReleaseZip -StageDir $stage -ZipPath $umbrellaZipPath
+          Write-Host "Umbrella zip: $($umbrella.Name) ($($umbrella.Size) bytes) sha256=$($umbrella.Sha256)"
+
+          # --- Per-feature mirror zips ----------------------------------------
+          # Each mirror zip is identical to the umbrella plus one flag file
+          # pre-dropped in driver_openvrpair/resources/ so the user's SteamVR
+          # picks up that feature immediately after extracting into the driver dir.
+          $features = @(
+            [pscustomobject]@{ Name = 'Calibration';  Flag = 'enable_calibration.flag';  Repo = 'RealWhyKnot/OpenVR-WKSpaceCalibrator' }
+            [pscustomobject]@{ Name = 'Smoothing';    Flag = 'enable_smoothing.flag';    Repo = 'RealWhyKnot/OpenVR-WKSmoothing' }
+            [pscustomobject]@{ Name = 'InputHealth';  Flag = 'enable_inputhealth.flag';  Repo = 'RealWhyKnot/OpenVR-WKInputHealth' }
+          )
+
+          $mirrorPaths = @{}
+          foreach ($feat in $features) {
+            $flagFile = "$stage/driver_openvrpair/resources/$($feat.Flag)"
+            New-Item -ItemType File -Force -Path $flagFile | Out-Null
+            $zipPath = "release/OpenVR-Pair-$($feat.Name)-$version.zip"
+            $z = New-ReleaseZip -StageDir $stage -ZipPath $zipPath
+            $mirrorPaths[$feat.Name] = $z.Path
+            Write-Host "Mirror zip ($($feat.Name)): $($z.Name) ($($z.Size) bytes)"
+            Remove-Item $flagFile -Force
+          }
+
+          Remove-Item -Recurse -Force $stage
+
+          # Emit outputs for downstream steps.
+          "umbrella_path=$($umbrella.Path)"         >> $env:GITHUB_OUTPUT
+          "umbrella_name=$($umbrella.Name)"         >> $env:GITHUB_OUTPUT
+          "umbrella_size=$($umbrella.Size)"         >> $env:GITHUB_OUTPUT
+          "umbrella_sha256=$($umbrella.Sha256)"     >> $env:GITHUB_OUTPUT
+          "umbrella_manifest=$($umbrella.Manifest)" >> $env:GITHUB_OUTPUT
+          "mirror_calibration=$($mirrorPaths['Calibration'])"   >> $env:GITHUB_OUTPUT
+          "mirror_smoothing=$($mirrorPaths['Smoothing'])"       >> $env:GITHUB_OUTPUT
+          "mirror_inputhealth=$($mirrorPaths['InputHealth'])"   >> $env:GITHUB_OUTPUT
 
       - name: Build NSIS installer
         id: installer
@@ -86,27 +206,23 @@ jobs:
         run: |
           $version = $env:TAG_NAME -replace '^v', ''
           $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
-          if (-not (Test-Path $makensis)) {
-            $makensis = "C:\Program Files\NSIS\makensis.exe"
-          }
-          if (-not (Test-Path $makensis)) {
-            throw "makensis.exe not found in the standard NSIS install paths."
-          }
+          if (-not (Test-Path $makensis)) { $makensis = "C:\Program Files\NSIS\makensis.exe" }
+          if (-not (Test-Path $makensis)) { throw "makensis.exe not found in the standard NSIS install paths." }
+          # installer.nsi OutFile is "..\build\artifacts\Release\OpenVR-Pair-Installer.exe"
+          # (relative to the install/ directory), so it writes to build/artifacts/Release/.
           Push-Location install
           & $makensis "/DVERSION=$version" installer.nsi
-          if ($LASTEXITCODE -ne 0) { throw "makensis exited $LASTEXITCODE" }
+          $exitCode = $LASTEXITCODE
           Pop-Location
-          $installer = Get-ChildItem install/OpenVR-WKPairDriver-Setup.exe
-          # Rename to include the version stamp so the release asset has a
-          # versioned filename like OpenVR-WKPairDriver-vN-Setup.exe.
-          $versioned = "release/OpenVR-WKPairDriver-v$version-Setup.exe"
-          Move-Item $installer.FullName $versioned -Force
+          if ($exitCode -ne 0) { throw "makensis exited $exitCode" }
+          $raw = Get-Item "build/artifacts/Release/OpenVR-Pair-Installer.exe"
+          $versioned = "release/OpenVR-Pair-v$version-Setup.exe"
+          Move-Item $raw.FullName $versioned -Force
           $hash = (Get-FileHash $versioned -Algorithm SHA256).Hash
           "path=$((Resolve-Path $versioned).Path)" >> $env:GITHUB_OUTPUT
           "name=$(Split-Path -Leaf $versioned)"    >> $env:GITHUB_OUTPUT
           "sha256=$hash"                           >> $env:GITHUB_OUTPUT
-          Write-Host "Installer: $versioned"
-          Write-Host "SHA256:    $hash"
+          Write-Host "Installer: $versioned sha256=$hash"
 
       - name: Generate release body
         id: changelog
@@ -117,29 +233,29 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $body = & ./.github/scripts/Generate-ReleaseNotes.ps1 `
-            -ZipPath   '${{ steps.zip.outputs.path }}' `
-            -ZipName   '${{ steps.zip.outputs.name }}' `
-            -ZipSize   '${{ steps.zip.outputs.size }}' `
-            -ZipSha256 '${{ steps.zip.outputs.sha256 }}' `
-            -Manifest  '${{ steps.zip.outputs.manifest }}'
+            -ZipPath   '${{ steps.zips.outputs.umbrella_path }}' `
+            -ZipName   '${{ steps.zips.outputs.umbrella_name }}' `
+            -ZipSize   '${{ steps.zips.outputs.umbrella_size }}' `
+            -ZipSha256 '${{ steps.zips.outputs.umbrella_sha256 }}' `
+            -Manifest  '${{ steps.zips.outputs.umbrella_manifest }}'
           if (-not $body) {
-            throw "Generate-ReleaseNotes.ps1 returned empty output. Inspect the workflow log for warnings."
+            throw "Generate-ReleaseNotes.ps1 returned empty output."
           }
           $delim = "EOF_" + [Guid]::NewGuid().ToString('N')
           "body<<$delim" >> $env:GITHUB_OUTPUT
           $body          >> $env:GITHUB_OUTPUT
           $delim         >> $env:GITHUB_OUTPUT
 
-      - name: Create GitHub release
+      - name: Create GitHub release (umbrella)
         id: publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
-          $zip = "${{ steps.zip.outputs.path }}"
+          $tag       = "${{ github.ref_name }}"
+          $zip       = "${{ steps.zips.outputs.umbrella_path }}"
           $installer = "${{ steps.installer.outputs.path }}"
-          $notes = @'
+          $notes     = @'
           ${{ steps.changelog.outputs.body }}
           '@
           $notesPath = Join-Path $env:RUNNER_TEMP 'release-body-input.md'
@@ -160,19 +276,11 @@ jobs:
           function Get-StringSha256 {
             param([string]$Text)
             $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
-            $sha = [System.Security.Cryptography.SHA256]::Create()
+            $sha   = [System.Security.Cryptography.SHA256]::Create()
             try { return [BitConverter]::ToString($sha.ComputeHash($bytes)).Replace('-', '') }
             finally { $sha.Dispose() }
           }
 
-          # GitHub's release-body read-after-write isn't strictly consistent.
-          # Right after gh release create (or gh release edit) the next
-          # gh release view can return a stub or partial body for several
-          # seconds before the API settles on the published value. Compare
-          # via SHA256 (catches length-match-but-content-different corruption
-          # the old length check would miss), and retry with exponential
-          # backoff so the transient settle window doesn't false-fail the
-          # workflow. Total budget across attempts: 2+4+8+16+32 = 62s.
           function Test-PublishedBodyMatches {
             param([string]$Tag, [string]$Expected, [int]$MaxAttempts = 6)
             $expectedSha = Get-StringSha256 -Text $Expected
@@ -181,7 +289,7 @@ jobs:
             for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
               $raw = & gh release view $Tag --json body --jq '.body'
               if ($LASTEXITCODE -ne 0) { throw "gh release view $Tag failed: $raw" }
-              $actual = ($raw -replace "`r`n","`n").TrimEnd("`n")
+              $actual    = ($raw -replace "`r`n","`n").TrimEnd("`n")
               $lastActual = $actual
               $actualSha = Get-StringSha256 -Text $actual
               if ($actualSha -eq $expectedSha) {
@@ -210,45 +318,62 @@ jobs:
 
           $recheck = Test-PublishedBodyMatches -Tag $tag -Expected $expected
           if ($recheck.Match) {
-            Write-Host "Auto-correct succeeded; body matches on attempt $($recheck.AttemptCount)."
+            Write-Host "Auto-correct succeeded on attempt $($recheck.AttemptCount)."
             return
           }
 
-          $diffPath = Join-Path $env:RUNNER_TEMP 'release-body-actual.md'
           $actualText = [string]$recheck.Actual
-          $actualText | Out-File -LiteralPath $diffPath -Encoding utf8 -NoNewline
-          $actualLength = $actualText.Length
           $staleReadThreshold = [Math]::Min(256, [Math]::Floor($expected.Length / 2))
-          if ($actualLength -lt $staleReadThreshold) {
-            Write-Host "::warning::Release body still reads as a short/stale value after auto-correct. The edit request succeeded; continuing so a transient GitHub release-body read does not fail the published release."
+          if ($actualText.Length -lt $staleReadThreshold) {
+            Write-Host "::warning::Release body reads as a short/stale value after auto-correct. The edit request succeeded; continuing."
             return
           }
-          $headLen = [Math]::Min(200, $expected.Length)
-          $tailStart = [Math]::Max(0, $expected.Length - 200)
-          $expectedHead = $expected.Substring(0, $headLen)
-          $expectedTail = $expected.Substring($tailStart)
-          $actHeadLen = [Math]::Min(200, $actualLength)
-          $actTailStart = [Math]::Max(0, $actualLength - 200)
-          $actualHead = $actualText.Substring(0, $actHeadLen)
-          $actualTail = $actualText.Substring($actTailStart)
-          Write-Host "Expected length $($expected.Length); got $actualLength."
-          Write-Host "--- Expected head ---"
-          Write-Host $expectedHead
-          Write-Host "--- Expected tail ---"
-          Write-Host $expectedTail
-          Write-Host "--- Actual head ---"
-          Write-Host $actualHead
-          Write-Host "--- Actual tail ---"
-          Write-Host $actualTail
-          Write-Host "Compare $inputPath vs $diffPath in the runner artifacts."
           throw "Release body still differs after auto-correct + retries."
+
+      # Mirror releases: one per feature. Each push uses MIRROR_RELEASE_TOKEN
+      # (a fine-grained PAT with contents:write on the three sibling repos).
+      # The notes reference back to this repo's release so users clicking
+      # through from a sibling repo's releases tab find the full changelog.
+      - name: Mirror release to OpenVR-WKSpaceCalibrator
+        env:
+          GH_TOKEN: ${{ secrets.MIRROR_RELEASE_TOKEN }}
+          GITHUB_SHA: ${{ github.sha }}
+        shell: pwsh
+        run: |
+          $tag  = "${{ github.ref_name }}"
+          $zip  = "${{ steps.zips.outputs.mirror_calibration }}"
+          $repo = "RealWhyKnot/OpenVR-WKSpaceCalibrator"
+          $notes = "Mirror of OpenVR-WKPairDriver release $tag. Zip includes enable_calibration.flag so calibration activates immediately. Source: https://github.com/RealWhyKnot/OpenVR-WKPairDriver/commit/$env:GITHUB_SHA"
+          gh release create $tag $zip --repo $repo --title $tag --notes $notes
+
+      - name: Mirror release to OpenVR-WKSmoothing
+        env:
+          GH_TOKEN: ${{ secrets.MIRROR_RELEASE_TOKEN }}
+          GITHUB_SHA: ${{ github.sha }}
+        shell: pwsh
+        run: |
+          $tag  = "${{ github.ref_name }}"
+          $zip  = "${{ steps.zips.outputs.mirror_smoothing }}"
+          $repo = "RealWhyKnot/OpenVR-WKSmoothing"
+          $notes = "Mirror of OpenVR-WKPairDriver release $tag. Zip includes enable_smoothing.flag so smoothing activates immediately. Source: https://github.com/RealWhyKnot/OpenVR-WKPairDriver/commit/$env:GITHUB_SHA"
+          gh release create $tag $zip --repo $repo --title $tag --notes $notes
+
+      - name: Mirror release to OpenVR-WKInputHealth
+        env:
+          GH_TOKEN: ${{ secrets.MIRROR_RELEASE_TOKEN }}
+          GITHUB_SHA: ${{ github.sha }}
+        shell: pwsh
+        run: |
+          $tag  = "${{ github.ref_name }}"
+          $zip  = "${{ steps.zips.outputs.mirror_inputhealth }}"
+          $repo = "RealWhyKnot/OpenVR-WKInputHealth"
+          $notes = "Mirror of OpenVR-WKPairDriver release $tag. Zip includes enable_inputhealth.flag so input health monitoring activates immediately. Source: https://github.com/RealWhyKnot/OpenVR-WKPairDriver/commit/$env:GITHUB_SHA"
+          gh release create $tag $zip --repo $repo --title $tag --notes $notes
 
       - name: Push promoted changelog back to main (verified)
         # Use the GraphQL createCommitOnBranch mutation so the promotion
-        # commit is signed server-side with GitHub's bot key. Required by
-        # the project-wide "all new commits must be verified" policy and by
-        # any future protected-branch rule on main. Done last so a build/
-        # release failure does not push a phantom-promoted CHANGELOG to main.
+        # commit is signed server-side with GitHub's bot key. Done last so a
+        # build or release failure does not push a phantom-promoted CHANGELOG.
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -258,8 +383,6 @@ jobs:
           set -euo pipefail
 
           git fetch origin main
-          # Cheap pre-check: if main already carries the promoted bytes
-          # (e.g. a re-run of the same tag), skip the mutation entirely.
           if cmp -s .changelog-stash/CHANGELOG.md <(git show origin/main:CHANGELOG.md) \
              && cmp -s .changelog-stash/wiki/Changelog.md <(git show origin/main:wiki/Changelog.md); then
             echo "Nothing to promote -- main already carries the promoted bytes."

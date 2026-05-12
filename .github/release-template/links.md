@@ -2,6 +2,7 @@
 
 - **README:** <https://github.com/{full-repo}>
 - **Source:** commit `{commit-sha-short}` on `main`
-- **License:** [MIT](https://github.com/{full-repo}/blob/main/LICENSE)
-- **OpenVR-WKSpaceCalibrator** (calibration overlay; consumes this driver via submodule): <https://github.com/RealWhyKnot/OpenVR-WKSpaceCalibrator>
-- **OpenVR-WKSmoothing** (finger-smoothing overlay; consumes this driver via submodule): <https://github.com/RealWhyKnot/OpenVR-WKSmoothing>
+- **License:** [GPL-3.0](https://github.com/{full-repo}/blob/main/LICENSE)
+- **Calibration feature**: <https://github.com/RealWhyKnot/OpenVR-WKSpaceCalibrator>
+- **Smoothing feature**: <https://github.com/RealWhyKnot/OpenVR-WKSmoothing>
+- **Input health feature**: <https://github.com/RealWhyKnot/OpenVR-WKInputHealth>
