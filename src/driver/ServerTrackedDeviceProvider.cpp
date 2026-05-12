@@ -944,13 +944,11 @@ void ServerTrackedDeviceProvider::SetInputHealthConfig(const protocol::InputHeal
 	if (oldPacked != newPacked) {
 		protocol::InputHealthConfig prev{};
 		std::memcpy(&prev, &oldPacked, sizeof(prev));
-		LOG("[inputhealth] SetInputHealthConfig via IPC: master=%d diag_only=%d rest=%d trig=%d cooldown=%us (was: master=%d diag_only=%d rest=%d trig=%d cooldown=%us)",
+		LOG("[inputhealth] SetInputHealthConfig via IPC: master=%d diag_only=%d rest=%d trig=%d (was: master=%d diag_only=%d rest=%d trig=%d)",
 			(int)cfg.master_enabled, (int)cfg.diagnostics_only,
 			(int)cfg.enable_rest_recenter, (int)cfg.enable_trigger_remap,
-			(unsigned)cfg.notification_cooldown_s,
 			(int)prev.master_enabled, (int)prev.diagnostics_only,
-			(int)prev.enable_rest_recenter, (int)prev.enable_trigger_remap,
-			(unsigned)prev.notification_cooldown_s);
+			(int)prev.enable_rest_recenter, (int)prev.enable_trigger_remap);
 	}
 }
 

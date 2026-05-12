@@ -82,9 +82,12 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 	ImGui::Spacing();
 	if (ImGui::BeginTable("modules", 3,
 		ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
-		ImGui::TableSetupColumn("Module", ImGuiTableColumnFlags_WidthStretch, 0.40f);
-		ImGui::TableSetupColumn("Enabled", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-		ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthStretch, 0.60f);
+		// Module name stretches left so Status + Enabled hug the right edge.
+		// Status is wide enough to hold "Enabling -- takes effect on next
+		// SteamVR launch" without wrapping; Enabled is just the checkbox.
+		ImGui::TableSetupColumn("Module",  ImGuiTableColumnFlags_WidthStretch, 1.0f);
+		ImGui::TableSetupColumn("Status",  ImGuiTableColumnFlags_WidthFixed,  340.0f);
+		ImGui::TableSetupColumn("Enabled", ImGuiTableColumnFlags_WidthFixed,   70.0f);
 		ImGui::TableHeadersRow();
 
 		for (auto &plugin : plugins) {
@@ -100,9 +103,48 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 			const bool displayState = (it != wanted.end()) ? it->second : installed;
 
 			ImGui::TableNextRow();
-		ImGui::TableNextColumn();
-		ImGui::TextUnformatted(plugin->Name());
 
+			// Column 0: module name (left).
+			ImGui::TableNextColumn();
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted(plugin->Name());
+
+			// Column 1: status text, right-aligned within its fixed column.
+			// During a pending toggle the row is the only place the user can
+			// learn the change is in flight and won't take effect until the
+			// next SteamVR launch -- that's the reason status isn't merged
+			// into the checkbox.
+			ImGui::TableNextColumn();
+			ImGui::AlignTextToFramePadding();
+			const char *statusText = nullptr;
+			ImVec4 statusColor{};
+			bool statusColored = false;
+			if (isPending) {
+				statusText = (it != wanted.end() && it->second)
+					? "Enabling -- takes effect on next SteamVR launch"
+					: "Disabling -- takes effect on next SteamVR launch";
+				statusColor = ImVec4(0.95f, 0.7f, 0.4f, 1.0f);
+				statusColored = true;
+			} else if (installed) {
+				statusText = "Enabled";
+				statusColor = ImVec4(0.45f, 0.85f, 0.45f, 1.0f);
+				statusColored = true;
+			} else {
+				statusText = "Disabled";
+			}
+			// Right-align by padding from the right edge: avail width - text width.
+			const float colW = ImGui::GetContentRegionAvail().x;
+			const float textW = ImGui::CalcTextSize(statusText).x;
+			const float pad = (colW > textW) ? (colW - textW) : 0.0f;
+			ImGui::Dummy(ImVec2(pad, 0));
+			ImGui::SameLine(0, 0);
+			if (statusColored) {
+				ImGui::TextColored(statusColor, "%s", statusText);
+			} else {
+				ImGui::TextDisabled("%s", statusText);
+			}
+
+			// Column 2: enabled checkbox, far right.
 			ImGui::TableNextColumn();
 			ImGui::PushID(key.c_str());
 			ImGui::BeginDisabled(isPending);
@@ -116,17 +158,6 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 			}
 			ImGui::EndDisabled();
 			ImGui::PopID();
-
-			ImGui::TableNextColumn();
-			if (isPending) {
-				ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.4f, 1.0f),
-					"%s -- takes effect on next SteamVR launch",
-					(it != wanted.end() && it->second) ? "Enabling" : "Disabling");
-			} else if (installed) {
-				ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "Enabled");
-			} else {
-				ImGui::TextDisabled("Disabled");
-			}
 		}
 		ImGui::EndTable();
 	}

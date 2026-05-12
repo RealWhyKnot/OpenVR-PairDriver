@@ -402,19 +402,11 @@ namespace protocol
 		bool      diagnostics_only;
 
 		// Per-category compensation toggles. The overlay flips these on by
-		// default; have no effect while diagnostics_only is true. The
-		// matching compensation kernels are still landing -- as of v12 these
-		// are hint bits the driver records and acks but does not consume on
-		// the input hot path.
+		// default; have no effect while diagnostics_only is true.
 		bool      enable_rest_recenter;
 		bool      enable_trigger_remap;
 
-		// Suppress repeated "drift detected" notifications shorter than this
-		// many seconds apart, per device. Default 0 means "use the driver's
-		// hard-coded default" (1800 s); explicit values let power users tune.
-		uint16_t  notification_cooldown_s;
-
-		// Trailing padding to round to 8 bytes. Named so a future reader
+		// Trailing padding. Named so a future reader
 		// doesn't mistake it for a meaningful flag; left zero by the overlay.
 		uint16_t  _reserved;
 	};
