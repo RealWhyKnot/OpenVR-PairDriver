@@ -23,6 +23,10 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **protocol:** Bump Version 13 -> 14 for InputHealthConfig shrinking (0e72bf9)
 - **overlay:** SteamVR auto-launch via vrmanifest + UI polish pass (d284aae)
 - **overlay:** Unify logs + add Smoothing logging + icon + dev-channel gate (6736e10)
+- **install:** Stage facetracking host in build + deploy + NSIS installer (2026.5.12.13-3A37) (4c700ca)
+- **facetracking:** Add module - driver math, overlay UI, .NET 10 host, tests (2026.5.12.13-3A37) (2fe23e8)
+- **protocol:** Bump to v15 with face-tracking wire types (2026.5.12.13-3A37) (88651af)
+- **overlay:** Add dashboard renderer for the SteamVR overlay surface (2026.5.12.13-3A37) (1aa0fbf)
 
 ### Changed
 - Rename export macro to OPENVRPAIRDRIVER_EXPORTS (c7df7e6)
@@ -50,3 +54,4 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **driver:** MotionGate Tiny requires both axes in noise (AND, not OR) (2ede4c6)
 - **build:** Silence PowerShell 5.1 NativeCommandError noise + add -Wno-dev (9839a7b)
 - **overlay:** Set GLFW title-bar icon via WM_SETICON on Windows (9f55188)
+- **overlay:** Elevate flag-toggle via EncodedCommand and -Path for New-Item (2026.5.12.13-3A37) (eb72415)
