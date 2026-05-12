@@ -42,3 +42,7 @@ std::unique_ptr<DriverModule> CreateDriverModule();
 namespace inputhealth {
 std::unique_ptr<DriverModule> CreateDriverModule();
 }
+
+namespace facetracking {
+std::unique_ptr<DriverModule> CreateDriverModule();
+}

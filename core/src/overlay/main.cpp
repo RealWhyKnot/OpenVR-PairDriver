@@ -2,6 +2,7 @@
 #include "ManifestRegistration.h"
 #include "ShellContext.h"
 #include "UiHelpers.h"
+#include "VrOverlayHost.h"
 
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
@@ -38,6 +39,7 @@ namespace openvr_pair::overlay {
 std::unique_ptr<FeaturePlugin> CreateInputHealthPlugin();
 std::unique_ptr<FeaturePlugin> CreateSmoothingPlugin();
 std::unique_ptr<FeaturePlugin> CreateSpaceCalibratorPlugin();
+std::unique_ptr<FeaturePlugin> CreateFaceTrackingPlugin();
 
 } // namespace openvr_pair::overlay
 
@@ -60,6 +62,9 @@ std::vector<std::unique_ptr<openvr_pair::overlay::FeaturePlugin>> CreatePlugins(
 #endif
 #if OPENVR_PAIR_HAS_CALIBRATION_OVERLAY
 	plugins.push_back(CreateSpaceCalibratorPlugin());
+#endif
+#if OPENVR_PAIR_HAS_FACETRACKING_OVERLAY
+	plugins.push_back(CreateFaceTrackingPlugin());
 #endif
 	return plugins;
 }
@@ -294,6 +299,34 @@ int main(int argc, char **argv)
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
 	ImGui_ImplOpenGL3_Init("#version 130");
 
+	// Offscreen FBO + RGBA8 texture. Every frame ImGui renders into
+	// this texture, which then gets blitted to the desktop window
+	// (for monitor display) AND submitted to the SteamVR dashboard
+	// overlay (for in-VR display). Fixed 1200x780 to match the
+	// default GLFW window size; the desktop window blit stretches
+	// if the user resizes.
+	constexpr int kFboWidth = 1200;
+	constexpr int kFboHeight = 780;
+	GLuint fboTexture = 0;
+	GLuint fbo = 0;
+	glGenTextures(1, &fboTexture);
+	glBindTexture(GL_TEXTURE_2D, fboTexture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, kFboWidth, kFboHeight, 0,
+		GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glGenFramebuffers(1, &fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, fboTexture, 0);
+	GLenum drawBuffers[1] = { GL_COLOR_ATTACHMENT0 };
+	glDrawBuffers(1, drawBuffers);
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		fprintf(stderr, "[OpenVR-Pair] offscreen framebuffer incomplete\n");
+	}
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
 	ShellContext context = CreateShellContext();
 	openvr_pair::overlay::ui::ApplyOverlayStyle();
 	auto plugins = CreatePlugins();
@@ -301,9 +334,9 @@ int main(int argc, char **argv)
 		plugin->OnStart(context);
 	}
 
-	while (!glfwWindowShouldClose(window)) {
-		glfwPollEvents();
+	auto vrOverlay = std::make_unique<VrOverlayHost>();
 
+	while (!glfwWindowShouldClose(window) && !vrOverlay->QuitRequested()) {
 		context.TickToggles();
 
 		for (auto &plugin : plugins) {
@@ -312,6 +345,25 @@ int main(int argc, char **argv)
 
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
+
+		// Drain SteamVR overlay events AFTER ImGui_ImplGlfw_NewFrame
+		// so the VR mouse position wins over GLFW's desktop cursor
+		// while the dashboard is visible. ImGui processes the event
+		// queue in order on NewFrame; later events override earlier
+		// ones. When the dashboard is not visible no mouse events
+		// fire and GLFW's position is used unchanged.
+		const bool dashboardVisible = vrOverlay->TickFrame();
+
+		ImGuiIO &io = ImGui::GetIO();
+		io.DisplaySize = ImVec2(static_cast<float>(kFboWidth),
+			static_cast<float>(kFboHeight));
+		io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
+		if (dashboardVisible) {
+			io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+		} else {
+			io.ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
+		}
+
 		ImGui::NewFrame();
 
 		const ImGuiViewport *vp = ImGui::GetMainViewport();
@@ -347,19 +399,54 @@ int main(int argc, char **argv)
 		ImGui::End();
 		ImGui::Render();
 
-		int fbw = 0;
-		int fbh = 0;
-		glfwGetFramebufferSize(window, &fbw, &fbh);
-		glViewport(0, 0, fbw, fbh);
+		// Render into the FBO.
+		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+		glViewport(0, 0, kFboWidth, kFboHeight);
 		glClearColor(0.07f, 0.07f, 0.08f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-		glfwSwapBuffers(window);
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+		// Blit FBO to the desktop window so monitor users still see
+		// the same UI.
+		int fbw = 0;
+		int fbh = 0;
+		glfwGetFramebufferSize(window, &fbw, &fbh);
+		if (fbw > 0 && fbh > 0) {
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+			glBlitFramebuffer(0, 0, kFboWidth, kFboHeight, 0, 0, fbw, fbh,
+				GL_COLOR_BUFFER_BIT, GL_LINEAR);
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+			glfwSwapBuffers(window);
+		}
+
+		// Submit the same texture to the dashboard overlay when it's
+		// visible inside the headset.
+		if (dashboardVisible) {
+			vrOverlay->SubmitTexture(fboTexture, kFboWidth, kFboHeight);
+		}
+
+		// Wait for input or a frame interval. Tighter cadence when
+		// the in-VR overlay is visible so the dashboard stays
+		// responsive; broader cadence otherwise lets the desktop
+		// process idle cheaply.
+		constexpr double kDashboardFrameSeconds = 1.0 / 90.0;
+		constexpr double kIdleFrameSeconds = 1.0 / 30.0;
+		const double waitSeconds = dashboardVisible
+			? kDashboardFrameSeconds
+			: kIdleFrameSeconds;
+		glfwWaitEventsTimeout(waitSeconds);
 	}
+
+	vrOverlay.reset();
 
 	for (auto it = plugins.rbegin(); it != plugins.rend(); ++it) {
 		(*it)->OnShutdown(context);
 	}
+
+	glDeleteFramebuffers(1, &fbo);
+	glDeleteTextures(1, &fboTexture);
 
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();

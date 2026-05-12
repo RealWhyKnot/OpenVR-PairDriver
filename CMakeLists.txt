@@ -35,6 +35,12 @@ add_subdirectory(core/src)
 
 # Unit tests (not pulled in by any core CMakeLists).
 add_subdirectory(modules/calibration/tests)
+add_subdirectory(modules/facetracking/tests)
+
+# Face-tracking C# host sidecar. Built via `dotnet publish` and staged into the
+# artifacts tree by build.ps1. Toggleable via OPENVR_PAIR_BUILD_FACE_HOST so a
+# C++-only contributor doesn't need the .NET SDK to build the driver+overlay.
+add_subdirectory(modules/facetracking/src/host)
 
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC" OR "${CMAKE_C_COMPILER_ID}" STREQUAL "MSVC")
 	add_compile_options(

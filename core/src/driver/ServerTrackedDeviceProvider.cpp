@@ -18,6 +18,9 @@
 #ifndef OPENVR_PAIR_HAS_INPUTHEALTH_DRIVER
 #define OPENVR_PAIR_HAS_INPUTHEALTH_DRIVER 0
 #endif
+#ifndef OPENVR_PAIR_HAS_FACETRACKING_DRIVER
+#define OPENVR_PAIR_HAS_FACETRACKING_DRIVER 0
+#endif
 
 namespace {
 
@@ -72,6 +75,9 @@ vr::EVRInitError ServerTrackedDeviceProvider::Init(vr::IVRDriverContext *pDriver
 #if OPENVR_PAIR_HAS_INPUTHEALTH_DRIVER
 	activateModule(inputhealth::CreateDriverModule());
 #endif
+#if OPENVR_PAIR_HAS_FACETRACKING_DRIVER
+	activateModule(facetracking::CreateDriverModule());
+#endif
 
 	if (featureFlags & pairdriver::kFeatureCalibration) {
 		// Calibration setup: speed thresholds, pose telemetry shmem, IPC pipe.
@@ -125,6 +131,14 @@ vr::EVRInitError ServerTrackedDeviceProvider::Init(vr::IVRDriverContext *pDriver
 		inputHealthServer->Run();
 	}
 
+	if (featureFlags & pairdriver::kFeatureFaceTracking) {
+		faceTrackingServer = std::make_unique<IPCServer>(
+			this,
+			OPENVR_PAIRDRIVER_FACETRACKING_PIPE_NAME,
+			pairdriver::kFeatureFaceTracking);
+		faceTrackingServer->Run();
+	}
+
 	// Hook installation is gated inside the injector by the same feature
 	// flags so the GetGenericInterface detour skips registering the
 	// per-feature inner hooks for subsystems that aren't enabled.
@@ -137,6 +151,7 @@ vr::EVRInitError ServerTrackedDeviceProvider::Init(vr::IVRDriverContext *pDriver
 		if (calibrationServer) calibrationServer->Stop();
 		if (smoothingServer) smoothingServer->Stop();
 		if (inputHealthServer) inputHealthServer->Stop();
+		if (faceTrackingServer) faceTrackingServer->Stop();
 		shmem.Close();
 		VR_CLEANUP_SERVER_DRIVER_CONTEXT();
 		return vr::VRInitError_Driver_Failed;
@@ -173,6 +188,7 @@ void ServerTrackedDeviceProvider::Cleanup()
 		(*it)->Shutdown();
 	}
 	activeModules.clear();
+	if (faceTrackingServer) faceTrackingServer->Stop();
 	if (inputHealthServer) inputHealthServer->Stop();
 	if (smoothingServer) smoothingServer->Stop();
 	if (calibrationServer) calibrationServer->Stop();

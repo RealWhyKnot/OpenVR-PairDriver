@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>OpenVRPair.FaceModuleHost</AssemblyName>
+    <RootNamespace>OpenVRPair.FaceModuleHost</RootNamespace>
+    <OutputType>Exe</OutputType>
+    <UseAppHost>true</UseAppHost>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- This process is a SteamVR sidecar; it only ships for Windows.
+         net10.0-windows suppresses CA1416 for Windows-only APIs like
+         MemoryMappedFile.OpenExisting that would otherwise require per-call
+         [SupportedOSPlatform] annotations throughout the codebase. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OpenVRPair.FaceTracking.ModuleSdk\OpenVRPair.FaceTracking.ModuleSdk.csproj" />
+    <ProjectReference Include="..\OpenVRPair.FaceTracking.VrcftCompat\OpenVRPair.FaceTracking.VrcftCompat.csproj" />
+    <ProjectReference Include="..\OpenVRPair.FaceTracking.Registry\OpenVRPair.FaceTracking.Registry.csproj" />
+  </ItemGroup>
+  <!-- Makaretu.Dns for mDNS-based VRChat discovery fallback.
+       If this package is unavailable at the required version, pin to the most
+       recent known-good 0.27+ release and update OscSender.cs accordingly. -->
+  <ItemGroup>
+    <PackageReference Include="Makaretu.Dns.Multicast" Version="0.27.0" />
+    <PackageReference Include="System.Formats.Cbor" Version="9.0.0" />
+  </ItemGroup>
+</Project>

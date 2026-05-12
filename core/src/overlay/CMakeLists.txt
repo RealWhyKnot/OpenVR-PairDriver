@@ -23,6 +23,10 @@ add_subdirectory("${CMAKE_SOURCE_DIR}/modules/calibration/src/overlay" "${CMAKE_
 list(APPEND OPENVR_PAIR_OVERLAY_FEATURE_LIBS openvr_pair_feature_calibration_overlay)
 list(APPEND OPENVR_PAIR_OVERLAY_DEFINES OPENVR_PAIR_HAS_CALIBRATION_OVERLAY=1)
 
+add_subdirectory("${CMAKE_SOURCE_DIR}/modules/facetracking/src/overlay" "${CMAKE_BINARY_DIR}/modules/facetracking-overlay")
+list(APPEND OPENVR_PAIR_OVERLAY_FEATURE_LIBS openvr_pair_feature_facetracking_overlay)
+list(APPEND OPENVR_PAIR_OVERLAY_DEFINES OPENVR_PAIR_HAS_FACETRACKING_OVERLAY=1)
+
 if(WIN32)
 	enable_language(RC)
 	set(OPENVR_PAIR_RC_SOURCES openvr-pair.rc)
@@ -42,6 +46,8 @@ add_executable(OpenVRPairOverlay WIN32
 	ShellContext.h
 	ShellFooter.cpp
 	ShellFooter.h
+	VrOverlayHost.cpp
+	VrOverlayHost.h
 	main.cpp
 	${OPENVR_PAIR_RC_SOURCES})
 
@@ -88,3 +94,10 @@ add_custom_command(TARGET OpenVRPairOverlay POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different
 		"${CMAKE_CURRENT_LIST_DIR}/manifest.vrmanifest"
 		"$<TARGET_FILE_DIR:OpenVRPairOverlay>/manifest.vrmanifest")
+
+# Stage the dashboard-overlay thumbnail next to the exe. VrOverlayHost
+# loads it at runtime via SetOverlayFromFile using an exe-relative path.
+add_custom_command(TARGET OpenVRPairOverlay POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		"${CMAKE_CURRENT_LIST_DIR}/dashboard_icon.png"
+		"$<TARGET_FILE_DIR:OpenVRPairOverlay>/dashboard_icon.png")

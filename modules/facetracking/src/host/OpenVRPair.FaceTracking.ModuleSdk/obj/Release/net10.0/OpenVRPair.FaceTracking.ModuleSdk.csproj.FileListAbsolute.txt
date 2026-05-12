@@ -1,0 +1,12 @@
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceTracking.ModuleSdk\bin\Release\net10.0\OpenVRPair.FaceTracking.ModuleSdk.deps.json
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceTracking.ModuleSdk\bin\Release\net10.0\OpenVRPair.FaceTracking.ModuleSdk.dll
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceTracking.ModuleSdk\bin\Release\net10.0\OpenVRPair.FaceTracking.ModuleSdk.pdb
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceTracking.ModuleSdk\obj\Release\net10.0\OpenVRPair.FaceTracking.ModuleSdk.GeneratedMSBuildEditorConfig.editorconfig
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceTracking.ModuleSdk\obj\Release\net10.0\OpenVRPair.FaceTracking.ModuleSdk.AssemblyInfoInputs.cache
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceTracking.ModuleSdk\obj\Release\net10.0\OpenVRPair.FaceTracking.ModuleSdk.AssemblyInfo.cs
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceTracking.ModuleSdk\obj\Release\net10.0\OpenVRPair.FaceTracking.ModuleSdk.csproj.CoreCompileInputs.cache
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceTracking.ModuleSdk\obj\Release\net10.0\OpenVRPair.FaceTracking.ModuleSdk.sourcelink.json
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceTracking.ModuleSdk\obj\Release\net10.0\OpenVRPair.FaceTracking.ModuleSdk.dll
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceTracking.ModuleSdk\obj\Release\net10.0\refint\OpenVRPair.FaceTracking.ModuleSdk.dll
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceTracking.ModuleSdk\obj\Release\net10.0\OpenVRPair.FaceTracking.ModuleSdk.pdb
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceTracking.ModuleSdk\obj\Release\net10.0\ref\OpenVRPair.FaceTracking.ModuleSdk.dll

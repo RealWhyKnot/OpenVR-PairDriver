@@ -6,9 +6,10 @@
 // resources directory at Init() and only wires up the matching subsystems.
 // Each consumer overlay's installer drops the appropriate flag:
 //
-//   resources/enable_calibration.flag  -- OpenVR-WKSpaceCalibrator
-//   resources/enable_smoothing.flag    -- OpenVR-WKSmoothing
-//   resources/enable_inputhealth.flag  -- OpenVR-WKInputHealth
+//   resources/enable_calibration.flag    -- OpenVR-WKSpaceCalibrator
+//   resources/enable_smoothing.flag      -- OpenVR-WKSmoothing
+//   resources/enable_inputhealth.flag    -- OpenVR-WKInputHealth
+//   resources/enable_facetracking.flag   -- OpenVR-WKFaceTracking
 //
 // Any subset (including the empty subset) may be present. With no flags the
 // driver loads but stays inert (no hooks installed, no pipes opened, no
@@ -17,9 +18,10 @@
 
 namespace pairdriver {
 
-constexpr uint32_t kFeatureCalibration = 1u << 0;
-constexpr uint32_t kFeatureSmoothing   = 1u << 1;
-constexpr uint32_t kFeatureInputHealth = 1u << 2;
+constexpr uint32_t kFeatureCalibration  = 1u << 0;
+constexpr uint32_t kFeatureSmoothing    = 1u << 1;
+constexpr uint32_t kFeatureInputHealth  = 1u << 2;
+constexpr uint32_t kFeatureFaceTracking = 1u << 3;
 
 // Returns the bitwise OR of detected feature flags. Logs the path it scanned
 // and the result to the driver log so install issues are easy to diagnose.

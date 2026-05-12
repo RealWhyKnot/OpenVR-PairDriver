@@ -1,0 +1,6 @@
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceModuleHost\obj\Release\net10.0\win-x64\OpenVRPair.FaceModuleHost.csproj.AssemblyReference.cache
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceModuleHost\obj\Release\net10.0\win-x64\OpenVRPair.FaceModuleHost.GeneratedMSBuildEditorConfig.editorconfig
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceModuleHost\obj\Release\net10.0\win-x64\OpenVRPair.FaceModuleHost.AssemblyInfoInputs.cache
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceModuleHost\obj\Release\net10.0\win-x64\OpenVRPair.FaceModuleHost.AssemblyInfo.cs
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceModuleHost\obj\Release\net10.0\win-x64\OpenVRPair.FaceModuleHost.csproj.CoreCompileInputs.cache
+D:\Github\OpenVR\OpenVR-WKPairDriver\modules\facetracking\src\host\OpenVRPair.FaceModuleHost\obj\Release\net10.0\win-x64\OpenVRPair.FaceModuleHost.sourcelink.json

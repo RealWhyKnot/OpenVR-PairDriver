@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>OpenVRPair.FaceTracking.VrcftCompat</AssemblyName>
+    <RootNamespace>OpenVRPair.FaceTracking.VrcftCompat</RootNamespace>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OpenVRPair.FaceTracking.ModuleSdk\OpenVRPair.FaceTracking.ModuleSdk.csproj" />
+  </ItemGroup>
+</Project>
