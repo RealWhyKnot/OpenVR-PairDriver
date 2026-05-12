@@ -15,9 +15,10 @@
 // consumer overlay connects only to its own pipe. Wire format on all pipes
 // is the same protocol::Request/Response struct; the driver routes by
 // request type and rejects out-of-feature requests.
-#define OPENVR_PAIRDRIVER_CALIBRATION_PIPE_NAME "\\\\.\\pipe\\OpenVR-Calibration"
-#define OPENVR_PAIRDRIVER_SMOOTHING_PIPE_NAME   "\\\\.\\pipe\\OpenVR-WKSmoothing"
-#define OPENVR_PAIRDRIVER_INPUTHEALTH_PIPE_NAME "\\\\.\\pipe\\OpenVR-WKInputHealth"
+#define OPENVR_PAIRDRIVER_CALIBRATION_PIPE_NAME  "\\\\.\\pipe\\OpenVR-Calibration"
+#define OPENVR_PAIRDRIVER_SMOOTHING_PIPE_NAME    "\\\\.\\pipe\\OpenVR-WKSmoothing"
+#define OPENVR_PAIRDRIVER_INPUTHEALTH_PIPE_NAME  "\\\\.\\pipe\\OpenVR-WKInputHealth"
+#define OPENVR_PAIRDRIVER_FACETRACKING_PIPE_NAME "\\\\.\\pipe\\OpenVR-FaceTracking"
 
 // Pose telemetry shmem segment. Created by the driver only when the calibration
 // feature is enabled; the calibration overlay opens it to read driver-side
@@ -28,6 +29,14 @@
 // inputhealth feature is enabled; the InputHealth overlay opens it to read
 // per-component statistics published at ~10 Hz from the driver-side worker.
 #define OPENVR_PAIRDRIVER_INPUTHEALTH_SHMEM_NAME "OpenVRPairInputHealthMemoryV1"
+
+// Face-tracking per-frame shmem ring. Created by the driver only when the
+// facetracking feature is enabled; the C# FaceModuleHost.exe opens it for
+// write and publishes per-hardware-frame face/eye samples (~120 Hz) into a
+// 32-slot ring. The driver reads the latest frame on its pose-update path
+// and applies calibration / eyelid-sync / vergence-lock before publishing to
+// SteamVR inputs. Single writer (host) / single reader (driver).
+#define OPENVR_PAIRDRIVER_FACETRACKING_SHMEM_NAME "OpenVRPairFaceTrackingFrameRingV1"
 
 #ifdef _OPENVR_API 
 
@@ -156,7 +165,17 @@ namespace protocol
 	// or write at the wrong offset without this bump. quick.ps1 redeploys the
 	// driver and overlay together so end users hit the matching pair, but the
 	// version bump prevents a dev-tree mismatch from silently corrupting config.
-	const uint32_t Version = 14;
+	//
+	// v15 (2026-05-12): adds the FaceTracking subsystem. Driver opens a fourth
+	// pipe (\\.\pipe\OpenVR-FaceTracking) gated on enable_facetracking.flag,
+	// accepts RequestSetFaceTrackingConfig + RequestSetFaceCalibrationCommand +
+	// RequestSetFaceActiveModule. A new shmem ring
+	// (OpenVRPairFaceTrackingFrameRingV1) carries per-frame face/eye samples
+	// from a C# host sidecar (OpenVRPair.FaceModuleHost.exe) into the driver.
+	// Wire layout for the existing request types is unchanged; the bump forces
+	// paired install so a version skew is rejected at handshake instead of
+	// landing as a silently-ignored RequestType.
+	const uint32_t Version = 15;
 
 	// Maximum length of a tracking-system-name string (e.g., "lighthouse", "oculus",
 	// "Pimax Crystal HMD"). 32 bytes is more than enough for known systems and keeps
@@ -193,6 +212,17 @@ namespace protocol
 		// without touching transform / scale / enabled. Lets Smoothing own
 		// these fields while SpaceCalibrator keeps owning calibration.
 		RequestSetDevicePrediction,
+		// v15 (2026-05-12): face-tracking master config (toggles, sync
+		// strengths, OSC output endpoint, active module uuid). Driver caches
+		// the payload and applies it on its pose-update + frame-publish path.
+		RequestSetFaceTrackingConfig,
+		// v15: calibration command from the overlay -- begin/end/save/reset
+		// learned per-shape envelopes. Driver-side CalibrationEngine owns
+		// the persistent state; this is the only mutation path.
+		RequestSetFaceCalibrationCommand,
+		// v15: pick which hardware module (Quest Pro, Vive FT, ...) the host
+		// should load. Driver forwards over its host-side control pipe.
+		RequestSetFaceActiveModule,
 	};
 
 	enum ResponseType
@@ -455,6 +485,102 @@ namespace protocol
 		uint16_t _reserved;
 	};
 
+	// Maximum length of an OSC host string (dotted-quad or short hostname). 40
+	// bytes covers anything reasonable, leaving NUL termination room. Truncation
+	// on overflow is the caller's responsibility -- the driver treats the buffer
+	// as a NUL-terminated string and stops at the first zero byte.
+	static const size_t FACETRACKING_OSC_HOST_LEN = 40;
+
+	// Stable string length for a hardware-module identity. The C# host generates
+	// these as RFC 4122 UUID strings; the driver only matches them as opaque
+	// NUL-terminated tokens.
+	static const size_t FACETRACKING_MODULE_UUID_LEN = 40;
+
+	// v15 (2026-05-12): face-tracking master config.
+	//
+	// POD-only, fits in the existing Request union -- the static_assert below
+	// keeps it under sizeof(SetDeviceTransform). The four-tier toggle / strength
+	// design lets the user disable any single feature (eyelid sync, vergence
+	// lock, continuous calibration) without rebuilding the pipeline, and
+	// supports independent OSC + native output (both can be on; user picks).
+	struct FaceTrackingConfig
+	{
+		// Master kill-switch. False = driver's pose-update path forwards
+		// hardware-side face/eye values unmodified (or, if the host isn't
+		// running yet, no inputs are published at all). Same fast-path-to-
+		// passthrough discipline as the other modules.
+		uint8_t master_enabled;
+
+		// Per-feature toggles. Each can be flipped independently; the
+		// strength sliders below control how aggressive each is when on.
+		uint8_t eyelid_sync_enabled;
+		uint8_t eyelid_sync_preserve_winks;
+		uint8_t vergence_lock_enabled;
+
+		// 0=off, 1=conservative (slow EMA decay, tight outlier gates),
+		// 2=aggressive (faster decay, looser gates). Conservative is the
+		// default for cold-start users.
+		uint8_t continuous_calib_mode;
+
+		// Output sink toggles. Driver publishes via OpenXR eye-gaze action +
+		// scalar input components when output_native_enabled is set; the host
+		// process sends OSC to VRChat when output_osc_enabled is set. Both can
+		// be on at once -- VRChat currently consumes only OSC on PCVR, but
+		// Resonite / NeosVR / future VRChat read the native path.
+		uint8_t output_osc_enabled;
+		uint8_t output_native_enabled;
+		uint8_t _reserved1;
+
+		// Sync feature strengths on a 0..100 scale, identical semantics to
+		// the smoothing module's existing scale. 0=feature observable but no
+		// effect, 100=feature fully forces both eyes / eyelids to converge.
+		uint8_t eyelid_sync_strength;
+		uint8_t vergence_lock_strength;
+		uint8_t gaze_smoothing;
+		uint8_t openness_smoothing;
+
+		// OSC target. Driver forwards these to the host over the host control
+		// pipe; the host owns the UDP socket. Default 127.0.0.1:9000 (VRChat).
+		uint16_t osc_port;
+		uint16_t _reserved2;
+		char     osc_host[FACETRACKING_OSC_HOST_LEN];
+
+		// Active hardware module. Empty string = host picks automatically
+		// (first available). Non-empty = host loads the module with the
+		// matching uuid and ignores others until the user picks again.
+		char     active_module_uuid[FACETRACKING_MODULE_UUID_LEN];
+	};
+
+	enum FaceCalibrationOp : uint8_t
+	{
+		FaceCalibBegin     = 0,
+		FaceCalibEnd       = 1,
+		FaceCalibSave      = 2,
+		FaceCalibResetAll  = 3,
+		FaceCalibResetEye  = 4,
+		FaceCalibResetExpr = 5,
+	};
+
+	// POD payload for RequestSetFaceCalibrationCommand. Carries an op code
+	// for the driver-side CalibrationEngine to act on. Per-shape resets and
+	// finer-grained controls go through the host control pipe (CBOR), not
+	// here -- this is the small, fixed-shape, IPC-fast path.
+	struct FaceCalibrationCommand
+	{
+		uint8_t op;        // see FaceCalibrationOp
+		uint8_t _reserved[7];
+	};
+
+	// POD payload for RequestSetFaceActiveModule. Picks which hardware
+	// module the host should load (Quest Pro, Vive FT, etc.). Driver
+	// forwards this to the host process over the internal control pipe
+	// the next time the host is reachable.
+	struct FaceModuleSelection
+	{
+		char     uuid[FACETRACKING_MODULE_UUID_LEN];
+		uint8_t  _reserved[8];
+	};
+
 	struct Request
 	{
 		RequestType type;
@@ -480,6 +606,12 @@ namespace protocol
 			// v12: per-device prediction smoothness from the Smoothing overlay.
 			// Much smaller than SetDeviceTransform so the union does not grow.
 			SetDevicePrediction setDevicePrediction;
+			// v15: face-tracking master config + calibration commands + module
+			// selection. All three are smaller than SetDeviceTransform so the
+			// union does not grow; the static_asserts below enforce that.
+			FaceTrackingConfig     setFaceTrackingConfig;
+			FaceCalibrationCommand setFaceCalibrationCommand;
+			FaceModuleSelection    setFaceActiveModule;
 		};
 
 		Request() : type(RequestInvalid), setAlignmentSpeedParams({}) { }
@@ -489,6 +621,12 @@ namespace protocol
 
 	static_assert(sizeof(InputHealthCompensationEntry) <= sizeof(SetDeviceTransform),
 		"InputHealthCompensationEntry must not grow Request");
+	static_assert(sizeof(FaceTrackingConfig) <= sizeof(SetDeviceTransform),
+		"FaceTrackingConfig must not grow Request");
+	static_assert(sizeof(FaceCalibrationCommand) <= sizeof(SetDeviceTransform),
+		"FaceCalibrationCommand must not grow Request");
+	static_assert(sizeof(FaceModuleSelection) <= sizeof(SetDeviceTransform),
+		"FaceModuleSelection must not grow Request");
 
 	struct Response
 	{
@@ -1106,6 +1244,303 @@ namespace protocol
 				if (g1 == g2) return true;
 			}
 			return false;
+		}
+	};
+
+	// =========================================================================
+	// FaceTrackingFrame shmem ring.
+	//
+	// Single-writer (the C# FaceModuleHost.exe sidecar) and single-reader (the
+	// driver's pose-update path). Hardware face/eye samples arrive at ~120 Hz;
+	// the driver applies calibration / eyelid-sync / vergence-lock on top before
+	// publishing to SteamVR inputs and the host's OSC sender. A 32-slot ring
+	// gives the driver-side filter chain a few frames of look-back without a
+	// separate buffer of its own.
+	//
+	// Wire layout matches the InputHealthSnapshotShmem discipline: header with
+	// magic + version + ring size, atomic publish index, per-slot seqlock
+	// generation so a reader can detect torn reads.
+	// =========================================================================
+
+	// Number of facial-expression shapes carried per frame. Mirrors the Unified
+	// Expressions v2 enum order in the SDK; the wire ABI is the ordering, NOT
+	// the C# enum, so the host MUST serialise into this fixed index space.
+	static const uint32_t FACETRACKING_EXPRESSION_COUNT = 63;
+
+	struct FaceTrackingFrameBody
+	{
+		// Sample timestamp as Windows QueryPerformanceCounter ticks at the host's
+		// publish time. Both writer and reader resolve QPC against the same
+		// performance counter (same boot session), so timestamps are directly
+		// comparable without conversion.
+		uint64_t qpc_sample_time;
+
+		// FNV-1a-ish 64-bit hash of the source module's stable identity string
+		// (e.g. "QuestPro_v2"). Lets the driver detect a hot-swap and reset its
+		// calibration state without parsing the full uuid. 0 = unknown / not set.
+		uint64_t source_module_uuid_hash;
+
+		// Per-eye origin in HMD space, metres. The host either obtains these
+		// from the hardware (Quest Pro reports physical pupil positions) or
+		// falls back to half the headset IPD. Used by the driver's vergence-lock
+		// math to project gaze rays.
+		float    eye_origin_l[3];
+		float    eye_origin_r[3];
+
+		// Per-eye gaze direction as a unit vector in HMD space. The OpenVR
+		// convention is +X right, +Y up, -Z forward; gaze pointing straight
+		// ahead is (0, 0, -1).
+		float    eye_gaze_l[3];
+		float    eye_gaze_r[3];
+
+		// Per-eye eyelid openness 0..1. 0 = fully closed, 1 = fully open. Linear,
+		// not gamma-corrected.
+		float    eye_openness_l;
+		float    eye_openness_r;
+
+		// Per-eye pupil dilation 0..1. Most hardware exposes this as a relative
+		// signal; the driver's continuous calibration normalises across the
+		// observed range. 0 = constricted, 1 = dilated.
+		float    pupil_dilation_l;
+		float    pupil_dilation_r;
+
+		// Per-eye confidence 0..1. If the hardware exposes a confidence signal
+		// the host writes it directly; otherwise the host writes a synthesised
+		// value (frame age + signal stability). Driver filters use this for
+		// weighted blending and eye-dropout fallback.
+		float    eye_confidence_l;
+		float    eye_confidence_r;
+
+		// Facial expression shapes in Unified Expressions v2 order. Range 0..1
+		// per shape unless the SDK documents otherwise (a few directional shapes
+		// are signed; the host coerces those into [0,1] before publish so the
+		// wire format stays uniform).
+		float    expressions[FACETRACKING_EXPRESSION_COUNT];
+
+		// bit 0: eye fields are valid this frame.
+		// bit 1: expression fields are valid this frame.
+		// Other bits reserved; reader must ignore. Lets a host module that only
+		// supports one capability publish frames the driver can still consume.
+		uint32_t flags;
+		uint32_t _reserved;
+	};
+
+	static_assert(std::is_trivially_copyable<FaceTrackingFrameBody>::value,
+		"FaceTrackingFrameBody must be trivially copyable for shmem use");
+	static_assert(std::is_standard_layout<FaceTrackingFrameBody>::value,
+		"FaceTrackingFrameBody must be standard-layout for stable wire format");
+
+	struct FaceTrackingFrameSlot
+	{
+		std::atomic<uint64_t> generation;
+		FaceTrackingFrameBody body;
+	};
+
+	class FaceTrackingFrameShmem
+	{
+	public:
+		static const uint32_t SHMEM_MAGIC   = 0x46544652; // 'FTFR'
+		static const uint32_t SHMEM_VERSION = 1;
+		static const uint32_t RING_SIZE     = 32;
+
+	private:
+		struct ShmemData
+		{
+			uint32_t magic;
+			uint32_t shmem_version;
+			uint32_t ring_size;
+			// Header padding so the slot table starts on an 8-byte boundary and
+			// the publish_index that precedes it is naturally aligned. Reserved
+			// for future header growth (driver-host capability negotiation, etc.)
+			// without bumping SHMEM_VERSION if the fields stay zero on old hosts.
+			uint32_t _reserved_header[5];
+
+			// Monotonically increasing publish counter. The slot the writer just
+			// finished is at index (publish_index - 1) % RING_SIZE. 0 means no
+			// frame has been published since shmem creation.
+			std::atomic<uint64_t> publish_index;
+
+			FaceTrackingFrameSlot slots[RING_SIZE];
+		};
+
+		HANDLE     hMapFile = INVALID_HANDLE_VALUE;
+		ShmemData *pData    = nullptr;
+
+		std::string LastErrorString(DWORD lastError)
+		{
+			LPSTR buffer = nullptr;
+			size_t size = FormatMessageA(
+				FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+				NULL, lastError, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&buffer, 0, NULL
+			);
+			std::string message(buffer ? buffer : "", size);
+			if (buffer) LocalFree(buffer);
+			return message;
+		}
+
+	public:
+		FaceTrackingFrameShmem() = default;
+		~FaceTrackingFrameShmem() { Close(); }
+
+		FaceTrackingFrameShmem(const FaceTrackingFrameShmem &) = delete;
+		FaceTrackingFrameShmem &operator=(const FaceTrackingFrameShmem &) = delete;
+
+		operator bool() const { return pData != nullptr; }
+
+		void Close()
+		{
+			if (pData) { UnmapViewOfFile(pData); pData = nullptr; }
+			if (hMapFile && hMapFile != INVALID_HANDLE_VALUE) {
+				CloseHandle(hMapFile);
+				hMapFile = INVALID_HANDLE_VALUE;
+			}
+		}
+
+		// Driver-side: create / re-open the shmem segment, stamp the header,
+		// zero the ring. Idempotent on the same name. Returns false on failure
+		// so the driver can log + run degraded (no face tracking).
+		bool Create(LPCSTR segment_name)
+		{
+			Close();
+			hMapFile = CreateFileMappingA(
+				INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
+				0, sizeof(ShmemData), segment_name);
+			if (!hMapFile) return false;
+
+			pData = reinterpret_cast<ShmemData*>(MapViewOfFile(
+				hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(ShmemData)));
+			if (!pData) return false;
+
+			pData->magic         = SHMEM_MAGIC;
+			pData->shmem_version = SHMEM_VERSION;
+			pData->ring_size     = RING_SIZE;
+			return true;
+		}
+
+		// Host- or reader-side: open an existing segment. Throws on missing or
+		// mismatched magic/version so the caller can surface a paired-install
+		// hint instead of silently reading stale data. Used by unit tests and
+		// the C++ host-supervisor helper if it ever needs to peek.
+		void Open(LPCSTR segment_name)
+		{
+			Close();
+			hMapFile = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, segment_name);
+			if (!hMapFile) {
+				throw std::runtime_error(
+					"Failed to open FaceTracking shmem segment: " +
+					LastErrorString(GetLastError()));
+			}
+			pData = reinterpret_cast<ShmemData*>(MapViewOfFile(
+				hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(ShmemData)));
+			if (!pData) {
+				DWORD err = GetLastError();
+				CloseHandle(hMapFile);
+				hMapFile = INVALID_HANDLE_VALUE;
+				throw std::runtime_error(
+					"Failed to map FaceTracking shmem segment: " +
+					LastErrorString(err));
+			}
+			if (pData->magic != SHMEM_MAGIC) {
+				char buf[160];
+				snprintf(buf, sizeof buf,
+					"FaceTracking shmem magic mismatch: got 0x%08X, expected 0x%08X",
+					pData->magic, SHMEM_MAGIC);
+				Close();
+				throw std::runtime_error(buf);
+			}
+			if (pData->shmem_version != SHMEM_VERSION) {
+				char buf[160];
+				snprintf(buf, sizeof buf,
+					"FaceTracking shmem version mismatch: got %u, expected %u",
+					pData->shmem_version, SHMEM_VERSION);
+				Close();
+				throw std::runtime_error(buf);
+			}
+		}
+
+		uint32_t RingSize() const { return pData ? pData->ring_size : 0; }
+
+		// Reader: latest published index. Increasing means at least one new
+		// frame is available since the prior read; equal means no new data.
+		uint64_t PublishIndex() const
+		{
+			return pData ? pData->publish_index.load(std::memory_order_acquire) : 0;
+		}
+
+		// Reader: copy the most recently published frame's body into `out`. The
+		// per-slot seqlock detects torn reads; up to `max_retries` retries are
+		// attempted. Returns false if no frame has been published yet OR if the
+		// retry budget was exceeded (writer is hot-looping faster than reader,
+		// which is harmless -- caller skips this frame).
+		bool TryReadLatest(FaceTrackingFrameBody &out, int max_retries = 8) const
+		{
+			if (!pData) return false;
+			const uint64_t idx = pData->publish_index.load(std::memory_order_acquire);
+			if (idx == 0) return false;
+			const FaceTrackingFrameSlot &slot = pData->slots[(idx - 1) % RING_SIZE];
+			for (int attempt = 0; attempt < max_retries; ++attempt) {
+				const uint64_t g1 = slot.generation.load(std::memory_order_acquire);
+				if ((g1 & 1ULL) != 0ULL) {
+					// Writer mid-update. Hint the CPU to back off so a
+					// hyperthread sharing the same physical core lets the
+					// writer run.
+					YieldProcessor();
+					continue;
+				}
+				std::memcpy(&out, &slot.body, sizeof(FaceTrackingFrameBody));
+				std::atomic_thread_fence(std::memory_order_acquire);
+				const uint64_t g2 = slot.generation.load(std::memory_order_acquire);
+				if (g1 == g2) return true;
+				YieldProcessor();
+			}
+			return false;
+		}
+
+		// Reader: copy a specific historical slot (by absolute publish index).
+		// Returns false if the requested index has already been overwritten
+		// (target_index + RING_SIZE < current publish_index) or if a torn read
+		// can't be resolved. Lets the driver's continuous-calibration code look
+		// at a few frames of history without a private buffer.
+		bool TryReadByIndex(uint64_t target_index, FaceTrackingFrameBody &out, int max_retries = 8) const
+		{
+			if (!pData || target_index == 0) return false;
+			const uint64_t now = pData->publish_index.load(std::memory_order_acquire);
+			if (target_index > now) return false;
+			if (now - target_index >= RING_SIZE) return false;
+			const FaceTrackingFrameSlot &slot = pData->slots[(target_index - 1) % RING_SIZE];
+			for (int attempt = 0; attempt < max_retries; ++attempt) {
+				const uint64_t g1 = slot.generation.load(std::memory_order_acquire);
+				if ((g1 & 1ULL) != 0ULL) {
+					// Writer mid-update. Hint the CPU to back off so a
+					// hyperthread sharing the same physical core lets the
+					// writer run.
+					YieldProcessor();
+					continue;
+				}
+				std::memcpy(&out, &slot.body, sizeof(FaceTrackingFrameBody));
+				std::atomic_thread_fence(std::memory_order_acquire);
+				const uint64_t g2 = slot.generation.load(std::memory_order_acquire);
+				if (g1 == g2) return true;
+				YieldProcessor();
+			}
+			return false;
+		}
+
+		// Writer-side helper for unit tests and any future C++ first-party
+		// publisher. The C# host writes the same layout directly via
+		// MemoryMappedFile + Volatile.Write; production code path never calls
+		// this. Bumps the slot generation odd before memcpy and even after,
+		// then publishes the new index.
+		void Publish(const FaceTrackingFrameBody &body)
+		{
+			if (!pData) return;
+			const uint64_t next = pData->publish_index.load(std::memory_order_relaxed) + 1;
+			FaceTrackingFrameSlot &slot = pData->slots[(next - 1) % RING_SIZE];
+			const uint64_t prev_gen = slot.generation.load(std::memory_order_relaxed);
+			slot.generation.store(prev_gen + 1, std::memory_order_release);
+			std::memcpy(&slot.body, &body, sizeof(FaceTrackingFrameBody));
+			slot.generation.store(prev_gen + 2, std::memory_order_release);
+			pData->publish_index.store(next, std::memory_order_release);
 		}
 	};
 }
