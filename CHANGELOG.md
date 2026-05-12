@@ -51,3 +51,4 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **overlay:** Correct module-toggle status copy for desktop-mode users (2026.5.11.2-30C9) (0.1.0.0) (4631071)
 - **driver:** MotionGate Tiny requires both axes in noise (AND, not OR) (2ede4c6)
 - **build:** Silence PowerShell 5.1 NativeCommandError noise + add -Wno-dev (9839a7b)
+- **overlay:** Set GLFW title-bar icon via WM_SETICON on Windows (9f55188)
