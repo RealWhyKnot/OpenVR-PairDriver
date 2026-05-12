@@ -23,6 +23,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **shell:** Shared UI helpers, wrapping footer, end-to-end deploy (d274d2a)
 - **driver:** Protocol v13 + cross-module robustness pass (d660034)
 - **protocol:** Bump Version 13 -> 14 for InputHealthConfig shrinking (0e72bf9)
+- **overlay:** SteamVR auto-launch via vrmanifest + UI polish pass (d284aae)
 
 ### Changed
 - Rename export macro to OPENVRPAIRDRIVER_EXPORTS (c7df7e6)
