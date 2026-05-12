@@ -5,10 +5,21 @@
 
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
+#ifdef _WIN32
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+#endif
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <implot.h>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 #include <cstdio>
 #include <exception>
@@ -246,6 +257,25 @@ int main(int argc, char **argv)
 		glfwTerminate();
 		return 1;
 	}
+
+#ifdef _WIN32
+	// Windows shell (taskbar, Start menu, alt-tab) picks the ICON resource
+	// off the .exe directly, but the GLFW window's title-bar icon comes
+	// from a separate per-window WM_SETICON message. Without this, the
+	// title bar renders GLFW's default icon while the taskbar shows the
+	// real one -- which is exactly the asymmetry the user reported.
+	// LoadImageW with LR_SHARED lets Windows manage the HICON lifetime.
+	{
+		HWND hwnd = glfwGetWin32Window(window);
+		HINSTANCE hinst = GetModuleHandleW(nullptr);
+		HICON iconBig = (HICON)LoadImageW(hinst, MAKEINTRESOURCEW(1), IMAGE_ICON,
+			0, 0, LR_DEFAULTSIZE | LR_SHARED);
+		HICON iconSmall = (HICON)LoadImageW(hinst, MAKEINTRESOURCEW(1), IMAGE_ICON,
+			GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_SHARED);
+		if (hwnd && iconBig)   SendMessageW(hwnd, WM_SETICON, ICON_BIG,   (LPARAM)iconBig);
+		if (hwnd && iconSmall) SendMessageW(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)iconSmall);
+	}
+#endif
 
 	glfwMakeContextCurrent(window);
 	glfwSwapInterval(1);
