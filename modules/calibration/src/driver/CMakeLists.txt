@@ -6,7 +6,7 @@ set(SPACECAL_PAIRDRIVER_ROOT "${CMAKE_SOURCE_DIR}")
 add_library(openvr_pair_feature_calibration_driver STATIC
 	CalibrationDriverModule.cpp)
 
-target_include_directories(openvr_pair_feature_calibration_driver PUBLIC
+target_include_directories(openvr_pair_feature_calibration_driver PRIVATE
 	${CMAKE_CURRENT_LIST_DIR}
 	${SPACECAL_PAIRDRIVER_ROOT}/core/src/driver
 	${SPACECAL_PAIRDRIVER_ROOT}/core/src/common

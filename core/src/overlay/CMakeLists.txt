@@ -41,6 +41,7 @@ target_include_directories(OpenVRPairOverlay PRIVATE
 	${CMAKE_CURRENT_LIST_DIR}
 	${CMAKE_SOURCE_DIR}/core/src/common
 	${CMAKE_SOURCE_DIR}/lib
+	${CMAKE_SOURCE_DIR}/lib/openvr/headers
 	${CMAKE_SOURCE_DIR}/lib/imgui
 	${CMAKE_SOURCE_DIR}/lib/imgui/backends
 	${CMAKE_SOURCE_DIR}/lib/implot

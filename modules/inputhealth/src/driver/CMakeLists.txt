@@ -20,7 +20,7 @@ add_library(openvr_pair_feature_inputhealth_driver STATIC
 	InputHealthState.h
 	inputhealth/PerComponentStats.h)
 
-target_include_directories(openvr_pair_feature_inputhealth_driver PUBLIC
+target_include_directories(openvr_pair_feature_inputhealth_driver PRIVATE
 	${CMAKE_CURRENT_LIST_DIR}
 	${INPUTHEALTH_PAIRDRIVER_ROOT}/core/src/driver
 	${INPUTHEALTH_PAIRDRIVER_ROOT}/core/src/common

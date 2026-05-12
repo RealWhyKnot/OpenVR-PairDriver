@@ -8,7 +8,7 @@ add_library(openvr_pair_feature_smoothing_driver STATIC
 	SkeletalHookInjector.h
 	SmoothingDriverModule.cpp)
 
-target_include_directories(openvr_pair_feature_smoothing_driver PUBLIC
+target_include_directories(openvr_pair_feature_smoothing_driver PRIVATE
 	${CMAKE_CURRENT_LIST_DIR}
 	${SMOOTHING_PAIRDRIVER_ROOT}/core/src/driver
 	${SMOOTHING_PAIRDRIVER_ROOT}/core/src/common

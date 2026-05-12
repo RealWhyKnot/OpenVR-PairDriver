@@ -31,7 +31,7 @@ if(OPENVR_PAIR_BUILD_UMBRELLA)
         SpaceCalibratorUmbrellaRuntime.cpp
         SpaceCalibratorUmbrellaRuntime.h)
 
-    target_include_directories(openvr_pair_feature_calibration_overlay PUBLIC
+    target_include_directories(openvr_pair_feature_calibration_overlay PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
         ${SPACECAL_REPO_ROOT}
         ${SPACECAL_REPO_ROOT}/src/common

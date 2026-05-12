@@ -24,7 +24,7 @@ add_library(openvr_pair_feature_inputhealth_overlay STATIC
 	SnapshotReader.h
 	BuildStamp.h)
 
-target_include_directories(openvr_pair_feature_inputhealth_overlay PUBLIC
+target_include_directories(openvr_pair_feature_inputhealth_overlay PRIVATE
 	${CMAKE_CURRENT_LIST_DIR}
 	${INPUTHEALTH_PAIRDRIVER_ROOT}/core/src/common
 	${INPUTHEALTH_PAIRDRIVER_ROOT}/core/src/common/inputhealth
