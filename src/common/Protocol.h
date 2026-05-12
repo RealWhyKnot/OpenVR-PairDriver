@@ -148,7 +148,15 @@ namespace protocol
 	// -- acceptable for a perceptual smoothing knob. Wire struct grows by 12 bytes
 	// (10 array + trailing pad); still much smaller than SetDeviceTransform, so
 	// sizeof(Request) is unchanged.
-	const uint32_t Version = 13;
+	//
+	// v14 (2026-05-12): InputHealthConfig shrunk by 2 bytes -- the
+	// notification_cooldown_s field was removed from both the overlay-side
+	// config object and the wire struct. Field offsets after enable_trigger_remap
+	// shift; an old driver paired with a new overlay (or vice versa) would read
+	// or write at the wrong offset without this bump. quick.ps1 redeploys the
+	// driver and overlay together so end users hit the matching pair, but the
+	// version bump prevents a dev-tree mismatch from silently corrupting config.
+	const uint32_t Version = 14;
 
 	// Maximum length of a tracking-system-name string (e.g., "lighthouse", "oculus",
 	// "Pimax Crystal HMD"). 32 bytes is more than enough for known systems and keeps
