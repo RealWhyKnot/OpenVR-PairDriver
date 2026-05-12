@@ -1,0 +1,80 @@
+name: Commit message check
+
+# Server-side enforcement of the same rule .githooks/commit-msg enforces locally:
+# a commit subject may contain at most one build-version stamp. The client-side
+# hook only runs if core.hooksPath is set to .githooks/ (which build.ps1 does on
+# its first run). Contributors who haven't run build.ps1 yet -- including
+# automation that commits via the GitHub API or runs `git commit --no-verify` --
+# can land double-stamped subjects without ever seeing the hook. Catch them here
+# so the failure is visible in the Actions tab even if the push itself lands.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Reject double-stamped commit subjects
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate commit messages in the pushed range
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.event.after }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # Resolve the range of commits to validate. For pull_request, walk
+          # the PR commits only. For push, walk from the previous tip to the
+          # new tip; the special "all-zeroes" SHA marks a branch creation, in
+          # which case we just check the new HEAD's commit (the branch is new
+          # so its history before that point is shared with another branch
+          # already validated).
+          if [ -n "${PR_HEAD_SHA:-}" ] && [ -n "${PR_BASE_SHA:-}" ]; then
+            range="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [ "${BEFORE_SHA:-}" = "0000000000000000000000000000000000000000" ] || [ -z "${BEFORE_SHA:-}" ]; then
+            range="${AFTER_SHA}~1..${AFTER_SHA}"
+          else
+            range="${BEFORE_SHA}..${AFTER_SHA}"
+          fi
+          echo "Validating commits in range: $range"
+
+          # Pattern matches both release stamps (YYYY.M.D.N) and dev stamps
+          # (YYYY.M.D.N-XXXX). The same regex used by .githooks/commit-msg.
+          pattern='\([0-9]{4}\.[0-9]+\.[0-9]+\.[0-9]+(-[A-Fa-f0-9]{4})?\)'
+
+          failures=0
+          while IFS= read -r line; do
+            sha="${line%% *}"
+            subject="${line#* }"
+            count=$( ( printf '%s\n' "$subject" | grep -oE "$pattern" || true ) | grep -c . || true )
+            count=${count//[^0-9]/}
+            count=${count:-0}
+            if [ "$count" -gt 1 ]; then
+              echo "::error::Commit $sha has $count build-version stamps in its subject:"
+              echo "::error::  $subject"
+              failures=$((failures + 1))
+            fi
+          done < <(git log --format='%H %s' "$range")
+
+          if [ "$failures" -gt 0 ]; then
+            echo ""
+            echo "::error::$failures commit(s) carry more than one build-version stamp."
+            echo "Reword the offending commits to drop stale (YYYY.M.D.N-XXXX) trailers."
+            echo "See .githooks/commit-msg for the local pre-commit version of this check."
+            exit 1
+          fi
+
+          echo "All commit subjects in $range carry at most one build-version stamp."

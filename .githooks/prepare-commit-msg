@@ -22,6 +22,30 @@ case "$source" in
   merge|squash) exit 0 ;;
 esac
 
+# Refuse to silently double-stamp when something else (an editor template, a copy
+# from "git log", an agent that "matched repo style") already put a build-version
+# stamp into the subject. The hook is the single source of truth for stamps:
+# don't pre-stamp; let this hook tack version.txt onto the subject. For amends
+# the subject already has yesterday's stamp; "commit" source means amend/reword
+# and is allowed through without re-checking (and without re-adding).
+if [ "$source" != "commit" ]; then
+  subject="$(grep -m1 -vE '^(#|$)' "$msg_file" || true)"
+  if printf '%s\n' "$subject" \
+      | grep -qE '\([0-9]{4}\.[0-9]+\.[0-9]+\.[0-9]+(-[A-Fa-f0-9]{4})?\)'; then
+    echo "" >&2
+    echo "prepare-commit-msg: subject already contains a build-version stamp." >&2
+    echo "" >&2
+    echo "  subject: $subject" >&2
+    echo "" >&2
+    echo "Don't pre-stamp commit subjects: this hook reads version.txt and appends" >&2
+    echo "the current stamp. Stamps you copy from 'git log' or an editor template" >&2
+    echo "are almost always stale by the time the next build runs. Drop the (YYYY.M.D.N...)" >&2
+    echo "trailer from the subject and commit again." >&2
+    echo "" >&2
+    exit 1
+  fi
+fi
+
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 [ -n "$repo_root" ] || exit 0
 
@@ -33,6 +57,11 @@ version_file="$repo_root/version.txt"
 version="$(tr -d '\r' < "$version_file" | sed 's/[^[:print:]]//g' | xargs)"
 [ -n "$version" ] || exit 0
 
-if ! grep -q "($version)" "$msg_file"; then
+# Append only if the subject is clean (no version stamp of any vintage). The
+# old behaviour was a literal "($version)" check, which appended whenever the
+# subject held a stamp from a different build than the current version.txt --
+# exactly the path that produced the 2026-05-12 double-stamp run when a fresh
+# build's stamp hit a subject that already carried yesterday's stamp.
+if ! grep -qE '\([0-9]{4}\.[0-9]+\.[0-9]+\.[0-9]+(-[A-Fa-f0-9]{4})?\)' "$msg_file"; then
   sed -i "1s/\$/ ($version)/" "$msg_file"
 fi
