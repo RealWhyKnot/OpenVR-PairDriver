@@ -22,6 +22,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **driver:** Protocol v13 + cross-module robustness pass (d660034)
 - **protocol:** Bump Version 13 -> 14 for InputHealthConfig shrinking (0e72bf9)
 - **overlay:** SteamVR auto-launch via vrmanifest + UI polish pass (d284aae)
+- **overlay:** Unify logs + add Smoothing logging + icon + dev-channel gate (6736e10)
 
 ### Changed
 - Rename export macro to OPENVRPAIRDRIVER_EXPORTS (c7df7e6)
