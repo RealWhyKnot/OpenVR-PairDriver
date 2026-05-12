@@ -79,7 +79,7 @@ Write-Host "Build version: $Version"
 # in the calibration UI's version line even though the umbrella binary
 # itself reports the real stamp. The file is generated; the SC repo tracks a
 # fallback that this overwrite replaces only for the umbrella build.
-$ScBuildStamp = Join-Path $PSScriptRoot "features/OpenVR-WKSpaceCalibrator/src/overlay/BuildStamp.h"
+$ScBuildStamp = Join-Path $PSScriptRoot "modules/calibration/src/overlay/BuildStamp.h"
 if (Test-Path (Split-Path -Parent $ScBuildStamp)) {
 	Set-Content -Path $ScBuildStamp -Value @"
 // Overwritten by OpenVR-WKPairDriver/build.ps1 with the umbrella binary's

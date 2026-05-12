@@ -23,6 +23,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # (alongside our minimal stubs). This keeps the test target decoupled from the
 # overlay's GUI/OpenVR runtime dependencies — the math is pure Eigen and openvr
 # header types, both of which are header-only as far as the linker is concerned.
+set(SPACECAL_SRC "${CMAKE_SOURCE_DIR}/modules/calibration/src")
+
 add_executable(spacecal_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/test_calibration_calc.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test_protocol.cpp
@@ -42,19 +44,17 @@ add_executable(spacecal_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/test_reanchor_chi_square.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test_translation_solve_direct.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/stubs.cpp
-    ${CMAKE_SOURCE_DIR}/src/overlay/CalibrationCalc.cpp
-    ${CMAKE_SOURCE_DIR}/src/overlay/TranslationSolveDirect.cpp
-    ${CMAKE_SOURCE_DIR}/src/overlay/Configuration.cpp
+    ${SPACECAL_SRC}/overlay/CalibrationCalc.cpp
+    ${SPACECAL_SRC}/overlay/TranslationSolveDirect.cpp
+    ${SPACECAL_SRC}/overlay/Configuration.cpp
 )
 
 target_include_directories(spacecal_tests
     PRIVATE ${CMAKE_SOURCE_DIR}
-    PRIVATE ${CMAKE_SOURCE_DIR}/src/common
-    PRIVATE ${CMAKE_SOURCE_DIR}/src/overlay
-    # Protocol.h and MotionGate.h moved into the OpenVR-WKPairDriver submodule;
-    # tests pick them up from there so test_protocol / test_motion_gate stay
-    # in lock-step with the shared wire layout.
-    PRIVATE ${CMAKE_SOURCE_DIR}/lib/OpenVR-WKPairDriver/src/common
+    PRIVATE ${SPACECAL_SRC}/common
+    PRIVATE ${SPACECAL_SRC}/overlay
+    # Protocol.h and MotionGate.h live in core/src/common in the monorepo.
+    PRIVATE ${CMAKE_SOURCE_DIR}/core/src/common
     PRIVATE ${CMAKE_SOURCE_DIR}/lib
     PRIVATE ${CMAKE_SOURCE_DIR}/lib/openvr/headers
     PRIVATE ${CMAKE_SOURCE_DIR}/lib/Eigen
@@ -64,6 +64,7 @@ target_link_libraries(spacecal_tests
     PRIVATE GTest::gtest_main
     PRIVATE ${CMAKE_SOURCE_DIR}/lib/openvr/lib/win64/openvr_api.lib
 )
+
 
 target_compile_definitions(spacecal_tests
     PRIVATE NOMINMAX
@@ -81,8 +82,7 @@ endif()
 # locate it at the same predictable path the overlay uses.
 adjust_bin_paths(spacecal_tests)
 
-# Copy openvr_api.dll next to the test exe so it can launch on systems where
-# the DLL isn't on PATH.
+# Copy openvr_api.dll next to the test exe so it can launch without PATH changes.
 add_custom_command(
     TARGET spacecal_tests POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy

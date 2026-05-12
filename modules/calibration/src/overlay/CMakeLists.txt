@@ -1,15 +1,9 @@
 cmake_minimum_required (VERSION 3.15)
 
+# In the monorepo, SPACECAL_REPO_ROOT is the modules/calibration subtree and
+# the PairDriver root is the monorepo root (CMAKE_SOURCE_DIR).
 get_filename_component(SPACECAL_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
-set(SPACECAL_PAIRDRIVER_ROOT "${OPENVR_PAIRDRIVER_ROOT}" CACHE PATH "OpenVR-WKPairDriver checkout")
-if(NOT SPACECAL_PAIRDRIVER_ROOT)
-    set(_sibling_pairdriver "${SPACECAL_REPO_ROOT}/../OpenVR-WKPairDriver")
-    if(EXISTS "${_sibling_pairdriver}/src/overlay/FeaturePlugin.h")
-        get_filename_component(SPACECAL_PAIRDRIVER_ROOT "${_sibling_pairdriver}" ABSOLUTE)
-    else()
-        get_filename_component(SPACECAL_PAIRDRIVER_ROOT "${SPACECAL_REPO_ROOT}/lib/OpenVR-WKPairDriver" ABSOLUTE)
-    endif()
-endif()
+set(SPACECAL_PAIRDRIVER_ROOT "${CMAKE_SOURCE_DIR}")
 
 if(OPENVR_PAIR_BUILD_UMBRELLA)
     set(SPACECAL_BUILDSTAMP_HEADER "${CMAKE_CURRENT_LIST_DIR}/BuildStamp.h")
@@ -41,14 +35,14 @@ if(OPENVR_PAIR_BUILD_UMBRELLA)
         ${CMAKE_CURRENT_LIST_DIR}
         ${SPACECAL_REPO_ROOT}
         ${SPACECAL_REPO_ROOT}/src/common
-        ${SPACECAL_PAIRDRIVER_ROOT}/src/common
-        ${SPACECAL_PAIRDRIVER_ROOT}/src/overlay
-        ${SPACECAL_REPO_ROOT}/lib
-        ${SPACECAL_REPO_ROOT}/lib/imgui
-        ${SPACECAL_REPO_ROOT}/lib/imgui/backends
-        ${SPACECAL_REPO_ROOT}/lib/implot
-        ${SPACECAL_REPO_ROOT}/lib/openvr/headers
-        ${SPACECAL_REPO_ROOT}/lib/Eigen)
+        ${SPACECAL_PAIRDRIVER_ROOT}/core/src/common
+        ${SPACECAL_PAIRDRIVER_ROOT}/core/src/overlay
+        ${CMAKE_SOURCE_DIR}/lib
+        ${CMAKE_SOURCE_DIR}/lib/imgui
+        ${CMAKE_SOURCE_DIR}/lib/imgui/backends
+        ${CMAKE_SOURCE_DIR}/lib/implot
+        ${CMAKE_SOURCE_DIR}/lib/openvr/headers
+        ${CMAKE_SOURCE_DIR}/lib/Eigen)
 
     target_link_libraries(openvr_pair_feature_calibration_overlay PUBLIC
         glfw
@@ -58,7 +52,7 @@ if(OPENVR_PAIR_BUILD_UMBRELLA)
         dwmapi.lib
         winhttp.lib
         bcrypt.lib
-        ${SPACECAL_REPO_ROOT}/lib/openvr/lib/win64/openvr_api.lib)
+        ${CMAKE_SOURCE_DIR}/lib/openvr/lib/win64/openvr_api.lib)
 
     target_compile_definitions(openvr_pair_feature_calibration_overlay PRIVATE
         NOMINMAX

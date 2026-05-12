@@ -12,21 +12,23 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+set(SPACECAL_SRC "${CMAKE_SOURCE_DIR}/modules/calibration/src")
+
 set(REPLAY_SOURCES
     main.cpp
     CalibrationMetrics_stub.cpp
-    ${CMAKE_SOURCE_DIR}/src/overlay/CalibrationCalc.cpp
-    ${CMAKE_SOURCE_DIR}/src/overlay/TranslationSolveDirect.cpp
+    ${SPACECAL_SRC}/overlay/CalibrationCalc.cpp
+    ${SPACECAL_SRC}/overlay/TranslationSolveDirect.cpp
 )
 
 add_executable(spacecal_replay ${REPLAY_SOURCES})
 
 target_include_directories(spacecal_replay
     PRIVATE ${CMAKE_SOURCE_DIR}
-    PRIVATE ${CMAKE_SOURCE_DIR}/src/common
-    PRIVATE ${CMAKE_SOURCE_DIR}/src/overlay
-    # Protocol.h and MotionGate.h moved into the OpenVR-WKPairDriver submodule.
-    PRIVATE ${CMAKE_SOURCE_DIR}/lib/OpenVR-WKPairDriver/src/common
+    PRIVATE ${SPACECAL_SRC}/common
+    PRIVATE ${SPACECAL_SRC}/overlay
+    # Protocol.h and MotionGate.h live in core/src/common in the monorepo.
+    PRIVATE ${CMAKE_SOURCE_DIR}/core/src/common
     PRIVATE ${CMAKE_SOURCE_DIR}/lib
     PRIVATE ${CMAKE_SOURCE_DIR}/lib/openvr/headers
     PRIVATE ${CMAKE_SOURCE_DIR}/lib/Eigen

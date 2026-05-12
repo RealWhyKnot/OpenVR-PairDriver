@@ -1,16 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
-get_filename_component(INPUTHEALTH_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
-
-set(INPUTHEALTH_PAIRDRIVER_ROOT "${OPENVR_PAIRDRIVER_ROOT}" CACHE PATH "OpenVR-WKPairDriver checkout")
-if(NOT INPUTHEALTH_PAIRDRIVER_ROOT)
-	set(_sibling_pairdriver "${INPUTHEALTH_REPO_ROOT}/../OpenVR-WKPairDriver")
-	if(EXISTS "${_sibling_pairdriver}/src/overlay/FeaturePlugin.h")
-		get_filename_component(INPUTHEALTH_PAIRDRIVER_ROOT "${_sibling_pairdriver}" ABSOLUTE)
-	else()
-		get_filename_component(INPUTHEALTH_PAIRDRIVER_ROOT "${INPUTHEALTH_REPO_ROOT}/lib/OpenVR-WKPairDriver" ABSOLUTE)
-	endif()
-endif()
+# In the monorepo, the PairDriver root is the repo root (CMAKE_SOURCE_DIR).
+set(INPUTHEALTH_PAIRDRIVER_ROOT "${CMAKE_SOURCE_DIR}")
 
 add_library(openvr_pair_feature_inputhealth_overlay STATIC
 	DebugTab.cpp
@@ -35,13 +26,13 @@ add_library(openvr_pair_feature_inputhealth_overlay STATIC
 
 target_include_directories(openvr_pair_feature_inputhealth_overlay PUBLIC
 	${CMAKE_CURRENT_LIST_DIR}
-	${INPUTHEALTH_PAIRDRIVER_ROOT}/src/common
-	${INPUTHEALTH_PAIRDRIVER_ROOT}/src/common/inputhealth
-	${INPUTHEALTH_PAIRDRIVER_ROOT}/src/overlay
-	${INPUTHEALTH_REPO_ROOT}/lib
-	${INPUTHEALTH_REPO_ROOT}/lib/imgui
-	${INPUTHEALTH_REPO_ROOT}/lib/implot
-	${INPUTHEALTH_REPO_ROOT}/lib/openvr/headers)
+	${INPUTHEALTH_PAIRDRIVER_ROOT}/core/src/common
+	${INPUTHEALTH_PAIRDRIVER_ROOT}/core/src/common/inputhealth
+	${INPUTHEALTH_PAIRDRIVER_ROOT}/core/src/overlay
+	${CMAKE_SOURCE_DIR}/lib
+	${CMAKE_SOURCE_DIR}/lib/imgui
+	${CMAKE_SOURCE_DIR}/lib/implot
+	${CMAKE_SOURCE_DIR}/lib/openvr/headers)
 
 target_compile_definitions(openvr_pair_feature_inputhealth_overlay PRIVATE
 	NOMINMAX

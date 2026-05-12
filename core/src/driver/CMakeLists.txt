@@ -58,30 +58,21 @@ set(OPENVR_PAIRDRIVER_ROOT ${CMAKE_SOURCE_DIR} CACHE PATH "OpenVR-WKPairDriver c
 set(OPENVR_PAIR_FEATURE_LIBS "")
 set(OPENVR_PAIR_FEATURE_DEFINES "")
 
-set(OPENVR_PAIR_INPUTHEALTH_DIR "${CMAKE_SOURCE_DIR}/features/OpenVR-WKInputHealth")
-set(OPENVR_PAIR_SMOOTHING_DIR "${CMAKE_SOURCE_DIR}/features/OpenVR-WKSmoothing")
-set(OPENVR_PAIR_CALIBRATION_DIR "${CMAKE_SOURCE_DIR}/features/OpenVR-WKSpaceCalibrator")
+# Feature modules are always present in the monorepo; add unconditionally.
+add_subdirectory("${CMAKE_SOURCE_DIR}/modules/inputhealth/src/driver" "${CMAKE_BINARY_DIR}/modules/inputhealth-driver")
+list(APPEND OPENVR_PAIR_FEATURE_LIBS openvr_pair_feature_inputhealth_driver)
+list(APPEND OPENVR_PAIR_FEATURE_DEFINES OPENVR_PAIR_HAS_INPUTHEALTH_DRIVER=1)
 
-if(EXISTS "${OPENVR_PAIR_INPUTHEALTH_DIR}/src/driver/CMakeLists.txt")
-	add_subdirectory("${OPENVR_PAIR_INPUTHEALTH_DIR}/src/driver" "${CMAKE_BINARY_DIR}/features/inputhealth-driver")
-	list(APPEND OPENVR_PAIR_FEATURE_LIBS openvr_pair_feature_inputhealth_driver)
-	list(APPEND OPENVR_PAIR_FEATURE_DEFINES OPENVR_PAIR_HAS_INPUTHEALTH_DRIVER=1)
-endif()
+add_subdirectory("${CMAKE_SOURCE_DIR}/modules/smoothing/src/driver" "${CMAKE_BINARY_DIR}/modules/smoothing-driver")
+list(APPEND OPENVR_PAIR_FEATURE_LIBS openvr_pair_feature_smoothing_driver)
+list(APPEND OPENVR_PAIR_FEATURE_DEFINES OPENVR_PAIR_HAS_SMOOTHING_DRIVER=1)
 
-if(EXISTS "${OPENVR_PAIR_SMOOTHING_DIR}/src/driver/CMakeLists.txt")
-	add_subdirectory("${OPENVR_PAIR_SMOOTHING_DIR}/src/driver" "${CMAKE_BINARY_DIR}/features/smoothing-driver")
-	list(APPEND OPENVR_PAIR_FEATURE_LIBS openvr_pair_feature_smoothing_driver)
-	list(APPEND OPENVR_PAIR_FEATURE_DEFINES OPENVR_PAIR_HAS_SMOOTHING_DRIVER=1)
-endif()
+add_subdirectory("${CMAKE_SOURCE_DIR}/modules/calibration/src/driver" "${CMAKE_BINARY_DIR}/modules/calibration-driver")
+list(APPEND OPENVR_PAIR_FEATURE_LIBS openvr_pair_feature_calibration_driver)
+list(APPEND OPENVR_PAIR_FEATURE_DEFINES OPENVR_PAIR_HAS_CALIBRATION_DRIVER=1)
 
-if(EXISTS "${OPENVR_PAIR_CALIBRATION_DIR}/src/driver/CMakeLists.txt")
-	add_subdirectory("${OPENVR_PAIR_CALIBRATION_DIR}/src/driver" "${CMAKE_BINARY_DIR}/features/calibration-driver")
-	list(APPEND OPENVR_PAIR_FEATURE_LIBS openvr_pair_feature_calibration_driver)
-	list(APPEND OPENVR_PAIR_FEATURE_DEFINES OPENVR_PAIR_HAS_CALIBRATION_DRIVER=1)
-endif()
-
-file(GLOB_RECURSE SOURCES_DRIVER ${CMAKE_SOURCE_DIR}/src/driver "*.c" "*.h" "*.hpp" "*.cpp")
-file(GLOB_RECURSE SOURCES_COMMON ${CMAKE_SOURCE_DIR}/src/common "*.h" "*.hpp")
+file(GLOB_RECURSE SOURCES_DRIVER ${CMAKE_SOURCE_DIR}/core/src/driver "*.c" "*.h" "*.hpp" "*.cpp")
+file(GLOB_RECURSE SOURCES_COMMON ${CMAKE_SOURCE_DIR}/core/src/common "*.h" "*.hpp")
 
 foreach(SOURCE IN ITEMS ${SOURCES_DRIVER})
 	get_filename_component(SOURCE_PATH "${SOURCE}" PATH)
@@ -97,8 +88,8 @@ GroupSourcesByFolder(OpenVRPairDriver)
 
 target_include_directories(OpenVRPairDriver
 	PRIVATE ${CMAKE_SOURCE_DIR}
-	PRIVATE ${CMAKE_SOURCE_DIR}/src/common
-	PRIVATE ${CMAKE_SOURCE_DIR}/src/driver
+	PRIVATE ${CMAKE_SOURCE_DIR}/core/src/common
+	PRIVATE ${CMAKE_SOURCE_DIR}/core/src/driver
 	PRIVATE ${OPENVR_LIB_DIR}
 	PRIVATE ${CMAKE_SOURCE_DIR}/lib/openvr/headers
 	PRIVATE ${CMAKE_SOURCE_DIR}/lib/minhook/include
