@@ -59,10 +59,13 @@ jobs:
       - name: Run tests
         shell: pwsh
         run: |
-          $exe = "build/artifacts/Release/spacecal_tests.exe"
-          if (-not (Test-Path $exe)) { throw "Test binary not found at $exe" }
-          & $exe --gtest_brief=1
-          if ($LASTEXITCODE -ne 0) { throw "Tests failed (exit $LASTEXITCODE)" }
+          $tests = Get-ChildItem build/artifacts/Release/*_tests.exe
+          if ($tests.Count -eq 0) { throw "No test binaries found" }
+          foreach ($t in $tests) {
+            Write-Host "Running $($t.Name)..."
+            & $t.FullName --gtest_brief=1
+            if ($LASTEXITCODE -ne 0) { throw "$($t.Name) failed (exit $LASTEXITCODE)" }
+          }
 
       - name: Stage artifacts
         shell: pwsh

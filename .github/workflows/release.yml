@@ -1,11 +1,11 @@
 # This workflow publishes a release on this repo AND mirrors per-feature
-# zips to the three sibling repos (OpenVR-WKSpaceCalibrator,
-# OpenVR-WKSmoothing, OpenVR-WKInputHealth). The mirror step needs a
-# token with contents:write on those three repos, stored as the secret
-# MIRROR_RELEASE_TOKEN. Provision via:
+# zips to the four sibling repos (OpenVR-WKSpaceCalibrator,
+# OpenVR-WKSmoothing, OpenVR-WKInputHealth, OpenVR-WKVRCFT). The mirror
+# step needs a token with contents:write on all four repos, stored as the
+# secret MIRROR_RELEASE_TOKEN. Provision via:
 #   1. github.com -> Settings -> Developer settings -> Fine-grained PAT
 #   2. Resource owner: RealWhyKnot. Repos: OpenVR-WKSpaceCalibrator,
-#      OpenVR-WKSmoothing, OpenVR-WKInputHealth (only these three).
+#      OpenVR-WKSmoothing, OpenVR-WKInputHealth, OpenVR-WKVRCFT.
 #   3. Permissions: Contents = Read and write.
 #   4. Copy token, then in this repo: Settings -> Secrets and variables
 #      -> Actions -> New repository secret -> name MIRROR_RELEASE_TOKEN.
@@ -15,8 +15,9 @@
 name: Release
 
 # Triggered by pushing a tag like v2026.5.12.0. Builds the umbrella binary
-# (OpenVR-Pair.exe) and driver (driver_openvrpair.dll) via CMake + MSVC,
-# runs the test suite, packages an umbrella zip and three per-feature mirror
+# (OpenVR-Pair.exe), driver (driver_openvrpair.dll), and the C# face-tracking
+# host (OpenVRPair.FaceModuleHost.exe) via CMake + MSVC + dotnet publish,
+# runs the test suite, packages an umbrella zip and four per-feature mirror
 # zips, publishes the umbrella release on this repo, and pushes a mirror
 # release to each sibling repo.
 #
@@ -95,10 +96,13 @@ jobs:
       - name: Run tests
         shell: pwsh
         run: |
-          $exe = "build/artifacts/Release/spacecal_tests.exe"
-          if (-not (Test-Path $exe)) { throw "Test binary not found at $exe" }
-          & $exe --gtest_brief=1
-          if ($LASTEXITCODE -ne 0) { throw "Tests failed (exit $LASTEXITCODE)" }
+          $tests = Get-ChildItem build/artifacts/Release/*_tests.exe
+          if ($tests.Count -eq 0) { throw "No test binaries found" }
+          foreach ($t in $tests) {
+            Write-Host "Running $($t.Name)..."
+            & $t.FullName --gtest_brief=1
+            if ($LASTEXITCODE -ne 0) { throw "$($t.Name) failed (exit $LASTEXITCODE)" }
+          }
 
       - name: Package umbrella and mirror zips
         id: zips
@@ -133,8 +137,29 @@ jobs:
           Copy-Item "$driverSrc/resources/settings/default.vrsettings"    "$stage/driver_openvrpair/resources/settings/default.vrsettings"
           Copy-Item "$driverSrc/bin/win64/driver_openvrpair.dll"           "$stage/driver_openvrpair/bin/win64/driver_01openvrpair.dll"
 
+          $srcFt = "$driverSrc/resources/facetracking"
+          if (Test-Path $srcFt) {
+            Copy-Item -Recurse -Path $srcFt -Destination "$stage/driver_openvrpair/resources/facetracking"
+          }
+
           Copy-Item "$artifacts/OpenVR-Pair.exe"   "$stage/OpenVR-Pair.exe"
           Copy-Item "$artifacts/openvr_api.dll"    "$stage/openvr_api.dll"
+
+          # Stage the C# face-tracking host. CMake publishes it to
+          # build/artifacts/FaceModuleHost/; build.ps1 copies that into the
+          # driver tree locally, but the workflow runs cmake directly so we
+          # do the same copy here. The driver's HostSupervisor resolves the
+          # host exe relative to the driver's own resources directory.
+          $faceHostBuildDir = "build/artifacts/FaceModuleHost"
+          $faceHostStageDir = "$stage/driver_openvrpair/resources/facetracking/host"
+          if (-not (Test-Path $faceHostBuildDir)) {
+            throw "Face-tracking host build output missing at $faceHostBuildDir (was OPENVR_PAIR_BUILD_FACE_HOST=OFF or did dotnet publish fail?)"
+          }
+          New-Item -ItemType Directory -Force -Path $faceHostStageDir | Out-Null
+          Copy-Item -Recurse -Force -Path "$faceHostBuildDir\*" -Destination $faceHostStageDir
+          if (-not (Test-Path "$faceHostStageDir/OpenVRPair.FaceModuleHost.exe")) {
+            throw "Staged OpenVRPair.FaceModuleHost.exe missing under $faceHostStageDir."
+          }
 
           New-Item -ItemType Directory -Force -Path "release" | Out-Null
 
@@ -176,6 +201,7 @@ jobs:
             [pscustomobject]@{ Name = 'Calibration';  Flag = 'enable_calibration.flag';  Repo = 'RealWhyKnot/OpenVR-WKSpaceCalibrator' }
             [pscustomobject]@{ Name = 'Smoothing';    Flag = 'enable_smoothing.flag';    Repo = 'RealWhyKnot/OpenVR-WKSmoothing' }
             [pscustomobject]@{ Name = 'InputHealth';  Flag = 'enable_inputhealth.flag';  Repo = 'RealWhyKnot/OpenVR-WKInputHealth' }
+            [pscustomobject]@{ Name = 'FaceTracking'; Flag = 'enable_facetracking.flag'; Repo = 'RealWhyKnot/OpenVR-WKVRCFT' }
           )
 
           $mirrorPaths = @{}
@@ -200,6 +226,7 @@ jobs:
           "mirror_calibration=$($mirrorPaths['Calibration'])"   >> $env:GITHUB_OUTPUT
           "mirror_smoothing=$($mirrorPaths['Smoothing'])"       >> $env:GITHUB_OUTPUT
           "mirror_inputhealth=$($mirrorPaths['InputHealth'])"   >> $env:GITHUB_OUTPUT
+          "mirror_facetracking=$($mirrorPaths['FaceTracking'])" >> $env:GITHUB_OUTPUT
 
       - name: Build NSIS installer
         id: installer
@@ -371,6 +398,18 @@ jobs:
           $zip  = "${{ steps.zips.outputs.mirror_inputhealth }}"
           $repo = "RealWhyKnot/OpenVR-WKInputHealth"
           $notes = "Mirror of OpenVR-WKPairDriver release $tag. Zip includes enable_inputhealth.flag so input health monitoring activates immediately. Source: https://github.com/RealWhyKnot/OpenVR-WKPairDriver/commit/$env:GITHUB_SHA"
+          gh release create $tag $zip --repo $repo --title $tag --notes $notes
+
+      - name: Mirror release to OpenVR-WKVRCFT
+        env:
+          GH_TOKEN: ${{ secrets.MIRROR_RELEASE_TOKEN }}
+          GITHUB_SHA: ${{ github.sha }}
+        shell: pwsh
+        run: |
+          $tag  = "${{ github.ref_name }}"
+          $zip  = "${{ steps.zips.outputs.mirror_facetracking }}"
+          $repo = "RealWhyKnot/OpenVR-WKVRCFT"
+          $notes = "Mirror of OpenVR-WKPairDriver release $tag. Zip includes enable_facetracking.flag so face and eye tracking activate immediately. Source: https://github.com/RealWhyKnot/OpenVR-WKPairDriver/commit/$env:GITHUB_SHA"
           gh release create $tag $zip --repo $repo --title $tag --notes $notes
 
       - name: Push promoted changelog back to main (verified)
