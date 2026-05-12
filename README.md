@@ -1,28 +1,28 @@
 # OpenVR-WKPairDriver
 
-The shared SteamVR driver DLL for the OpenVR-WKSpaceCalibrator, OpenVR-WKSmoothing, and OpenVR-WKInputHealth consumer overlays.
+Umbrella SteamVR overlay + driver for the OpenVR-Pair toolset. One binary (`OpenVR-Pair.exe`) and one driver DLL (`driver_openvrpair.dll`) host four feature modules under `modules/`:
 
-Each consumer project pulls this in as a git submodule, builds the same `driver_openvrpair.dll`, and installs it to `<SteamVR>\drivers\01openvrpair\`. The driver decides at startup which subsystems to wire up by checking for marker files in its `resources/` folder:
+- **calibration** -- continuous calibration of HMDs against lighthouse-tracked full-body trackers. Forked from the original OpenVR-SpaceCalibrator. Mirrors releases to [OpenVR-WKSpaceCalibrator](https://github.com/RealWhyKnot/OpenVR-WKSpaceCalibrator).
+- **smoothing** -- One-Euro finger smoothing and per-device pose-prediction suppression for Valve Index Knuckles. Mirrors releases to [OpenVR-WKSmoothing](https://github.com/RealWhyKnot/OpenVR-WKSmoothing).
+- **inputhealth** -- per-button / per-axis / per-finger drift and degradation detection with learned compensation. Mirrors releases to [OpenVR-WKInputHealth](https://github.com/RealWhyKnot/OpenVR-WKInputHealth).
+- **facetracking** -- face and eye tracking via a C# .NET 10 host sidecar that loads hardware-vendor modules, normalises against Unified Expressions, and feeds the driver over a shared-memory ring. Mirrors releases to [OpenVR-WKVRCFT](https://github.com/RealWhyKnot/OpenVR-WKVRCFT).
 
-- `enable_calibration.flag` -> install the pose-update hook + open the calibration IPC pipe
-- `enable_smoothing.flag` -> install the skeletal hook + open the smoothing IPC pipe
-- `enable_inputhealth.flag` -> install the boolean / scalar input hooks + open the input-health IPC pipe
+Each feature is wired up at SteamVR startup based on a marker file in the driver's `resources/` directory:
 
-Each consumer's installer drops its own flag. Any subset can be installed simultaneously: the driver wires up only the subsystems whose flags are present, runs each over its own pipe, and leaves the unused code paths dormant.
+- `enable_calibration.flag` -- pose-update hook + calibration IPC pipe
+- `enable_smoothing.flag` -- skeletal hook + smoothing IPC pipe
+- `enable_inputhealth.flag` -- boolean / scalar input hooks + input-health IPC pipe
+- `enable_facetracking.flag` -- face-tracking host sidecar + IPC pipe + shmem ring
 
-## Why one DLL instead of two
+The umbrella overlay's Modules tab toggles these flags at runtime.
 
-A SteamVR driver hooks into `vrserver.exe` via MinHook. MinHook is process-global -- only one detour can exist per target function. Two independently-installed driver DLLs both trying to patch `IVRDriverContext::GetGenericInterface` slot 0 would collide; the second install fails silently and that driver's detours never fire. Sharing one DLL means one MinHook install per target function, regardless of which features are enabled.
+## Why one DLL instead of four
 
-## Consumer repos
-
-- [OpenVR-WKSpaceCalibrator](https://github.com/RealWhyKnot/OpenVR-WKSpaceCalibrator) -- calibration overlay, drops `enable_calibration.flag`.
-- [OpenVR-WKSmoothing](https://github.com/RealWhyKnot/OpenVR-WKSmoothing) -- finger-smoothing overlay, drops `enable_smoothing.flag`.
-- [OpenVR-WKInputHealth](https://github.com/RealWhyKnot/OpenVR-WKInputHealth) -- input deadzone / drift / degradation overlay, drops `enable_inputhealth.flag`.
+A SteamVR driver hooks into `vrserver.exe` via MinHook. MinHook is process-global: only one detour can exist per target function. Four independently-installed driver DLLs trying to patch the same slot of `IVRDriverContext::GetGenericInterface` would collide; the second install silently fails and that driver's detours never fire. Sharing one DLL means one MinHook install per target function regardless of which features are enabled.
 
 ## Build
 
-Requires CMake 3.15+, MSVC (Visual Studio 2022 recommended), and submodules initialized.
+Requires CMake 3.15+, Visual Studio Build Tools 2022 (or the VS 2022 IDE), and submodules initialised. The .NET 10 SDK is needed for the face-tracking host; the build skips that target when the SDK is missing or when `-DOPENVR_PAIR_BUILD_FACE_HOST=OFF` is passed.
 
 ```
 git clone --recursive https://github.com/RealWhyKnot/OpenVR-WKPairDriver
@@ -30,16 +30,27 @@ cd OpenVR-WKPairDriver
 ./build.ps1
 ```
 
-Output lands at `build/driver_openvrpair/bin/win64/driver_openvrpair.dll`.
+Output:
 
-## Pipes
+- `build/artifacts/Release/OpenVR-Pair.exe`
+- `build/driver_openvrpair/bin/win64/driver_openvrpair.dll`
+- `build/driver_openvrpair/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe` (when the host build is enabled)
+
+## Pipes and shared memory
 
 - `\\.\pipe\OpenVR-Calibration` -- calibration overlay <-> driver
 - `\\.\pipe\OpenVR-WKSmoothing` -- smoothing overlay <-> driver
 - `\\.\pipe\OpenVR-WKInputHealth` -- input-health overlay <-> driver
+- `\\.\pipe\OpenVR-FaceTracking` -- face-tracking overlay <-> driver
 
-Wire format defined in [src/common/Protocol.h](src/common/Protocol.h). Each consumer's overlay sends only its own request types; the driver routes by request type and rejects messages on the wrong pipe.
+Plus the shmem ring `OpenVRPairFaceTrackingFrameRingV1` for high-rate samples from the C# host into the driver, and `OpenVRPairInputHealthMemoryV1` for the input-health snapshot stream.
+
+Wire format is defined in [core/src/common/Protocol.h](core/src/common/Protocol.h) at protocol version 15. Each overlay sends only its own request types; the driver routes by request type and rejects messages on the wrong pipe. The handshake fails fast on version skew so a mismatched pair is caught at startup rather than misrouting bytes.
+
+## Documentation
+
+See the [wiki](https://github.com/RealWhyKnot/OpenVR-WKPairDriver/wiki) for architecture overview, per-module deep-dives, protocol reference, build environment notes, and the release pipeline.
 
 ## License
 
-GNU General Public License v3.0, see [LICENSE](LICENSE). Project copyright lines and third-party attributions in [NOTICE](NOTICE). Earlier upstream contributions from Justin Li and Hyblocker were originally MIT-licensed and remain available under MIT terms from their origin repos; this fork's combined work is GPL-3.0 going forward.
+GNU General Public License v3.0; see [LICENSE](LICENSE). Project copyright lines and third-party attributions in [NOTICE](NOTICE). Earlier contributions from Justin Li and Hyblocker were originally MIT-licensed and remain available under MIT terms from their origin repos; the combined work in this repository is GPL-3.0 going forward.
