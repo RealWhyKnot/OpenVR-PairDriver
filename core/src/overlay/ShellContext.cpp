@@ -7,6 +7,7 @@
 
 #include <objbase.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <utility>
@@ -189,6 +190,47 @@ std::wstring QuotePowerShellString(const std::wstring &value)
 	return out;
 }
 
+// Encode a PowerShell script body as the value of powershell.exe's
+// -EncodedCommand argument: base64 of UTF-16 LE bytes. Sidesteps every quoting
+// pitfall in ShellExecuteEx + runas re-parsing, which previously caused
+// elevated PowerShell to drop to an interactive prompt with no -Command
+// because UAC's launcher chewed off the single-quoted command body.
+std::wstring EncodePowerShellCommand(const std::wstring &script)
+{
+	// Build UTF-16 LE bytes. On Windows wchar_t is 16-bit and the host is
+	// little-endian, so the bytes are already in the right order.
+	std::vector<unsigned char> bytes;
+	bytes.reserve(script.size() * 2);
+	for (wchar_t ch : script) {
+		bytes.push_back(static_cast<unsigned char>(ch & 0xFF));
+		bytes.push_back(static_cast<unsigned char>((ch >> 8) & 0xFF));
+	}
+
+	static const char *kBase64 =
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	std::wstring out;
+	out.reserve(((bytes.size() + 2) / 3) * 4);
+	size_t i = 0;
+	while (i + 3 <= bytes.size()) {
+		uint32_t v = (uint32_t(bytes[i]) << 16) | (uint32_t(bytes[i + 1]) << 8) | uint32_t(bytes[i + 2]);
+		out += (wchar_t)kBase64[(v >> 18) & 0x3F];
+		out += (wchar_t)kBase64[(v >> 12) & 0x3F];
+		out += (wchar_t)kBase64[(v >> 6)  & 0x3F];
+		out += (wchar_t)kBase64[ v        & 0x3F];
+		i += 3;
+	}
+	if (i < bytes.size()) {
+		uint32_t v = uint32_t(bytes[i]) << 16;
+		size_t rem = bytes.size() - i;
+		if (rem == 2) v |= uint32_t(bytes[i + 1]) << 8;
+		out += (wchar_t)kBase64[(v >> 18) & 0x3F];
+		out += (wchar_t)kBase64[(v >> 12) & 0x3F];
+		out += (wchar_t)(rem == 2 ? kBase64[(v >> 6) & 0x3F] : L'=');
+		out += L'=';
+	}
+	return out;
+}
+
 } // namespace
 
 std::string Narrow(const std::wstring &value)
@@ -270,8 +312,13 @@ bool ShellContext::SetFlagPresent(const char *flagFileName, bool present)
 	std::wstring parent = path.substr(0, path.find_last_of(L"\\/"));
 	std::wstring command;
 	if (present) {
+		// New-Item does NOT accept -LiteralPath in Windows PowerShell 5.1 (the
+		// shipping host). It only has -Path, which is fine here because driver
+		// resources paths never contain wildcards. Set-Content does accept
+		// -LiteralPath; we keep that to defeat any accidental wildcard parse on
+		// the destination filename.
 		command =
-			L"New-Item -ItemType Directory -Force -LiteralPath " + QuotePowerShellString(parent) +
+			L"New-Item -ItemType Directory -Force -Path " + QuotePowerShellString(parent) +
 			L" | Out-Null; Set-Content -LiteralPath " + QuotePowerShellString(path) +
 			L" -Value enabled -NoNewline";
 	} else {
@@ -280,7 +327,15 @@ bool ShellContext::SetFlagPresent(const char *flagFileName, bool present)
 			L") { Remove-Item -LiteralPath " + QuotePowerShellString(path) + L" -Force }";
 	}
 
-	std::wstring args = L"-NoProfile -ExecutionPolicy Bypass -Command " + QuotePowerShellString(command);
+	// -EncodedCommand expects base64-encoded UTF-16 LE. We use it instead of
+	// -Command '<script>' because ShellExecuteEx with the runas verb routes
+	// through UAC's launcher, which re-parses lpParameters and silently strips
+	// single-quoted blocks. The symptom was an elevated powershell.exe that
+	// dropped to an interactive prompt with no -Command -- the helper would
+	// hang indefinitely while the Modules tab showed "Enabling..." forever.
+	// EncodedCommand has no special characters in the cmd line so re-parsing
+	// is a no-op.
+	std::wstring args = L"-NoProfile -ExecutionPolicy Bypass -EncodedCommand " + EncodePowerShellCommand(command);
 
 	SHELLEXECUTEINFOW sei{};
 	sei.cbSize = sizeof(sei);
