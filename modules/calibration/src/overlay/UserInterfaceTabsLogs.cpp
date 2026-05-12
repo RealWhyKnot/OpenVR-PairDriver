@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "BuildStamp.h"
 #include "Calibration.h"
 #include "CalibrationMetrics.h"
 #include "MotionRecording.h"
@@ -60,7 +61,7 @@ std::string FormatBytesShort(uint64_t n) {
 // Resolve the logs directory. ListRecordings discovers it internally for
 // scanning; we want the parent path for the Explorer button. If the list is
 // empty, derive from the first entry's full path; if THAT's empty too, fall
-// back to the standard %LOCALAPPDATA%\Low\SpaceCalibrator\Logs path.
+// back to the standard %LocalAppDataLow%\OpenVR-Pair\Logs path.
 std::wstring GetLogsDirectory() {
 	auto& s = LogsState();
 	if (!s.files.empty()) {
@@ -78,7 +79,7 @@ std::wstring GetLogsDirectory() {
 	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &appDataLow)) && appDataLow) {
 		std::wstring path(appDataLow);
 		CoTaskMemFree(appDataLow);
-		path += L"\\SpaceCalibrator\\Logs";
+		path += L"\\OpenVR-Pair\\Logs";
 		return path;
 	}
 	return L"";
@@ -130,13 +131,29 @@ void CCal_DrawLogsPanel() {
 	// separate "start/stop recording" notion. Putting the toggle here means
 	// the user can flip logging on right where they're managing the log
 	// files, instead of having to dig into Settings.
+	//
+	// Dev builds force logging on and disable the checkbox so a local debug
+	// session always has a CSV trail without anyone having to remember to
+	// flip the toggle. Release builds keep the toggle live; default-off boots
+	// are handled by Metrics::enableLogs's initializer.
+	const bool isDevBuild = (std::string(SPACECAL_BUILD_CHANNEL) == "dev");
+	if (isDevBuild) {
+		Metrics::enableLogs = true;
+		ImGui::BeginDisabled();
+	}
 	ImGui::Checkbox("Enable debug logging", &Metrics::enableLogs);
 	if (ImGui::IsItemHovered()) {
-		ImGui::SetTooltip("Write a per-tick CSV of calibration state to %%LocalAppDataLow%%\\SpaceCalibrator\\Logs\\\n"
+		ImGui::SetTooltip("Write a per-tick CSV of calibration state to %%LocalAppDataLow%%\\OpenVR-Pair\\Logs\\\n"
 		                  "while this is on. The new log shows up in the list below as soon as the next calibration tick fires.");
 	}
+	if (isDevBuild) {
+		ImGui::EndDisabled();
+	}
 	ImGui::SameLine();
-	if (Metrics::enableLogs) {
+	if (isDevBuild) {
+		ImGui::TextColored(ImVec4(0.55f, 0.75f, 0.95f, 1.0f),
+			" -- dev build: always on");
+	} else if (Metrics::enableLogs) {
 		ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f),
 			" -- a fresh CSV is being written this session");
 	} else {

@@ -6,6 +6,7 @@
 
 #include "SmoothingPlugin.h"
 
+#include "Logging.h"
 #include "Protocol.h"
 #include "ShellContext.h"
 #include "ShellFooter.h"
@@ -23,8 +24,17 @@
 
 void SmoothingPlugin::OnStart(openvr_pair::overlay::ShellContext &)
 {
+	smoothing::logging::OpenLogFile();
+	SM_LOG("OpenVR-WKSmoothing plugin starting (protocol=v%u)", (unsigned)protocol::Version);
 	ConnectIfNeeded();
+	if (ipc_.IsConnected()) {
+		SM_LOG("[ipc] connected on first try");
+	} else if (!connectError_.empty()) {
+		SM_LOG("[ipc] initial connect failed: %s", connectError_.c_str());
+	}
 	SendConfig();
+	SM_LOG("[config] pushed: master=%d smoothness=%d finger_mask=0x%04x",
+		(int)cfg_.master_enabled, cfg_.smoothness, (unsigned)cfg_.finger_mask);
 	ReplayDevicePredictions();
 }
 
@@ -37,10 +47,20 @@ void SmoothingPlugin::Tick(openvr_pair::overlay::ShellContext &)
 void SmoothingPlugin::ConnectIfNeeded()
 {
 	if (ipc_.IsConnected()) return;
+	const bool wasConnected = false; // local trace; ipc_ is currently NOT connected
+	(void)wasConnected;
 	try {
 		ipc_.Connect();
+		if (!connectError_.empty()) {
+			SM_LOG("[ipc] reconnect succeeded after error: %s", connectError_.c_str());
+		}
 		connectError_.clear();
 	} catch (const std::exception &e) {
+		// Only log the message the first time it changes to avoid per-tick spam
+		// while the driver is unavailable.
+		if (connectError_ != e.what()) {
+			SM_LOG("[ipc] connect failed: %s", e.what());
+		}
 		connectError_ = e.what();
 	}
 }
@@ -126,7 +146,8 @@ void SmoothingPlugin::DrawTab(openvr_pair::overlay::ShellContext &)
 		// land -- re-enable this tab item rather than re-discovering where
 		// the entry point lives.
 		// if (ImGui::BeginTabItem("Advanced")) { DrawAdvancedTab(); ImGui::EndTabItem(); }
-		if (ImGui::BeginTabItem("Logs"))     { DrawLogsTab();     ImGui::EndTabItem(); }
+		// Logs moved to the umbrella's global Logs tab; DrawLogsTab's body is
+		// hosted there via FeaturePlugin::DrawLogsSection.
 		ImGui::EndTabBar();
 	}
 
@@ -156,11 +177,20 @@ void SmoothingPlugin::DrawLogsTab()
 {
 	openvr_pair::overlay::ui::DrawSectionHeading("File locations");
 	openvr_pair::overlay::ui::DrawTextWrapped(
-		"Smoothing runs inside OpenVR-Pair and does not currently write a "
-		"separate overlay log. Driver logs and Smoothing settings are here:");
+		"Smoothing writes a per-session overlay log next to the umbrella's "
+		"other logs. Driver logs are emitted by the shared driver DLL.");
 	ImGui::Spacing();
+	ImGui::TextWrapped("Overlay:  %%LocalAppDataLow%%\\OpenVR-Pair\\Logs\\smoothing_log.<ts>.txt");
 	ImGui::TextWrapped("Driver:   %%LocalAppDataLow%%\\OpenVR-WKPairDriver\\Logs\\driver_log.<ts>.txt");
 	ImGui::TextWrapped("Settings: %%LocalAppDataLow%%\\OpenVR-Pair\\profiles\\smoothing.txt");
+}
+
+void SmoothingPlugin::DrawLogsSection(openvr_pair::overlay::ShellContext &)
+{
+	// Same body as DrawLogsTab(); the umbrella's global Logs tab wraps this
+	// in a collapsing header so the section heading + file paths render
+	// cleanly alongside the other modules' log sections.
+	DrawLogsTab();
 }
 
 namespace openvr_pair::overlay {

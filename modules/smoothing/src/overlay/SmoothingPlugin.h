@@ -16,6 +16,7 @@ public:
 	void OnStart(openvr_pair::overlay::ShellContext &context) override;
 	void Tick(openvr_pair::overlay::ShellContext &context) override;
 	void DrawTab(openvr_pair::overlay::ShellContext &context) override;
+	void DrawLogsSection(openvr_pair::overlay::ShellContext &context) override;
 
 private:
 	SmoothingConfig cfg_ = LoadConfig();

@@ -23,6 +23,13 @@ add_subdirectory("${CMAKE_SOURCE_DIR}/modules/calibration/src/overlay" "${CMAKE_
 list(APPEND OPENVR_PAIR_OVERLAY_FEATURE_LIBS openvr_pair_feature_calibration_overlay)
 list(APPEND OPENVR_PAIR_OVERLAY_DEFINES OPENVR_PAIR_HAS_CALIBRATION_OVERLAY=1)
 
+if(WIN32)
+	enable_language(RC)
+	set(OPENVR_PAIR_RC_SOURCES openvr-pair.rc)
+else()
+	set(OPENVR_PAIR_RC_SOURCES "")
+endif()
+
 add_executable(OpenVRPairOverlay WIN32
 	FeaturePlugin.cpp
 	FeaturePlugin.h
@@ -35,7 +42,8 @@ add_executable(OpenVRPairOverlay WIN32
 	ShellContext.h
 	ShellFooter.cpp
 	ShellFooter.h
-	main.cpp)
+	main.cpp
+	${OPENVR_PAIR_RC_SOURCES})
 
 set_target_properties(OpenVRPairOverlay PROPERTIES OUTPUT_NAME "OpenVR-Pair")
 

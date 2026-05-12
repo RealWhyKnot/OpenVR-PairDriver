@@ -231,10 +231,7 @@ static void BuildMainWindowContents(bool runningInOverlay_)
 					CCal_DrawSettings();
 					ImGui::EndTabItem();
 				}
-				if (ImGui::BeginTabItem("Logs")) {
-					CCal_DrawLogsPanel();
-					ImGui::EndTabItem();
-				}
+				// Logs moved to the umbrella's global Logs tab.
 				ImGui::EndTabBar();
 			}
 		}
@@ -320,15 +317,9 @@ void BuildContinuousCalDisplay() {
 			ImGui::EndTabItem();
 		}
 
-		// Logs tab: always visible. Even when debug logging is OFF right now,
-		// the user might have older log files to attach to a bug report. The
-		// panel shows the toggle's state alongside the file list, so it's
-		// obvious whether a fresh log is being captured.
-		if (ImGui::BeginTabItem("Logs")) {
-			CCal_DrawLogsPanel();
-			ImGui::EndTabItem();
-		}
-
+		// Logs moved to the umbrella's global Logs tab. The SC-specific panel
+		// (file list, enable toggle, drift dump button, Explorer link)
+		// surfaces there via SpaceCalibratorPlugin::DrawLogsSection.
 		ImGui::EndTabBar();
 	}
 

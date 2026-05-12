@@ -16,6 +16,14 @@ public:
 	virtual void OnShutdown(ShellContext &) {}
 	virtual void Tick(ShellContext &) {}
 	virtual void DrawTab(ShellContext &) = 0;
+
+	// Optional: per-plugin contents for the umbrella's global Logs tab.
+	// Default no-op so a plugin without log surface area doesn't need to
+	// override. The umbrella wraps the call in a collapsing header named
+	// after the plugin, so the implementation should just emit its file
+	// list / toggle / debug controls without its own heading.
+	virtual void DrawLogsSection(ShellContext &) {}
+
 	virtual bool IsInstalled(ShellContext &) const;
 };
 

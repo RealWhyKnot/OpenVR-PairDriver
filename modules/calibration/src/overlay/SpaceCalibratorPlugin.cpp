@@ -10,6 +10,11 @@
 
 #include <memory>
 
+// Defined in UserInterfaceTabsLogs.cpp. Declared here so the global Logs tab
+// can surface SC's logs panel without pulling the file-scope forward decl
+// out of UserInterface.cpp.
+void CCal_DrawLogsPanel();
+
 void SpaceCalibratorPlugin::OnStart(openvr_pair::overlay::ShellContext &)
 {
 	// Match the standalone SpaceCalibrator binary's typography so the
@@ -44,6 +49,13 @@ void SpaceCalibratorPlugin::Tick(openvr_pair::overlay::ShellContext &)
 void SpaceCalibratorPlugin::DrawTab(openvr_pair::overlay::ShellContext &)
 {
 	CCal_DrawTab();
+}
+
+void SpaceCalibratorPlugin::DrawLogsSection(openvr_pair::overlay::ShellContext &)
+{
+	// Surfaces the existing SC Logs panel (file list, enable toggle, drift
+	// state dump, Explorer button) inside the umbrella's global Logs tab.
+	CCal_DrawLogsPanel();
 }
 
 namespace openvr_pair::overlay {

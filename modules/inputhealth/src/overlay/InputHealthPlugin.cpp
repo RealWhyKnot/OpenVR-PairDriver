@@ -208,7 +208,8 @@ void InputHealthPlugin::DrawTab(openvr_pair::overlay::ShellContext &)
 		if (ImGui::BeginTabItem("Diagnostics")) { DrawDiagnosticsTab(); ImGui::EndTabItem(); }
 		if (ImGui::BeginTabItem("Settings"))    { DrawSettingsTab();    ImGui::EndTabItem(); }
 		if (ImGui::BeginTabItem("Advanced"))    { DrawAdvancedTab();    ImGui::EndTabItem(); }
-		if (ImGui::BeginTabItem("Logs"))        { DrawLogsTab();        ImGui::EndTabItem(); }
+		// Logs moved to the umbrella's global Logs tab; the InputHealth-specific
+		// list of files + IPC state surface there via DrawLogsSection().
 		ImGui::EndTabBar();
 	}
 
@@ -216,6 +217,14 @@ void InputHealthPlugin::DrawTab(openvr_pair::overlay::ShellContext &)
 	footer.driverConnected = ipc_.IsConnected();
 	footer.driverLabel = "InputHealth driver";
 	openvr_pair::overlay::DrawShellFooter(footer);
+}
+
+void InputHealthPlugin::DrawLogsSection(openvr_pair::overlay::ShellContext &)
+{
+	// Reuse the per-tab Logs implementation. The umbrella's global Logs tab
+	// wraps each plugin in a collapsing header so the section reads with no
+	// duplicate plugin-name heading.
+	DrawLogsTab();
 }
 
 namespace openvr_pair::overlay {

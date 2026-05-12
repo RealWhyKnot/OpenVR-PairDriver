@@ -68,6 +68,41 @@ void DrawTransientStatus(openvr_pair::overlay::ShellContext &context)
 	openvr_pair::overlay::ui::DrawTextWrapped(context.status.c_str());
 }
 
+void DrawGlobalLogs(openvr_pair::overlay::ShellContext &context,
+	std::vector<std::unique_ptr<openvr_pair::overlay::FeaturePlugin>> &plugins)
+{
+	// One tab to find every plugin's log surface. Replaces the per-feature
+	// Logs sub-tab that used to live inside each plugin -- the user reported
+	// having to remember which plugin owned which log file. Each plugin's
+	// DrawLogsSection emits into a collapsing header so a long SC panel does
+	// not push Smoothing / InputHealth off-screen.
+	openvr_pair::overlay::ui::DrawTextWrapped(
+		"Per-module logs. All overlay-side logs land in "
+		"%LocalAppDataLow%\\OpenVR-Pair\\Logs\\; driver-side logs land in "
+		"%LocalAppDataLow%\\OpenVR-WKPairDriver\\Logs\\.");
+	ImGui::Spacing();
+
+	bool anyDrawn = false;
+	for (auto &plugin : plugins) {
+		if (!plugin->IsInstalled(context)) continue;
+		ImGui::PushID(plugin->Name());
+		// SetNextItemOpen(true) on first frame so the user does not have to
+		// click into every section to see content. Subsequent frames respect
+		// whatever the user left the header at.
+		ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+		if (ImGui::CollapsingHeader(plugin->Name())) {
+			ImGui::Indent();
+			plugin->DrawLogsSection(context);
+			ImGui::Unindent();
+		}
+		ImGui::PopID();
+		anyDrawn = true;
+	}
+	if (!anyDrawn) {
+		ImGui::TextDisabled("No installed feature plugins.");
+	}
+}
+
 void DrawModules(openvr_pair::overlay::ShellContext &context,
 	std::vector<std::unique_ptr<openvr_pair::overlay::FeaturePlugin>> &plugins)
 {
@@ -265,6 +300,10 @@ int main(int argc, char **argv)
 					plugin->DrawTab(context);
 					ImGui::EndTabItem();
 				}
+			}
+			if (ImGui::BeginTabItem("Logs")) {
+				DrawGlobalLogs(context, plugins);
+				ImGui::EndTabItem();
 			}
 			if (ImGui::BeginTabItem("Modules")) {
 				DrawModules(context, plugins);

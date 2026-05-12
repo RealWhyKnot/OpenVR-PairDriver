@@ -14,4 +14,5 @@ public:
 	void OnShutdown(openvr_pair::overlay::ShellContext &context) override;
 	void Tick(openvr_pair::overlay::ShellContext &context) override;
 	void DrawTab(openvr_pair::overlay::ShellContext &context) override;
+	void DrawLogsSection(openvr_pair::overlay::ShellContext &context) override;
 };

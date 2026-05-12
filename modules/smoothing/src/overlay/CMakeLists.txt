@@ -8,6 +8,8 @@ add_library(openvr_pair_feature_smoothing_overlay STATIC
 	Config.h
 	IPCClient.cpp
 	IPCClient.h
+	Logging.cpp
+	Logging.h
 	SmoothingFingers.cpp
 	SmoothingPlugin.cpp
 	SmoothingPlugin.h

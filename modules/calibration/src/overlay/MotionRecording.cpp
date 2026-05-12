@@ -59,7 +59,9 @@ std::string ParseHeaderKv(const std::string& line, const char* key) {
 	return line.substr(prefix.size());
 }
 
-// %LocalAppDataLow%\SpaceCalibrator\Logs — same path the live logger writes to.
+// %LocalAppDataLow%\OpenVR-Pair\Logs -- same path the live logger writes to.
+// Was \SpaceCalibrator\Logs\ pre-monorepo; the umbrella consolidation moved
+// SC's overlay-side logs to the umbrella's log directory.
 std::wstring GetLogsDir() {
 	PWSTR rootPath = nullptr;
 	if (SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &rootPath) != S_OK) {
@@ -68,7 +70,7 @@ std::wstring GetLogsDir() {
 	}
 	std::wstring p(rootPath);
 	CoTaskMemFree(rootPath);
-	p += LR"(\SpaceCalibrator\Logs)";
+	p += LR"(\OpenVR-Pair\Logs)";
 	return p;
 }
 
