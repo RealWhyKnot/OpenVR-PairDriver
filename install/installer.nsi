@@ -23,7 +23,7 @@ ShowInstDetails show
 VIProductVersion "${VERSION}"
 VIAddVersionKey /LANG=1033 "ProductName" "OpenVR-Pair"
 VIAddVersionKey /LANG=1033 "FileDescription" "OpenVR-Pair Installer"
-VIAddVersionKey /LANG=1033 "LegalCopyright" "MIT, https://github.com/RealWhyKnot/OpenVR-WKPairDriver"
+VIAddVersionKey /LANG=1033 "LegalCopyright" "GPL-3.0-only, https://github.com/RealWhyKnot/OpenVR-WKPairDriver"
 VIAddVersionKey /LANG=1033 "FileVersion" "${VERSION}"
 VIAddVersionKey /LANG=1033 "ProductVersion" "${VERSION}"
 
@@ -98,6 +98,17 @@ Section "Install"
 	SetOutPath "$vrRuntimePath\drivers\01openvrpair\bin\win64"
 	File /oname=driver_01openvrpair.dll "${DRIVER_BASEDIR}\bin\win64\driver_openvrpair.dll"
 
+	; FaceTracking host sidecar (.NET 10). Driver's HostSupervisor spawns
+	; OpenVRPair.FaceModuleHost.exe from this directory when the
+	; enable_facetracking.flag is present. The /r flag pulls in the entire
+	; published .NET tree (exe + .deps.json + .runtimeconfig.json + dependent
+	; DLLs). The whole folder is missing when the build host doesn't have the
+	; .NET 10 SDK; in that case the IfFileExists guard skips the install step
+	; and the feature simply runs inert -- driver still loads, just no host.
+	IfFileExists "${DRIVER_BASEDIR}\resources\facetracking\host\OpenVRPair.FaceModuleHost.exe" 0 +3
+		SetOutPath "$vrRuntimePath\drivers\01openvrpair\resources\facetracking\host"
+		File /r "${DRIVER_BASEDIR}\resources\facetracking\host\*.*"
+
 	WriteRegStr HKLM "Software\OpenVR-Pair\Main" "" "$INSTDIR"
 	WriteRegStr HKLM "Software\OpenVR-Pair\Driver" "" "$vrRuntimePath"
 	WriteRegStr HKLM "Software\OpenVR-Pair\Main" "Version" "${VERSION}"
@@ -136,6 +147,14 @@ Section "Uninstall"
 	Delete "$vrRuntimePath\drivers\01openvrpair\resources\driver.vrresources"
 	Delete "$vrRuntimePath\drivers\01openvrpair\resources\settings\default.vrsettings"
 	Delete "$vrRuntimePath\drivers\01openvrpair\bin\win64\driver_01openvrpair.dll"
+	; FaceTracking host tree. RMDir /r is safe here because the path is
+	; constructed from the per-install registry value, not user input. Skipped
+	; cleanly if the directory was never created (host wasn't installed).
+	RMDir /r "$vrRuntimePath\drivers\01openvrpair\resources\facetracking"
+	; Stray enable flag files (toggled on by the Modules tab post-install).
+	; Best-effort: leave any other flags alone -- those belong to other
+	; feature consumers and survive an OpenVR-Pair uninstall by design.
+	Delete "$vrRuntimePath\drivers\01openvrpair\resources\enable_facetracking.flag"
 	RMDir "$vrRuntimePath\drivers\01openvrpair\resources\settings"
 	RMDir "$vrRuntimePath\drivers\01openvrpair\resources"
 	RMDir "$vrRuntimePath\drivers\01openvrpair\bin\win64"

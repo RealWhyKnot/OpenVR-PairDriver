@@ -142,6 +142,31 @@ Write-Host ""
 Write-Host ("Built {0} ({1:N0} bytes, {2})" -f $dll.Name, $dll.Length, $dll.LastWriteTime)
 Write-Host ("  -> {0}" -f $dll.FullName)
 
+# Stage the C# face-tracking host into the driver tree so SteamVR can launch
+# it via the driver's HostSupervisor at runtime. Build output lives at
+# build/artifacts/FaceModuleHost/ (the host CMakeLists.txt publishes there).
+# The driver's HostSupervisor resolves the host exe relative to its own
+# resources directory, so the deployable tree must contain:
+#   driver_openvrpair/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe
+# If OPENVR_PAIR_BUILD_FACE_HOST=OFF (no .NET SDK on the build host), the
+# artifacts dir is absent and the staging step no-ops. The driver detects
+# the missing exe at runtime, logs once, and keeps the feature inert.
+$hostBuildDir = "build/artifacts/FaceModuleHost"
+$hostStageDir = "build/driver_openvrpair/resources/facetracking/host"
+if (Test-Path $hostBuildDir) {
+	New-Item -ItemType Directory -Force -Path $hostStageDir | Out-Null
+	Copy-Item -Recurse -Force -Path "$hostBuildDir\*" -Destination $hostStageDir
+	$hostExe = Join-Path $hostStageDir "OpenVRPair.FaceModuleHost.exe"
+	if (Test-Path $hostExe) {
+		$hostExeItem = Get-Item $hostExe
+		Write-Host ("Staged FaceModuleHost: {0} ({1:N0} bytes)" -f $hostExeItem.Name, $hostExeItem.Length)
+	} else {
+		Write-Host "FaceModuleHost staging directory present but OpenVRPair.FaceModuleHost.exe missing -- did the publish step fail silently?" -ForegroundColor Yellow
+	}
+} else {
+	Write-Host "FaceModuleHost build artifacts not found at $hostBuildDir (OPENVR_PAIR_BUILD_FACE_HOST=OFF or .NET SDK missing). Driver will load without the host sidecar." -ForegroundColor Yellow
+}
+
 if ($Release) {
 	# Pack the deployable driver tree (manifest, resources, bin/win64/DLL) into
 	# a zip plus a sibling manifest TSV. The release workflow consumes both --
