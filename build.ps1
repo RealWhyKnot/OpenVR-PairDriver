@@ -68,34 +68,42 @@ if (Test-Path (Split-Path -Parent $ScBuildStamp)) {
 
 # Configure (skippable for incremental edits). The CMAKE_POLICY_VERSION_MINIMUM
 # bump is needed because the minhook submodule pins cmake_minimum_required at
-# 2.8 and current CMake versions reject anything below 3.5.
+# 2.8 and current CMake versions reject anything below 3.5. -Wno-dev silences
+# developer-mode warnings from the minhook submodule (unrelated upstream).
 #
-# The $ErrorActionPreference = 'Continue' wrap around each cmake call is
-# the same shape SC's build.ps1 uses. PowerShell 5.1 wraps CMake's stdout
-# message() lines as NativeCommandError ErrorRecords; under the script-
-# wide 'Stop' default that wrap kills the script on the first message
-# even when cmake exited 0. Localised 'Continue' lets the cmake run to
-# completion; we still throw on a real non-zero exit code.
-if (-not $SkipConfigure) {
+# PowerShell 5.1 wraps every stderr line from a native command as a
+# NativeCommandError ErrorRecord. Under the script-wide 'Stop' default that
+# wrap kills the script on the first CMake message() line; under 'Continue'
+# the script survives but the lines still render with the red "+ CategoryInfo
+# ... NativeCommandError" preamble that buries real diagnostics in noise.
+# Pipe through a ForEach-Object that coerces ErrorRecord -> plain string so
+# stderr lines print clean alongside stdout. $LASTEXITCODE is preserved
+# across the pipe so the exit-code check still works.
+function Invoke-NativeQuiet {
+	param([scriptblock]$Cmd)
 	$PrevEap = $ErrorActionPreference
 	$ErrorActionPreference = "Continue"
 	try {
-		& cmake -S . -B build -A x64 "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
-		if ($LASTEXITCODE -ne 0) { throw "CMake configure failed (exit $LASTEXITCODE)" }
+		& $Cmd 2>&1 | ForEach-Object {
+			if ($_ -is [System.Management.Automation.ErrorRecord]) {
+				Write-Host $_.Exception.Message
+			} else {
+				Write-Host $_
+			}
+		}
 	} finally {
 		$ErrorActionPreference = $PrevEap
 	}
 }
 
-# Build Release.
-$PrevEap = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-try {
-	& cmake --build build --config Release --parallel
-	if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)" }
-} finally {
-	$ErrorActionPreference = $PrevEap
+if (-not $SkipConfigure) {
+	Invoke-NativeQuiet { cmake -S . -B build -A x64 "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" -Wno-dev }
+	if ($LASTEXITCODE -ne 0) { throw "CMake configure failed (exit $LASTEXITCODE)" }
 }
+
+# Build Release.
+Invoke-NativeQuiet { cmake --build build --config Release --parallel }
+if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)" }
 
 # Verify the artifact lands where we expect.
 $dllPath = "build/driver_openvrpair/bin/win64/driver_openvrpair.dll"
