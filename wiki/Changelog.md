@@ -30,6 +30,9 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - Revert "feat(overlay): full UI overhaul -- sidebar, cards, theme, typography" (0.1.0.0) (4582786)
 - **deps:** Bump SpaceCalibrator submodule for umbrella tab + font fixes (0.1.0.0) (e4d8e3a)
 - Rename OpenVR modules to WK variants (1ca4829)
+- Refresh feature module pins after rebase (294a192)
+- Bump overlay feature modules (abaed99)
+- Unify overlay status banners (a79982a)
 
 ### Fixed
 - **inputhealth:** Make observation fail open (0.1.0.0) (a01318b)
