@@ -33,6 +33,10 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - Refresh feature module pins after rebase (294a192)
 - Bump overlay feature modules (abaed99)
 - Unify overlay status banners (a79982a)
+- Refresh feature pins for consumer build fixes (61c9fe6)
+- Refresh feature module pins after build-fix rebase (ae0d3bb)
+- Bump feature modules for build fixes (439ec19)
+- Clear stale CMake generator instance cache (35ccfb5)
 
 ### Fixed
 - **inputhealth:** Make observation fail open (0.1.0.0) (a01318b)
