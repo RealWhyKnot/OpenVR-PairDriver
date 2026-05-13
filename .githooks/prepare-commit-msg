@@ -50,11 +50,28 @@ repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 [ -n "$repo_root" ] || exit 0
 
 version_file="$repo_root/version.txt"
-[ -f "$version_file" ] || exit 0
 
 # Strip BOM/non-printables and trim — version.txt is written by PowerShell on Windows
 # and can carry a UTF-8 BOM that breaks the grep below.
-version="$(tr -d '\r' < "$version_file" | sed 's/[^[:print:]]//g' | xargs)"
+version=""
+if [ -f "$version_file" ]; then
+  version="$(tr -d '\r' < "$version_file" | sed 's/[^[:print:]]//g' | xargs)"
+fi
+
+# Refresh the stamp when version.txt is stale (date prefix isn't today's date).
+# Without this, commits made between builds inherit the last build's date,
+# which broke the date->commit correlation during the 2026-05-13 multi-phase
+# push (all phases landed under 2026.5.12.14-95C6 because no build ran between
+# commits). A stale version.txt is replaced with "YYYY.M.D.0-<short HEAD>";
+# build.ps1 overwrites this on the next build, restoring the build counter.
+today="$(date +%Y.%-m.%-d)"
+if ! printf '%s\n' "$version" | grep -qE "^${today}\."; then
+  short_head="$(git rev-parse --short=4 HEAD 2>/dev/null | tr 'a-f' 'A-F')"
+  [ -n "$short_head" ] || short_head="0000"
+  version="${today}.0-${short_head}"
+  printf '%s' "$version" > "$version_file"
+fi
+
 [ -n "$version" ] || exit 0
 
 # Append only if the subject is clean (no version stamp of any vintage). The
