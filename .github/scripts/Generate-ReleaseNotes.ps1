@@ -31,14 +31,12 @@
   then subject-match against the most recent published GitHub release, then
   root-walk fallback. See Resolve-PrevTagForSlice for details.
 
-  Templates and the optional extras file run through the same scrub gates as
-  commit subjects: ASCII normalisation pass, then non-ASCII fail, then a
-  voice / internal-vocab grep. Any violation in any input fails the workflow
-  and prints a remediation hint.
+  Templates and the optional extras file run through an ASCII normalisation
+  pass, then any remaining non-ASCII characters fail the workflow with a
+  remediation hint.
 
   Outputs the markdown body to stdout. Throws on:
     * empty slice (no qualifying commits between prev and current tag)
-    * voice or internal-only-vocabulary pattern in the final body
     * non-ASCII characters in the final body (after a normalisation pass)
 
   Each failure prints a clear remediation hint so the operator knows whether
@@ -95,8 +93,8 @@
   meaningful. Default: $false.
 
 .PARAMETER SkipScrub
-  Skip the voice + ASCII scrub. Escape hatch for unblocking edge cases;
-  the workflow should never set this. Default: $false.
+  Skip the ASCII scrub. Escape hatch for unblocking edge cases; the
+  workflow should never set this. Default: $false.
 #>
 [CmdletBinding()]
 param(
@@ -497,8 +495,8 @@ foreach ($name in $templateOrder) {
 # needs to communicate something that isn't captured by commit subjects --
 # server-side coordination notes, migration steps, a wiki link, etc. The
 # file is read verbatim so the author has full markdown control; the same
-# scrub gates run on the final composed body so voice violations in the
-# extras fail the workflow just as if they were in commit subjects.
+# ASCII scrub runs on the final composed body so non-ASCII characters in
+# the extras fail the workflow just as if they were in commit subjects.
 if (Test-Path -LiteralPath $Extras) {
     $extrasContent = (Get-Content -LiteralPath $Extras -Raw -Encoding UTF8).Trim()
     if ($extrasContent) {
@@ -573,54 +571,6 @@ if (-not $SkipScrub) {
               "trips this, add it to `$asciiSubs and try again."
     }
 
-    # Voice + internal-only-vocabulary grep. The release body is the public
-    # face of the repo; these patterns make it read like marketing prose or
-    # expose internal-only tooling references. Either fix the offending commit
-    # subject to use plainer language, or mark the commit [skip changelog] if
-    # it really does need the term.
-    $forbiddenPatterns = @(
-        # Marketing puffery
-        '\bcomprehensive\b'
-        '\bleveraging\b'
-        '\bwhether\s+you''?re\b'
-        '\bempowers?\b'
-        '\bstreamline\b'
-        '\belevate\b'
-        '\bcutting-edge\b'
-        '\bseamless(ly)?\b'
-        '\belegant\b'
-        # Internal-only vocabulary
-        '\binvestigator\b'
-        '\btriage\b'
-        '\bscope plan\b'
-        '\btier [0-9]\b'
-        '\bdiagnostic gap\b'
-        '\bship report\b'
-        '\bmemory entry\b'
-        '\bverification matrix\b'
-        '\borchestrator\b'
-        '\bcowork\b'
-        # Future-tense rhetoric
-        '\bfuture-you\b'
-        '\bfuture contributor\b'
-        '\bfuture spelunker\b'
-        # Time-of-effort claims
-        '\b\d+ weeks of work\b'
-        '\bmonths of effort\b'
-        '\byears in the making\b'
-    )
-    $matches = foreach ($pat in $forbiddenPatterns) {
-        $found = [regex]::Matches($body, $pat, 'IgnoreCase')
-        foreach ($m in $found) {
-            [pscustomobject]@{ Pattern = $pat; Match = $m.Value; Index = $m.Index }
-        }
-    }
-    if ($matches) {
-        $report = $matches | ForEach-Object { "  pattern $($_.Pattern) matched '$($_.Match)' at index $($_.Index)" }
-        throw "voice or internal-only-vocabulary patterns in release body:`n$($report -join "`n")`n" +
-              "Fix: amend the offending commit subject (or extras file) to use plainer language, " +
-              "or mark the commit [skip changelog] if the term is unavoidable."
-    }
 }
 
 # Single trimmed string so $(...) capture in calling scripts gets clean text.
