@@ -30,6 +30,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **facetracking:** Reflection bridge for VRCFT upstream modules (3d6bc1f)
 - **facetracking:** Host_status.json sidecar + native-lib resolver (2372d02)
 - **facetracking:** Strip Ed25519 signing path; point host at legacy-registry.whyknot.dev (25a36f0)
+- **facetracking:** Wire driver telemetry; replace V1 stubs with real wiring or removal (1c0b487)
 
 ### Changed
 - Rename export macro to OPENVRPAIRDRIVER_EXPORTS (c7df7e6)
