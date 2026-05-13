@@ -51,6 +51,8 @@ add_executable(OpenVRPairOverlay WIN32
 	Theme.cpp
 	Theme.h
 	UiHelpers.h
+	UpdateNotice.cpp
+	UpdateNotice.h
 	VrOverlayHost.cpp
 	VrOverlayHost.h
 	main.cpp

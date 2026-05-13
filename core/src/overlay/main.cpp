@@ -4,6 +4,7 @@
 #include "ShellContext.h"
 #include "Theme.h"
 #include "UiHelpers.h"
+#include "UpdateNotice.h"
 #include "VrOverlayHost.h"
 
 #include <GL/gl3w.h>
@@ -391,6 +392,14 @@ int main(int argc, char **argv)
 	ShellContext context = CreateShellContext();
 	openvr_pair::overlay::ui::ApplyOverlayStyle();
 	openvr_pair::overlay::ui::InitThemeFromDisk(context);
+
+	// Fire the GitHub-release probe once. The worker is non-blocking; the
+	// ShellFooter polls GetUpdateNoticeState() and renders an indicator
+	// only after the probe returns AND a newer release exists. Dev builds
+	// (version string contains "-XXXX") short-circuit inside the worker
+	// and never hit the network.
+	openvr_pair::overlay::StartUpdateCheck();
+
 	auto plugins = CreatePlugins();
 	for (auto &plugin : plugins) {
 		plugin->OnStart(context);
@@ -450,24 +459,40 @@ int main(int argc, char **argv)
 			ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 		ImGui::Begin("WKOpenVR", nullptr, flags);
 
+		// Each tab's content gets its own scrollable child so tabs that
+		// emit more rows than the window can fit (Smoothing's per-tracker
+		// sliders, Modules, Logs, etc.) remain scrollable even while the
+		// outer shell window stays NoScrollbar -- the outer-scrollbar
+		// suppression is what stops the SC tab from rendering two
+		// scrollbars on top of its own inner SCTabBody. The ##tab_body
+		// id is safe to repeat across tabs because BeginTabItem pushes
+		// its own ID scope.
 		if (ImGui::BeginTabBar("tabs")) {
 			for (auto &plugin : plugins) {
 				if (!plugin->IsInstalled(context)) continue;
 				if (ImGui::BeginTabItem(plugin->Name())) {
+					ImGui::BeginChild("##tab_body", ImVec2(0, 0));
 					plugin->DrawTab(context);
+					ImGui::EndChild();
 					ImGui::EndTabItem();
 				}
 			}
 			if (ImGui::BeginTabItem("Logs")) {
+				ImGui::BeginChild("##tab_body", ImVec2(0, 0));
 				DrawGlobalLogs(context, plugins);
+				ImGui::EndChild();
 				ImGui::EndTabItem();
 			}
 			if (ImGui::BeginTabItem("Modules")) {
+				ImGui::BeginChild("##tab_body", ImVec2(0, 0));
 				DrawModules(context, plugins);
+				ImGui::EndChild();
 				ImGui::EndTabItem();
 			}
 			if (ImGui::BeginTabItem("Themes")) {
+				ImGui::BeginChild("##tab_body", ImVec2(0, 0));
 				DrawThemes(context);
+				ImGui::EndChild();
 				ImGui::EndTabItem();
 			}
 			ImGui::EndTabBar();

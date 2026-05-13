@@ -9,7 +9,7 @@
 //   resources/enable_calibration.flag    -- WKOpenVR-SpaceCalibrator
 //   resources/enable_smoothing.flag      -- WKOpenVR-Smoothing
 //   resources/enable_inputhealth.flag    -- WKOpenVR-InputHealth
-//   resources/enable_facetracking.flag   -- OpenVR-WKFaceTracking
+//   resources/enable_facetracking.flag   -- WKOpenVR-VRCFT
 //
 // Any subset (including the empty subset) may be present. With no flags the
 // driver loads but stays inert (no hooks installed, no pipes opened, no

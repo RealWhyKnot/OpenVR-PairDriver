@@ -125,17 +125,18 @@ void GetModeStatus(const char*& label, const char*& tooltip, ImVec4& accent) {
 	const auto state = CalCtx.state;
 	const bool validProfile = CalCtx.validProfile;
 	const bool enabled = CalCtx.enabled;
+	const auto &pal = openvr_pair::overlay::ui::GetPalette();
 
 	if (!validProfile) {
 		label = "no profile";
 		tooltip = "No saved calibration profile is loaded.\n"
 		          "Hit \"Start Calibration\" or \"Continuous Calibration\" below to create one.";
-		accent = ImVec4(0.70f, 0.70f, 0.70f, 1.0f);
+		accent = pal.statusIdle;
 	} else if (state == CalibrationState::ContinuousStandby) {
 		label = "standby -- waiting for tracking";
 		tooltip = "Continuous calibration is on, but the reference or target tracker isn't currently\n"
 		          "reporting valid poses. Calibration resumes automatically when both come back online.";
-		accent = ImVec4(0.85f, 0.85f, 0.55f, 1.0f);
+		accent = pal.statusWarn;
 	} else if (state == CalibrationState::Continuous) {
 		const double now = ImGui::GetTime();
 		const double sinceAccept = now - Metrics::error_currentCal.lastTs();
@@ -146,30 +147,30 @@ void GetModeStatus(const char*& label, const char*& tooltip, ImVec4& accent) {
 			tooltip = "Continuous calibration is running but hasn't accepted a new estimate in a while.\n"
 			          "Usually means the user isn't moving enough to give the solver useful samples.\n"
 			          "Try slowly rotating + translating the target tracker through varied directions.";
-			accent = ImVec4(0.95f, 0.70f, 0.20f, 1.0f);
+			accent = pal.statusPending;
 		} else if (recentlyUpdated) {
 			label = "live -- updating";
 			tooltip = "Continuous calibration is running and just accepted a fresh estimate.\n"
 			          "The driver is blending toward the new offset; if Recalibrate-on-movement is on,\n"
 			          "the blend only progresses while the device is actively moving.";
-			accent = ImVec4(0.55f, 0.75f, 0.95f, 1.0f);
+			accent = pal.statusInfo;
 		} else {
 			label = "live";
 			tooltip = "Continuous calibration is running and the current estimate is being applied.\n"
 			          "No recent updates needed -- the calibration is stable.";
-			accent = ImVec4(0.55f, 0.75f, 0.95f, 1.0f);
+			accent = pal.statusInfo;
 		}
 	} else if (enabled && state == CalibrationState::None) {
 		label = "fixed offset active";
 		tooltip = "A one-shot calibration is applied as a fixed offset. The driver applies the\n"
 		          "stored transform; no continuous re-solving. Switch to Continuous mode if the\n"
 		          "offset drifts over time.";
-		accent = ImVec4(0.55f, 0.85f, 0.55f, 1.0f);
+		accent = pal.statusOk;
 	} else {
 		label = "idle";
 		tooltip = "A profile is loaded but no calibration is being applied. This usually means the\n"
 		          "current HMD tracking system doesn't match the profile's reference system.";
-		accent = ImVec4(0.70f, 0.70f, 0.70f, 1.0f);
+		accent = pal.statusIdle;
 	}
 }
 

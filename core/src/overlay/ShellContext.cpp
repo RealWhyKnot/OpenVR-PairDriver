@@ -326,6 +326,27 @@ const wchar_t *ShortcutLabelFor(const char *flagFileName)
 	return nullptr;
 }
 
+// Per-feature CLI arg attached to the shortcut. Windows Search dedupes
+// Start-Menu entries by the exact (target + arguments) tuple, so without
+// distinct arg strings only one .lnk would surface when the user types a
+// feature name. WKOpenVR.exe ignores unknown args today, so this is a
+// search-discoverability change with no runtime cost.
+const wchar_t *ShortcutArgFor(const char *flagFileName)
+{
+	if (!flagFileName) return L"";
+	struct Entry { const char *flag; const wchar_t *arg; };
+	static const Entry kEntries[] = {
+		{ "enable_calibration.flag",  L"--launch=calibration"  },
+		{ "enable_smoothing.flag",    L"--launch=smoothing"    },
+		{ "enable_inputhealth.flag",  L"--launch=inputhealth"  },
+		{ "enable_facetracking.flag", L"--launch=facetracking" },
+	};
+	for (const auto &e : kEntries) {
+		if (strcmp(e.flag, flagFileName) == 0) return e.arg;
+	}
+	return L"";
+}
+
 bool ShellContext::SetFlagPresent(const char *flagFileName, bool present)
 {
 	std::wstring path = FlagPath(flagFileName);
@@ -344,6 +365,7 @@ bool ShellContext::SetFlagPresent(const char *flagFileName, bool present)
 	// path components are passed as literal single-quoted strings so any
 	// spaces and backslashes survive verbatim.
 	const wchar_t *label = ShortcutLabelFor(flagFileName);
+	const wchar_t *scArg = ShortcutArgFor(flagFileName);
 	std::wstring smRelative = L"Microsoft\\Windows\\Start Menu\\Programs\\WKOpenVR";
 	std::wstring scFileName;
 	std::wstring exePath;
@@ -378,6 +400,7 @@ bool ShellContext::SetFlagPresent(const char *flagFileName, bool present)
 			command += L"; $wsh = New-Object -ComObject WScript.Shell";
 			command += L"; $sc = $wsh.CreateShortcut($scPath)";
 			command += L"; $sc.TargetPath = " + QuotePowerShellString(exePath);
+			command += L"; $sc.Arguments = " + QuotePowerShellString(scArg);
 			command += L"; $sc.IconLocation = " + QuotePowerShellString(exePath + L",0");
 			command += L"; $sc.Description = " + QuotePowerShellString(desc);
 			command += L"; $sc.Save()";

@@ -123,20 +123,51 @@ $iconStale      = ($srcIconSha -ne $dstIconSha)
 $resourcesStale = ($srcSyncScriptSha -ne $dstSyncScriptSha)
 $hostStale      = $hostPresent -and ($srcHostExeSha -ne $dstHostExeSha)
 
-if (-not $exeStale -and -not $openVRStale -and -not $driverStale -and -not $manifestStale -and -not $iconStale -and -not $resourcesStale -and -not $hostStale) {
+# Detect stale Start Menu shortcuts. The Modules-tab toggle helper and the
+# NSIS installer both stamp distinct --launch arguments on each .lnk so
+# Windows Search treats them as separate items; if quick.ps1 deployed a
+# binary update without refreshing those arguments (or any shortcut still
+# carries the pre-fix empty Arguments string), Windows collapses every
+# WKOpenVR shortcut back into a single search result. Reading .lnk
+# metadata via WScript.Shell does NOT need admin; rewriting them does, so
+# the rewrite still happens inside the elevated helper.
+$shortcutArgMap = @{
+	'WKOpenVR.lnk'                    = '--launch=umbrella'
+	'WKOpenVR - Space Calibrator.lnk' = '--launch=calibration'
+	'WKOpenVR - Smoothing.lnk'        = '--launch=smoothing'
+	'WKOpenVR - Input Health.lnk'     = '--launch=inputhealth'
+	'WKOpenVR - Face Tracking.lnk'    = '--launch=facetracking'
+}
+$startMenuDir = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\WKOpenVR'
+$shortcutsStale = $false
+if (Test-Path -LiteralPath $startMenuDir) {
+	$wshProbe = New-Object -ComObject WScript.Shell
+	foreach ($lnk in (Get-ChildItem -LiteralPath $startMenuDir -Filter '*.lnk' -File -ErrorAction SilentlyContinue)) {
+		$expected = $shortcutArgMap[$lnk.Name]
+		if ($null -eq $expected) { continue }
+		$sc = $wshProbe.CreateShortcut($lnk.FullName)
+		if ($sc.Arguments -ne $expected -or $sc.TargetPath -ne $dstExe) {
+			$shortcutsStale = $true
+			break
+		}
+	}
+}
+
+if (-not $exeStale -and -not $openVRStale -and -not $driverStale -and -not $manifestStale -and -not $iconStale -and -not $resourcesStale -and -not $hostStale -and -not $shortcutsStale) {
 	Write-Host ""
 	Write-Host "Already up to date. Deployed build: $(Resolve-Version $dstExe)"
 	exit 0
 }
 
 Write-Host ""
-if ($exeStale)       { Write-Host "Overlay exe needs redeploy." }
-if ($openVRStale)    { Write-Host "openvr_api.dll needs redeploy." }
-if ($driverStale)    { Write-Host "Driver DLL needs redeploy." }
-if ($manifestStale)  { Write-Host "vrmanifest needs redeploy." }
-if ($iconStale)      { Write-Host "Dashboard icon needs redeploy." }
-if ($resourcesStale) { Write-Host "Overlay resources tree needs redeploy." }
-if ($hostStale)      { Write-Host "FaceModuleHost tree needs redeploy." }
+if ($exeStale)        { Write-Host "Overlay exe needs redeploy." }
+if ($openVRStale)     { Write-Host "openvr_api.dll needs redeploy." }
+if ($driverStale)     { Write-Host "Driver DLL needs redeploy." }
+if ($manifestStale)   { Write-Host "vrmanifest needs redeploy." }
+if ($iconStale)       { Write-Host "Dashboard icon needs redeploy." }
+if ($resourcesStale)  { Write-Host "Overlay resources tree needs redeploy." }
+if ($hostStale)       { Write-Host "FaceModuleHost tree needs redeploy." }
+if ($shortcutsStale)  { Write-Host "Start Menu shortcuts need refresh (distinct --launch args)." }
 
 if (-not $Yes) {
 	$reply = Read-Host "Continue with elevated copy? [y/N]"
@@ -211,6 +242,38 @@ try {
 		}
 		Get-ChildItem -LiteralPath `$hostDst -File | Where-Object { `$_.Name -notlike '*.old.*' } | Remove-Item -Force
 		Copy-Item -Path (Join-Path `$hostSrc '*') -Destination `$hostDst -Recurse -Force
+	}
+
+	# Refresh existing Start Menu shortcuts so each one carries its
+	# distinct --launch argument. Without distinct args, Windows Search
+	# dedupes Start Menu entries by (target + arguments) and only one of
+	# the WKOpenVR .lnk files surfaces when the user searches for a
+	# feature name. The NSIS installer sets these args on first install;
+	# quick.ps1 re-applies them on every deploy so shortcuts dropped by
+	# an older build pick up the latest mapping and any .lnk whose target
+	# fell behind a quick.ps1-only install update is repointed at the
+	# current exe path. Only known filenames are touched -- unrelated
+	# .lnks in the WKOpenVR Start Menu folder are left alone.
+	`$smDir = Join-Path `$env:ProgramData 'Microsoft\Windows\Start Menu\Programs\WKOpenVR'
+	if (Test-Path -LiteralPath `$smDir) {
+		`$argMap = @{
+			'WKOpenVR.lnk'                    = '--launch=umbrella'
+			'WKOpenVR - Space Calibrator.lnk' = '--launch=calibration'
+			'WKOpenVR - Smoothing.lnk'        = '--launch=smoothing'
+			'WKOpenVR - Input Health.lnk'     = '--launch=inputhealth'
+			'WKOpenVR - Face Tracking.lnk'    = '--launch=facetracking'
+		}
+		`$wsh = New-Object -ComObject WScript.Shell
+		Get-ChildItem -LiteralPath `$smDir -Filter '*.lnk' -File | ForEach-Object {
+			`$arg = `$argMap[`$_.Name]
+			if (`$null -eq `$arg) { return }
+			`$sc = `$wsh.CreateShortcut(`$_.FullName)
+			`$sc.TargetPath   = '$dstExe'
+			`$sc.Arguments    = `$arg
+			`$sc.IconLocation = '$dstExe' + ',0'
+			`$sc.Description  = 'Open WKOpenVR'
+			`$sc.Save()
+		}
 	}
 
 	`$exeSha       = (Get-FileHash -LiteralPath '$dstExe' -Algorithm SHA256).Hash

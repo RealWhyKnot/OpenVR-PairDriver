@@ -178,20 +178,27 @@ Section "Install"
     ; leaves all features disabled by default, so its only alias is the
     ; umbrella one -- the Modules tab adds / removes the per-feature
     ; shortcuts as the user toggles features at runtime.
+    ;
+    ; Each shortcut gets a unique `--launch=<feature>` argument. Windows
+    ; Search dedupes Start-Menu entries by exact (target + arguments)
+    ; tuple; without a distinct argument, searching "Smoothing" or
+    ; "Input Health" would only surface one shortcut (the most-recently-
+    ; modified .lnk that points at WKOpenVR.exe). The exe ignores
+    ; unknown args today, so the launch path stays identical.
     CreateDirectory "$SMPROGRAMS\WKOpenVR"
-    CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR.lnk" "$INSTDIR\WKOpenVR.exe" "" "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Open WKOpenVR"
+    CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR.lnk" "$INSTDIR\WKOpenVR.exe" "--launch=umbrella" "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Open WKOpenVR"
 
     !if "${FEATURE}" == "Calibration"
-        CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR - Space Calibrator.lnk" "$INSTDIR\WKOpenVR.exe" "" "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Space Calibrator in WKOpenVR"
+        CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR - Space Calibrator.lnk" "$INSTDIR\WKOpenVR.exe" "--launch=calibration"  "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Space Calibrator in WKOpenVR"
     !endif
     !if "${FEATURE}" == "Smoothing"
-        CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR - Smoothing.lnk"        "$INSTDIR\WKOpenVR.exe" "" "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Tracker smoothing in WKOpenVR"
+        CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR - Smoothing.lnk"        "$INSTDIR\WKOpenVR.exe" "--launch=smoothing"    "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Tracker smoothing in WKOpenVR"
     !endif
     !if "${FEATURE}" == "InputHealth"
-        CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR - Input Health.lnk"     "$INSTDIR\WKOpenVR.exe" "" "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Input Health in WKOpenVR"
+        CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR - Input Health.lnk"     "$INSTDIR\WKOpenVR.exe" "--launch=inputhealth"  "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Input Health in WKOpenVR"
     !endif
     !if "${FEATURE}" == "FaceTracking"
-        CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR - Face Tracking.lnk"    "$INSTDIR\WKOpenVR.exe" "" "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Face Tracking in WKOpenVR"
+        CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR - Face Tracking.lnk"    "$INSTDIR\WKOpenVR.exe" "--launch=facetracking" "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Face Tracking in WKOpenVR"
     !endif
 
     SetOutPath "$vrRuntimePath\drivers\01wkopenvr"

@@ -105,7 +105,7 @@ void OpenLogFile()
 
 	// Fallback: legacy behavior. Better than nothing if SHGetKnownFolderPath
 	// isn't available or AppDataLow isn't writable.
-	LogFile = fopen("openvr_pair_driver.log", "a");
+	LogFile = fopen("wkopenvr_driver.log", "a");
 	if (!LogFile) {
 		LogFile = stderr;
 	}

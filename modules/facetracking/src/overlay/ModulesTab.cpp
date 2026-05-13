@@ -115,6 +115,11 @@ static std::string BuildSourceDataJson(const ModuleSource &src)
     o["label"]       = picojson::value(src.label);
     if (!src.path.empty())       o["path"]       = picojson::value(src.path);
     if (!src.owner_repo.empty()) o["owner_repo"] = picojson::value(src.owner_repo);
+    // Registry sources need their base URL passed to face-module-sync.ps1;
+    // without this field the script's registry branch aborts at
+    // "Registry source has no url field." before issuing any HTTP request,
+    // so legacy-registry.whyknot.dev modules never get pulled.
+    if (!src.url.empty())        o["url"]        = picojson::value(src.url);
     return picojson::value(o).serialize();
 }
 

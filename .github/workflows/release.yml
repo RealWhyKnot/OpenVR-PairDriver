@@ -150,6 +150,17 @@ jobs:
           "@
           }
 
+          $FtBuildStamp = "modules/facetracking/src/overlay/BuildStamp.h"
+          if (Test-Path (Split-Path -Parent $FtBuildStamp)) {
+            Set-Content -Path $FtBuildStamp -Value @"
+          // Overwritten by release.yml with the umbrella binary's per-build stamp.
+          #pragma once
+
+          #define FACETRACKING_BUILD_STAMP "$version"
+          #define FACETRACKING_BUILD_CHANNEL "release"
+          "@
+          }
+
           cmake --build build --config Release --parallel
           if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)" }
 

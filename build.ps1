@@ -92,6 +92,26 @@ if (Test-Path (Split-Path -Parent $ScBuildStamp)) {
 "@
 }
 
+# Stamp the FaceTracking feature plugin's BuildStamp.h with the same
+# version. Same reason as the calibration block above: the face-tracking
+# footer reads FACETRACKING_BUILD_STAMP which otherwise stays at its
+# in-tree fallback ("0.0.0.0-dev") and renders that in the UI for every
+# user. The umbrella binary's main.cpp is stamped via target_compile_
+# definitions in core/src/overlay/CMakeLists.txt; this file is what
+# feeds the FaceTracking module's own version line.
+$FtBuildStamp = Join-Path $PSScriptRoot "modules/facetracking/src/overlay/BuildStamp.h"
+if (Test-Path (Split-Path -Parent $FtBuildStamp)) {
+	Set-Content -Path $FtBuildStamp -Value @"
+// Overwritten by WKOpenVR/build.ps1 with the umbrella binary's
+// per-build stamp so the FaceTracking footer reads the same string
+// the umbrella top header reports.
+#pragma once
+
+#define FACETRACKING_BUILD_STAMP "$Version"
+#define FACETRACKING_BUILD_CHANNEL "dev"
+"@
+}
+
 # Configure (skippable for incremental edits). The CMAKE_POLICY_VERSION_MINIMUM
 # bump is needed because the minhook submodule pins cmake_minimum_required at
 # 2.8 and current CMake versions reject anything below 3.5. -Wno-dev silences

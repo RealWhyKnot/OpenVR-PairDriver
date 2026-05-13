@@ -8,8 +8,6 @@
 #include "Protocol.h"
 #include "Version.h"
 #include "BuildStamp.h"
-#include "UpdateChecker.h"
-#include "Updater.h"
 #include "MotionRecording.h"
 #include "Wizard.h"
 #include "UserInterfaceFooter.h"
@@ -33,7 +31,6 @@ VRState LoadVRState();
 void BuildSystemSelection(const VRState &state);
 void BuildDeviceSelections(const VRState &state);
 void BuildProfileEditor();
-void BuildMenu(bool runningInOverlay);
 
 static const ImGuiWindowFlags bareWindowFlags =
 	ImGuiWindowFlags_NoTitleBar |
@@ -44,8 +41,8 @@ static const ImGuiWindowFlags bareWindowFlags =
 	ImGuiWindowFlags_NoCollapse;
 
 void BuildContinuousCalDisplay();
-void CCal_DrawLogsPanel();
 static void BuildMainWindowContents(bool runningInOverlay_);
+void BuildMenu(bool runningInOverlay);
 
 // Forward decls for the tab content called from both modes. CCal_BasicInfo /
 // CCal_DrawSettings were declared near the continuous-mode tab bar; the
@@ -63,16 +60,6 @@ void CCal_SetInUmbrella(bool inUmbrella)
 {
 	s_inUmbrella = inUmbrella;
 }
-
-// Update-check state. Lives for the lifetime of the process. We kick off the
-// initial check on the first BuildMainWindow tick so we don't slow startup.
-// The Updater is reused across retries (it transitions back to Idle on
-// failure when DownloadAndLaunch is called again -- see Updater::DownloadAndLaunch).
-spacecal::updates::UpdateChecker s_updateChecker;
-spacecal::updates::Updater s_updater;
-bool s_updateInitialKicked = false;
-bool s_updateBannerDismissed = false;
-double s_updateBannerHiddenUntil = 0.0;
 
 void BuildMainWindow(bool runningInOverlay_)
 {
@@ -138,11 +125,6 @@ static void BuildMainWindowContents(bool runningInOverlay_)
 			return;
 		}
 	}
-
-	// Drawn before everything else so it's always visible; the banner is a
-	// no-op until the first GitHub check completes (a few seconds after
-	// startup) and an update is actually available.
-	spacecal::ui::DrawUpdateBanner();
 
 	// "Waiting for SteamVR" banner -- visible whenever the program is up
 	// without a connected VR stack (e.g. user launched us before starting
@@ -250,7 +232,7 @@ static void BuildMainWindowContents(bool runningInOverlay_)
 
 // ShowVersionLine, GetModeStatus bodies moved to UserInterfaceFooter.cpp
 
-// FormatBytes, DrawVRWaitingBanner, DrawUpdateBanner moved to UserInterfaceBanners.cpp
+// FormatBytes and DrawVRWaitingBanner moved to UserInterfaceBanners.cpp
 
 void BuildContinuousCalDisplay() {
 	if (!s_inUmbrella) {
