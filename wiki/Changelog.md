@@ -27,6 +27,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **facetracking:** Add module - driver math, overlay UI, .NET 10 host, tests (2026.5.12.13-3A37) (2fe23e8)
 - **protocol:** Bump to v15 with face-tracking wire types (2026.5.12.13-3A37) (88651af)
 - **overlay:** Add dashboard renderer for the SteamVR overlay surface (2026.5.12.13-3A37) (1aa0fbf)
+- **facetracking:** Reflection bridge for VRCFT upstream modules (3d6bc1f)
 
 ### Changed
 - Rename export macro to OPENVRPAIRDRIVER_EXPORTS (c7df7e6)
