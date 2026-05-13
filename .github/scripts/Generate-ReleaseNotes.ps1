@@ -570,7 +570,6 @@ if (-not $SkipScrub) {
               "Common substitutes are pre-mapped in Generate-ReleaseNotes.ps1; if a new character " +
               "trips this, add it to `$asciiSubs and try again."
     }
-
 }
 
 # Single trimmed string so $(...) capture in calling scripts gets clean text.
