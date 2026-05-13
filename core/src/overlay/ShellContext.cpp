@@ -304,12 +304,56 @@ bool ShellContext::IsFlagPresent(const char *flagFileName) const
 	return false;
 }
 
+// Maps an enable_<feature>.flag filename to the user-facing label used in
+// the matching Start Menu shortcut filename + description. The shortcuts
+// land in the all-users Start Menu next to the umbrella shortcut so that
+// Windows search returns WKOpenVR when the user types the feature name.
+// Flag files outside this table simply skip the shortcut step -- the
+// behaviour is identical to the pre-shortcut version of SetFlagPresent.
+const wchar_t *ShortcutLabelFor(const char *flagFileName)
+{
+	if (!flagFileName) return nullptr;
+	struct Entry { const char *flag; const wchar_t *label; };
+	static const Entry kEntries[] = {
+		{ "enable_calibration.flag", L"Space Calibrator" },
+		{ "enable_smoothing.flag",   L"Smoothing"        },
+		{ "enable_inputhealth.flag", L"Input Health"     },
+		{ "enable_facetracking.flag", L"Face Tracking"   },
+	};
+	for (const auto &e : kEntries) {
+		if (strcmp(e.flag, flagFileName) == 0) return e.label;
+	}
+	return nullptr;
+}
+
 bool ShellContext::SetFlagPresent(const char *flagFileName, bool present)
 {
 	std::wstring path = FlagPath(flagFileName);
 	if (path.empty()) return false;
 
 	std::wstring parent = path.substr(0, path.find_last_of(L"\\/"));
+
+	// Shortcut targets: a Start Menu .lnk pointing at the umbrella exe so
+	// Windows search surfaces WKOpenVR when the user types the feature
+	// name. The installer drops the umbrella shortcut at install time;
+	// these per-feature aliases are managed by this helper so they track
+	// the enabled set even after the user toggles features at runtime.
+	//
+	// $env:ProgramData is resolved by PowerShell at runtime via Join-Path
+	// (single-quoting it on the C++ side would prevent expansion). The
+	// path components are passed as literal single-quoted strings so any
+	// spaces and backslashes survive verbatim.
+	const wchar_t *label = ShortcutLabelFor(flagFileName);
+	std::wstring smRelative = L"Microsoft\\Windows\\Start Menu\\Programs\\WKOpenVR";
+	std::wstring scFileName;
+	std::wstring exePath;
+	std::wstring desc;
+	if (label) {
+		scFileName = std::wstring(L"WKOpenVR - ") + label + L".lnk";
+		exePath = installDir + L"\\WKOpenVR.exe";
+		desc = std::wstring(label) + L" in WKOpenVR";
+	}
+
 	std::wstring command;
 	if (present) {
 		// New-Item does NOT accept -LiteralPath in Windows PowerShell 5.1 (the
@@ -321,10 +365,32 @@ bool ShellContext::SetFlagPresent(const char *flagFileName, bool present)
 			L"New-Item -ItemType Directory -Force -Path " + QuotePowerShellString(parent) +
 			L" | Out-Null; Set-Content -LiteralPath " + QuotePowerShellString(path) +
 			L" -Value enabled -NoNewline";
+		if (label) {
+			// COM-creating a shortcut from PowerShell is the simplest way to
+			// produce a .lnk without shipping a separate helper exe. The
+			// shortcut points at the installed WKOpenVR.exe (resolved via
+			// the ShellContext install dir captured at process start), uses
+			// the same exe for its icon, and tags a description so search
+			// previews read "<Feature> in WKOpenVR".
+			command += L"; $smDir = Join-Path $env:ProgramData " + QuotePowerShellString(smRelative);
+			command += L"; New-Item -ItemType Directory -Force -Path $smDir | Out-Null";
+			command += L"; $scPath = Join-Path $smDir " + QuotePowerShellString(scFileName);
+			command += L"; $wsh = New-Object -ComObject WScript.Shell";
+			command += L"; $sc = $wsh.CreateShortcut($scPath)";
+			command += L"; $sc.TargetPath = " + QuotePowerShellString(exePath);
+			command += L"; $sc.IconLocation = " + QuotePowerShellString(exePath + L",0");
+			command += L"; $sc.Description = " + QuotePowerShellString(desc);
+			command += L"; $sc.Save()";
+		}
 	} else {
 		command =
 			L"if (Test-Path -LiteralPath " + QuotePowerShellString(path) +
 			L") { Remove-Item -LiteralPath " + QuotePowerShellString(path) + L" -Force }";
+		if (label) {
+			command += L"; $smDir = Join-Path $env:ProgramData " + QuotePowerShellString(smRelative);
+			command += L"; $scPath = Join-Path $smDir " + QuotePowerShellString(scFileName);
+			command += L"; if (Test-Path -LiteralPath $scPath) { Remove-Item -LiteralPath $scPath -Force }";
+		}
 	}
 
 	// -EncodedCommand expects base64-encoded UTF-16 LE. We use it instead of

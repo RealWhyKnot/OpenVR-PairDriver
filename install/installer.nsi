@@ -138,6 +138,13 @@ FunctionEnd
 ; --------------------------------------------------------------------------
 Section "Install"
 ; --------------------------------------------------------------------------
+    ; Resolve $SMPROGRAMS / $APPDATA against the all-users location. The
+    ; installer runs elevated and lands in Program Files (all-users), so
+    ; the Start Menu shortcut belongs in the common Start Menu too --
+    ; without this NSIS would put it in the elevating account's roaming
+    ; profile, hidden from other Windows users on the machine.
+    SetShellVarContext all
+
     ; Pre-install checks: SteamVR window, vrserver, WKOpenVR.
     FindWindow $0 "Qt5QWindowIcon" "SteamVR Status"
     StrCmp $0 0 +3
@@ -165,8 +172,27 @@ Section "Install"
     SetOutPath "$INSTDIR\resources"
     File "${ARTIFACTS_BASEDIR}\resources\face-module-sync.ps1"
 
+    ; Start Menu shortcuts. The umbrella shortcut is always present.
+    ; Per-feature aliases are dropped here only when the installer is
+    ; pre-enabling exactly one feature; the umbrella installer (FEATURE=All)
+    ; leaves all features disabled by default, so its only alias is the
+    ; umbrella one -- the Modules tab adds / removes the per-feature
+    ; shortcuts as the user toggles features at runtime.
     CreateDirectory "$SMPROGRAMS\WKOpenVR"
-    CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR.lnk" "$INSTDIR\WKOpenVR.exe"
+    CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR.lnk" "$INSTDIR\WKOpenVR.exe" "" "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Open WKOpenVR"
+
+    !if "${FEATURE}" == "Calibration"
+        CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR - Space Calibrator.lnk" "$INSTDIR\WKOpenVR.exe" "" "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Space Calibrator in WKOpenVR"
+    !endif
+    !if "${FEATURE}" == "Smoothing"
+        CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR - Smoothing.lnk"        "$INSTDIR\WKOpenVR.exe" "" "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Tracker smoothing in WKOpenVR"
+    !endif
+    !if "${FEATURE}" == "InputHealth"
+        CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR - Input Health.lnk"     "$INSTDIR\WKOpenVR.exe" "" "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Input Health in WKOpenVR"
+    !endif
+    !if "${FEATURE}" == "FaceTracking"
+        CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR - Face Tracking.lnk"    "$INSTDIR\WKOpenVR.exe" "" "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Face Tracking in WKOpenVR"
+    !endif
 
     SetOutPath "$vrRuntimePath\drivers\01wkopenvr"
     File "${DRIVER_BASEDIR}\driver.vrdrivermanifest"
@@ -246,6 +272,11 @@ SectionEnd
 ; --------------------------------------------------------------------------
 Section "Uninstall"
 ; --------------------------------------------------------------------------
+    ; Match the install context so the all-users Start Menu shortcut is
+    ; the one we remove. Without this the uninstall would clear the
+    ; running user's roaming Start Menu and leave the common shortcut.
+    SetShellVarContext all
+
     ; Pre-uninstall checks: removing driver files while vrserver holds them
     ; open silently fails and leaves orphan DLLs in the driver directory.
     FindWindow $0 "Qt5QWindowIcon" "SteamVR Status"
@@ -257,13 +288,22 @@ Section "Uninstall"
     ${CheckProcessNotRunning} "WKOpenVR" "WKOpenVR is still running. Close WKOpenVR and try again."
 
     ; Unregister with SteamVR while the exe + manifest still exist on disk.
-    ; Sleep gives SteamVR a moment to release the manifest handle before
-    ; we delete the file, reducing the chance of a locked-file error.
+    ; WKOpenVR.exe must run from $INSTDIR because RemoveApplicationManifest
+    ; matches registrations by the exact registered manifest path, which
+    ; was $INSTDIR\manifest.vrmanifest at install time.
+    ;
+    ; The 2-second sleep gives Windows time to release the image-map
+    ; refcount on WKOpenVR.exe + openvr_api.dll after the spawned process
+    ; exits. Defender's just-touched-binary scan and lazy mapping cleanup
+    ; can both keep the files locked for 500ms-1500ms past process exit;
+    ; without the wait the next Delete on WKOpenVR.exe or openvr_api.dll
+    ; intermittently fails with sharing violation, leaving the install
+    ; dir half-removed.
     IfFileExists "$INSTDIR\WKOpenVR.exe" 0 skipUnregister
         DetailPrint "Unregistering WKOpenVR overlay from SteamVR..."
         ExecWait '"$INSTDIR\WKOpenVR.exe" --unregister-only' $0
         DetailPrint "Unregistration exit code: $0"
-        Sleep 500
+        Sleep 2000
     skipUnregister:
 
     ; Re-resolve SteamVR runtime path. Fall back to the registry value when
@@ -312,21 +352,47 @@ Section "Uninstall"
     skipDriverRemoval:
 
     ; ---- Remove $INSTDIR contents -----------------------------------------
-    ; Explicit deletes log each known file; the final RMDir /r catches any
-    ; future additions (extra resources, .ini snippets, future helper exes)
-    ; so a v2 of the installer doesn't leak files when uninstalling over
-    ; a v1 install. $INSTDIR is the user-chosen install directory; any
-    ; files in it were placed there by us.
-    ClearErrors
-    Delete "$INSTDIR\WKOpenVR.exe"
-    Delete "$INSTDIR\openvr_api.dll"
-    Delete "$INSTDIR\manifest.vrmanifest"
-    Delete "$INSTDIR\dashboard_icon.png"
-    Delete "$INSTDIR\LICENSE"
-    Delete "$INSTDIR\README.md"
-    Delete "$INSTDIR\Uninstall.exe"
-    RMDir /r "$INSTDIR\resources"
-    RMDir /r "$INSTDIR"
+    ; The explicit Deletes log each known file; the trailing RMDir /r
+    ; catches any future additions (extra resources, .ini snippets,
+    ; future helper exes). The retry loop handles the realistic case
+    ; that WKOpenVR.exe or openvr_api.dll is still locked by Windows'
+    ; image-mapping cleanup or Defender's just-touched-binary scan
+    ; (even after the Sleep 2000 above). After 10 retries (~10 s wall
+    ; clock) the script falls back to Delete /REBOOTOK so the file is
+    ; queued for next-reboot deletion, the reboot flag is set, and the
+    ; user gets a "Reboot now?" prompt at the end of uninstall.
+    StrCpy $0 0
+    deleteRetry:
+        ClearErrors
+        Delete "$INSTDIR\WKOpenVR.exe"
+        Delete "$INSTDIR\openvr_api.dll"
+        Delete "$INSTDIR\manifest.vrmanifest"
+        Delete "$INSTDIR\dashboard_icon.png"
+        Delete "$INSTDIR\LICENSE"
+        Delete "$INSTDIR\README.md"
+        Delete "$INSTDIR\Uninstall.exe"
+        RMDir /r "$INSTDIR\resources"
+        RMDir /r "$INSTDIR"
+        IfFileExists "$INSTDIR\WKOpenVR.exe" instDirLocked deleteDone
+        IfFileExists "$INSTDIR\openvr_api.dll" instDirLocked deleteDone
+    instDirLocked:
+        IntOp $0 $0 + 1
+        IntCmp $0 10 deleteRebootOk
+        DetailPrint "Install dir still locked (attempt $0); waiting 1s..."
+        Sleep 1000
+        Goto deleteRetry
+    deleteRebootOk:
+        DetailPrint "Files still locked after 10 retries -- queuing for reboot."
+        Delete /REBOOTOK "$INSTDIR\WKOpenVR.exe"
+        Delete /REBOOTOK "$INSTDIR\openvr_api.dll"
+        Delete /REBOOTOK "$INSTDIR\manifest.vrmanifest"
+        Delete /REBOOTOK "$INSTDIR\dashboard_icon.png"
+        Delete /REBOOTOK "$INSTDIR\LICENSE"
+        Delete /REBOOTOK "$INSTDIR\README.md"
+        Delete /REBOOTOK "$INSTDIR\Uninstall.exe"
+        RMDir /r /REBOOTOK "$INSTDIR\resources"
+        RMDir /REBOOTOK "$INSTDIR"
+    deleteDone:
 
     ; ---- Best-effort legacy install dir cleanup ---------------------------
     ClearErrors
@@ -353,10 +419,12 @@ Section "Uninstall"
         RMDir /r "$0"
     skipLegacyUserData:
 
-    ; ---- Start Menu shortcut ----------------------------------------------
+    ; ---- Start Menu shortcuts ---------------------------------------------
+    ; RMDir /r catches every "WKOpenVR - <Feature>.lnk" the umbrella and
+    ; per-feature installers may have dropped, without needing to spell
+    ; each one out here.
     ClearErrors
-    Delete "$SMPROGRAMS\WKOpenVR\WKOpenVR.lnk"
-    RMDir "$SMPROGRAMS\WKOpenVR"
+    RMDir /r "$SMPROGRAMS\WKOpenVR"
 
     ; ---- Registry cleanup -------------------------------------------------
     ClearErrors
@@ -375,5 +443,10 @@ Section "Uninstall"
     DeleteRegKey HKCU "Software\WKOpenVR-SpaceCalibrator"
 
     ClearErrors
-    MessageBox MB_OK|MB_ICONINFORMATION "WKOpenVR uninstalled."
+    IfRebootFlag rebootPrompt uninstallDone
+    rebootPrompt:
+        MessageBox MB_YESNO|MB_ICONQUESTION "Some files were locked and have been queued for deletion on the next reboot.$\r$\nReboot now to finish the uninstall?" IDNO uninstallDone
+        Reboot
+    uninstallDone:
+        MessageBox MB_OK|MB_ICONINFORMATION "WKOpenVR uninstalled."
 SectionEnd
