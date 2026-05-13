@@ -585,7 +585,6 @@ if (-not $SkipScrub) {
         '\bwhether\s+you''?re\b'
         '\bempowers?\b'
         '\bstreamline\b'
-        '\belevate\b'
         '\bcutting-edge\b'
         '\bseamless(ly)?\b'
         '\belegant\b'
