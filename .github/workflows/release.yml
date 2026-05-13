@@ -640,27 +640,49 @@ jobs:
           echo "Verified promote commit: $new_oid"
 
       - name: Clean up partial release on failure
-        # If any step after "Create GitHub release" failed, the umbrella
-        # release is up but the rest of the pipeline (mirrors, changelog
-        # promote) did not finish. Delete the umbrella release + tag so
-        # the next retry starts from a clean state, instead of forcing
-        # the operator to manually clean up before re-tagging.
+        # When any step after "Create GitHub release" fails, the umbrella
+        # release is up and some mirror releases may already be up on
+        # the sibling repos -- those would be orphans pointing at a
+        # commit that the next retry may rewrite. Delete the umbrella
+        # AND every mirror release for $TAG_NAME so the retry starts
+        # from a fully clean slate. The umbrella uses GITHUB_TOKEN;
+        # the mirrors use MIRROR_RELEASE_TOKEN (same PAT the mirror
+        # publish steps use). Per-mirror delete failures are warnings,
+        # not fatal -- one common cause is the mirror was never
+        # created (step skipped) and there is nothing to delete.
         if: failure()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN_UMBRELLA: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN_MIRROR: ${{ secrets.MIRROR_RELEASE_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
         shell: pwsh
         run: |
           $tag = $env:TAG_NAME
-          $exists = gh release view $tag --json id 2>$null
-          if ($LASTEXITCODE -eq 0 -and $exists) {
-            Write-Host "Workflow failed after release publish. Deleting $tag so retry is clean."
-            gh release delete $tag --yes --cleanup-tag
-            if ($LASTEXITCODE -ne 0) {
-              Write-Host "::warning::Could not auto-delete release $tag. Manual cleanup needed before retrying."
-            } else {
-              Write-Host "Deleted release $tag (tag included)."
-            }
-          } else {
-            Write-Host "No release named $tag exists -- nothing to clean up."
+
+          function Remove-ReleaseIfPresent {
+              param([string]$Repo, [string]$Token, [string]$Label)
+              $env:GH_TOKEN = $Token
+              $exists = gh release view $tag --repo $Repo --json id 2>$null
+              if ($LASTEXITCODE -eq 0 -and $exists) {
+                  Write-Host "Cleanup: deleting $Label release $tag from $Repo."
+                  gh release delete $tag --repo $Repo --yes --cleanup-tag
+                  if ($LASTEXITCODE -ne 0) {
+                      Write-Host "::warning::Could not auto-delete $Label release $tag on $Repo. Manual cleanup may be needed before retrying."
+                  }
+              } else {
+                  Write-Host "Cleanup: no $Label release $tag on $Repo -- nothing to remove."
+              }
+          }
+
+          $umbrellaRepo = "${{ github.repository }}"
+          Remove-ReleaseIfPresent -Repo $umbrellaRepo -Token $env:GH_TOKEN_UMBRELLA -Label "umbrella"
+
+          $mirrors = @(
+              'RealWhyKnot/WKOpenVR-SpaceCalibrator',
+              'RealWhyKnot/WKOpenVR-Smoothing',
+              'RealWhyKnot/WKOpenVR-InputHealth',
+              'RealWhyKnot/WKOpenVR-VRCFT'
+          )
+          foreach ($repo in $mirrors) {
+              Remove-ReleaseIfPresent -Repo $repo -Token $env:GH_TOKEN_MIRROR -Label "mirror"
           }
