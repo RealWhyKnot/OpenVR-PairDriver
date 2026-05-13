@@ -15,11 +15,11 @@ cd WKOpenVR
 ./build.ps1
 ```
 
-`build.ps1` activates `.githooks/` via `core.hooksPath` on first run, stamps `version.txt` and `modules/calibration/src/overlay/BuildStamp.h`, configures via CMake (`-G "Visual Studio 17 2022" -A x64`), runs MSBuild, then stages the C# face-tracking host into the driver tree at `build/driver_openvrpair/resources/facetracking/host/`. Output:
+`build.ps1` activates `.githooks/` via `core.hooksPath` on first run, stamps `version.txt` and `modules/calibration/src/overlay/BuildStamp.h`, configures via CMake (`-G "Visual Studio 17 2022" -A x64`), runs MSBuild, then stages the C# face-tracking host into the driver tree at `build/driver_wkopenvr/resources/facetracking/host/`. Output:
 
-- `build/artifacts/Release/OpenVR-Pair.exe` -- umbrella overlay
-- `build/driver_openvrpair/bin/win64/driver_openvrpair.dll` -- shared driver
-- `build/driver_openvrpair/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe` -- face-tracking sidecar (when the host build is enabled)
+- `build/artifacts/Release/WKOpenVR.exe` -- umbrella overlay
+- `build/driver_wkopenvr/bin/win64/driver_wkopenvr.dll` -- shared driver
+- `build/driver_wkopenvr/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe` -- face-tracking sidecar (when the host build is enabled)
 
 ## Incremental builds
 

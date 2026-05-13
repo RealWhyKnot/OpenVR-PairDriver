@@ -5,9 +5,9 @@ Releases are produced by `.github/workflows/release.yml` on a `v*` tag push. The
 1. Promotes the `## Unreleased` heading in `CHANGELOG.md` (and the wiki mirror) to `## [vTAG] -- DATE` via `.github/scripts/Update-Changelog.ps1`.
 2. Configures + builds the umbrella exe, driver DLL, and C# face-tracking host.
 3. Runs every `*_tests.exe` under `build/artifacts/Release/`; any non-zero exit fails the release.
-4. Stages a driver tree under `release/_stage_<version>/` with the loader-prefixed `driver_01openvrpair.dll`, the face-tracking host artifacts, the umbrella exe, and `openvr_api.dll`.
-5. Builds five zip artifacts: one umbrella + four per-feature mirrors. Each mirror is identical to the umbrella plus one `enable_<feature>.flag` pre-dropped under `driver_openvrpair/resources/`.
-6. Builds the NSIS installer (`OpenVR-Pair-v<version>-Setup.exe`).
+4. Stages a driver tree under `release/_stage_<version>/` with the loader-prefixed `driver_01wkopenvr.dll`, the face-tracking host artifacts, the umbrella exe, and `openvr_api.dll`.
+5. Builds five zip artifacts: one umbrella + four per-feature mirrors. Each mirror is identical to the umbrella plus one `enable_<feature>.flag` pre-dropped under `driver_wkopenvr/resources/`.
+6. Builds the NSIS installer (`WKOpenVR-v<version>-Setup.exe`).
 7. Generates the release body via `.github/scripts/Generate-ReleaseNotes.ps1` from the promoted changelog plus per-file SHA256 manifest.
 8. Publishes the umbrella release on this repo (zip + installer).
 9. Mirrors the release to each sibling repo using `MIRROR_RELEASE_TOKEN`, attaching that feature's mirror zip.

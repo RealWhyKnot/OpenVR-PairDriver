@@ -23,7 +23,7 @@ State writes are coalesced -- the driver persists learned curves to per-serial J
 
 ## IPC
 
-`\\.\pipe\OpenVR-WKInputHealth`:
+`\\.\pipe\WKOpenVR-InputHealth`:
 
 - `RequestSetInputHealthConfig` (v10) -- master toggle + compensation family flags (rest-recenter on / off, trigger remap on / off, observe-only on / off).
 - `RequestResetInputHealthStats` (v10) -- clear stats for a device or for every device.
@@ -54,7 +54,7 @@ Per-device, per-path table. Columns:
 
 ### Logs tab
 
-`%LocalAppDataLow%\OpenVR-Pair\Logs\inputhealth_log.<ts>.txt`.
+`%LocalAppDataLow%\WKOpenVR\Logs\inputhealth_log.<ts>.txt`.
 
 ## Banners / failure modes
 
@@ -63,8 +63,8 @@ Per-device, per-path table. Columns:
 
 ## Persistence
 
-- Per-device learned compensation: `%LocalAppDataLow%\OpenVR-Pair\profiles\inputhealth_<serial_hash>.json`.
-- Session log: `%LocalAppDataLow%\OpenVR-Pair\Logs\inputhealth_log.<ts>.txt`.
+- Per-device learned compensation: `%LocalAppDataLow%\WKOpenVR\profiles\inputhealth_<serial_hash>.json`.
+- Session log: `%LocalAppDataLow%\WKOpenVR\Logs\inputhealth_log.<ts>.txt`.
 
 ## Tests
 

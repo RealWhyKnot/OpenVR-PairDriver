@@ -14,7 +14,7 @@ Source: [modules/smoothing/](https://github.com/RealWhyKnot/WKOpenVR/tree/main/m
 
 ## IPC
 
-`\\.\pipe\OpenVR-WKSmoothing`:
+`\\.\pipe\WKOpenVR-Smoothing`:
 
 - `RequestSetFingerSmoothing` -- enabled mask + global strength + per-finger strength array.
 - `RequestSetDevicePrediction` -- per-device prediction smoothness (split off `SetDeviceTransform` at protocol v12 so smoothing didn't have to share an IPC schema with calibration).
@@ -37,7 +37,7 @@ Source: [modules/smoothing/](https://github.com/RealWhyKnot/WKOpenVR/tree/main/m
 
 ### Logs tab
 
-`%LocalAppDataLow%\OpenVR-Pair\Logs\smoothing_log.<ts>.txt`.
+`%LocalAppDataLow%\WKOpenVR\Logs\smoothing_log.<ts>.txt`.
 
 ## Banners / failure modes
 
@@ -46,8 +46,8 @@ Source: [modules/smoothing/](https://github.com/RealWhyKnot/WKOpenVR/tree/main/m
 
 ## Persistence
 
-- Settings: `%LocalAppDataLow%\OpenVR-Pair\profiles\smoothing.txt`.
-- Session log: `%LocalAppDataLow%\OpenVR-Pair\Logs\smoothing_log.<ts>.txt`.
+- Settings: `%LocalAppDataLow%\WKOpenVR\profiles\smoothing.txt`.
+- Session log: `%LocalAppDataLow%\WKOpenVR\Logs\smoothing_log.<ts>.txt`.
 
 ## Hot-path notes
 

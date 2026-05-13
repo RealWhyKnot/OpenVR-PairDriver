@@ -1,6 +1,6 @@
 # WKOpenVR
 
-Umbrella SteamVR overlay + driver for the OpenVR-Pair toolset. One binary (`OpenVR-Pair.exe`) and one driver DLL (`driver_openvrpair.dll`) host four feature modules. Each module can be toggled on or off via a marker flag file the overlay's Modules tab manages.
+Umbrella SteamVR overlay + driver. One binary (`WKOpenVR.exe`) and one driver DLL (`driver_wkopenvr.dll`) host four feature modules. Each module can be toggled on or off via a marker flag file the overlay's Modules tab manages.
 
 ## Modules
 

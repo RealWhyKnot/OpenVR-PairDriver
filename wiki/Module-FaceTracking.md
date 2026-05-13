@@ -17,8 +17,8 @@ Several Advanced-tab readouts (host status, native status, OSC status, focus dis
 ## Three-process pipeline
 
 1. **`OpenVRPair.FaceModuleHost.exe`** (C# .NET 10, sidecar) -- spawned by the driver's `HostSupervisor` with exponential-backoff restart. Loads vendor `FaceTrackingModule` DLLs in collectible `AssemblyLoadContext`s, normalises output to Unified Expressions, writes 67 calibration shape values + per-eye openness + per-eye pupil dilation into the shmem ring under seqlock with `Volatile.Read` / `Volatile.Write`. Sends OSC to VRChat (default `127.0.0.1:9000`) and broadcasts via mDNS unless the discovery toggle is off.
-2. **`driver_openvrpair.dll`** -- the driver's `FaceFrameReader` owns the shmem ring lifecycle. `CalibrationEngine` learns observed per-shape min/max envelopes and remaps live samples to the [0, 1] normalised range. `VergenceLock` reconstructs the focus distance via skew-line midpoint and corrects per-eye drift. `EyelidSync` mirrors the higher-confidence eye to suppress asymmetric flicker while preserving intentional winks. The processed sample is published via `TrackedDevicePoseUpdated`.
-3. **`OpenVR-Pair.exe` (overlay)** -- the FaceTracking tab manages the C# host's runtime config through the driver pipe; the driver forwards control-channel writes to the host so the user doesn't need to know about the inter-process detail.
+2. **`driver_wkopenvr.dll`** -- the driver's `FaceFrameReader` owns the shmem ring lifecycle. `CalibrationEngine` learns observed per-shape min/max envelopes and remaps live samples to the [0, 1] normalised range. `VergenceLock` reconstructs the focus distance via skew-line midpoint and corrects per-eye drift. `EyelidSync` mirrors the higher-confidence eye to suppress asymmetric flicker while preserving intentional winks. The processed sample is published via `TrackedDevicePoseUpdated`.
+3. **`WKOpenVR.exe` (overlay)** -- the FaceTracking tab manages the C# host's runtime config through the driver pipe; the driver forwards control-channel writes to the host so the user doesn't need to know about the inter-process detail.
 
 ## IPC
 
@@ -64,7 +64,7 @@ Shmem ring: `OpenVRPairFaceTrackingFrameRingV1`, 32 slots, seqlock with magic + 
 
 ### Logs section
 
-Tail of `%LocalAppDataLow%\OpenVR-Pair\Logs\facetracking_log.<ts>.txt`. Driver, overlay, and host all append to the same per-day file with `FileShare.ReadWrite | Delete` so each process can write without locking the others out.
+Tail of `%LocalAppDataLow%\WKOpenVR\Logs\facetracking_log.<ts>.txt`. Driver, overlay, and host all append to the same per-day file with `FileShare.ReadWrite | Delete` so each process can write without locking the others out.
 
 ## Banners / failure modes
 
@@ -74,11 +74,11 @@ Tail of `%LocalAppDataLow%\OpenVR-Pair\Logs\facetracking_log.<ts>.txt`. Driver, 
 
 ## Persistence
 
-- Settings: `%LocalAppDataLow%\OpenVR-Pair\profiles\facetracking.json` (overlay-owned).
-- Per-module learned calibration: `%LocalAppDataLow%\OpenVR-Pair\profiles\facetracking_calib_<module_uuid>.json` (driver-owned, single-writer; flushed on `FaceCalibSave` and on clean driver shutdown).
-- Trust list: `%LocalAppDataLow%\OpenVR-Pair\facetracking\trust.json` (host-owned).
-- Module install dir: `%LocalAppDataLow%\OpenVR-Pair\facetracking\modules\<uuid>\<version>\`.
-- Session log: `%LocalAppDataLow%\OpenVR-Pair\Logs\facetracking_log.<ts>.txt`.
+- Settings: `%LocalAppDataLow%\WKOpenVR\profiles\facetracking.json` (overlay-owned).
+- Per-module learned calibration: `%LocalAppDataLow%\WKOpenVR\profiles\facetracking_calib_<module_uuid>.json` (driver-owned, single-writer; flushed on `FaceCalibSave` and on clean driver shutdown).
+- Trust list: `%LocalAppDataLow%\WKOpenVR\facetracking\trust.json` (host-owned).
+- Module install dir: `%LocalAppDataLow%\WKOpenVR\facetracking\modules\<uuid>\<version>\`.
+- Session log: `%LocalAppDataLow%\WKOpenVR\Logs\facetracking_log.<ts>.txt`.
 
 ## Math reference
 

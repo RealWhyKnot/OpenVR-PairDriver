@@ -45,7 +45,7 @@ Available in continuous mode.
 
 ### Logs tab
 
-Tail of `%LocalAppDataLow%\OpenVR-Pair\Logs\spacecal_log.<ts>.txt`. Aggregated alongside the other modules' logs in the umbrella's global Logs tab.
+Tail of `%LocalAppDataLow%\WKOpenVR\Logs\spacecal_log.<ts>.txt`. Aggregated alongside the other modules' logs in the umbrella's global Logs tab.
 
 ## Banners / failure modes
 
@@ -57,8 +57,8 @@ Tail of `%LocalAppDataLow%\OpenVR-Pair\Logs\spacecal_log.<ts>.txt`. Aggregated a
 
 ## Persistence
 
-- Profile + offsets: `%LocalAppDataLow%\OpenVR-Pair\profiles\<profile>.json` (one profile per HMD tracking system).
-- Session log: `%LocalAppDataLow%\OpenVR-Pair\Logs\spacecal_log.<ts>.txt`.
+- Profile + offsets: `%LocalAppDataLow%\WKOpenVR\profiles\<profile>.json` (one profile per HMD tracking system).
+- Session log: `%LocalAppDataLow%\WKOpenVR\Logs\spacecal_log.<ts>.txt`.
 
 ## Tests
 
