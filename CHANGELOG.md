@@ -70,3 +70,4 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **calibration:** Suppress continuous-cal when a non-HMD anchor goes silent (528ab12)
 - **quick.ps1:** Copy openvr_api.dll alongside the umbrella exe (22e2ccb)
 - **quick.ps1:** Deploy the overlay resources tree alongside the exe (2f4ca75)
+- **facetracking:** Make the Sync subprocess actually work end-to-end (7322dc2)
