@@ -4,7 +4,7 @@ Keeps a non-lighthouse HMD (Quest, Pimax, etc.) aligned with lighthouse-tracked 
 
 Forked from the original OpenVR-SpaceCalibrator. The fork keeps the same Basic/Advanced UI shape so existing users can find familiar controls.
 
-Source: [modules/calibration/](https://github.com/RealWhyKnot/OpenVR-WKPairDriver/tree/main/modules/calibration)
+Source: [modules/calibration/](https://github.com/RealWhyKnot/WKOpenVR/tree/main/modules/calibration)
 
 ## Driver hooks
 

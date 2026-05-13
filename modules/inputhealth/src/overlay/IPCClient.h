@@ -2,7 +2,7 @@
 
 #include "Protocol.h"
 
-// IPC client for the InputHealth overlay. Talks to the OpenVR-WKPairDriver
+// IPC client for the InputHealth overlay. Talks to the WKOpenVR
 // shared driver over `\\.\pipe\OpenVR-WKInputHealth` (the third feature pipe
 // alongside calibration and smoothing). Same Request/Response protocol on
 // the wire; this overlay only sends RequestHandshake,

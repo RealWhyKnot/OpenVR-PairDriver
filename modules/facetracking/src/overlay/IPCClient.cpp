@@ -60,7 +60,7 @@ void FtIPCClient::Connect()
     if (pipe_ == INVALID_HANDLE_VALUE) {
         throw std::runtime_error(
             "FaceTracking driver unavailable. SteamVR is not running, "
-            "the OpenVR-WKPairDriver shared driver is not installed, or "
+            "the WKOpenVR shared driver is not installed, or "
             "the FaceTracking feature is not enabled "
             "(enable_facetracking.flag missing from the driver's resources folder).");
     }

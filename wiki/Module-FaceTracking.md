@@ -2,7 +2,7 @@
 
 Feeds live face and eye data from a hardware tracker (Quest Pro face sensors, Vive Facial Tracker, similar) into SteamVR and VRChat. A C# .NET 10 sidecar process loads the vendor module, normalises output against the Unified Expression set, and writes per-frame data into a shared-memory ring at ~120 Hz. The driver applies continuous calibration, eyelid sync (reduces asymmetric flicker), and vergence lock (corrects crossed-eye artefacts from per-eye drift) before publishing.
 
-Source: [modules/facetracking/](https://github.com/RealWhyKnot/OpenVR-WKPairDriver/tree/main/modules/facetracking)
+Source: [modules/facetracking/](https://github.com/RealWhyKnot/WKOpenVR/tree/main/modules/facetracking)
 
 ## V1 SDK gap
 

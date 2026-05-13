@@ -8,7 +8,7 @@ set(TARGET_NAME 01openvrpair)
 set(DRIVER_NAME "driver_openvrpair")
 
 project(OpenVRPairDriver)
-message("OpenVR-WKPairDriver - Driver")
+message("WKOpenVR - Driver")
 
 function(GroupSourcesByFolder target)
 	set(SOURCE_GROUP_DELIMITER "/")
@@ -54,7 +54,7 @@ find_library(OPENVR_LIBRARIES
 	PATH_SUFFIXES win${PLATFORM}
 	NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
 
-set(OPENVR_PAIRDRIVER_ROOT ${CMAKE_SOURCE_DIR} CACHE PATH "OpenVR-WKPairDriver checkout" FORCE)
+set(OPENVR_PAIRDRIVER_ROOT ${CMAKE_SOURCE_DIR} CACHE PATH "WKOpenVR checkout" FORCE)
 set(OPENVR_PAIR_FEATURE_LIBS "")
 set(OPENVR_PAIR_FEATURE_DEFINES "")
 

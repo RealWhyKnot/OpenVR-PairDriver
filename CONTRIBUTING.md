@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve OpenVR-WKPairDriver. Keep changes focused and easy to review.
+Thanks for helping improve WKOpenVR. Keep changes focused and easy to review.
 
 ## Before opening an issue
 

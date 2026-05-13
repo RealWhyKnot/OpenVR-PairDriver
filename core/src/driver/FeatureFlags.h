@@ -6,9 +6,9 @@
 // resources directory at Init() and only wires up the matching subsystems.
 // Each consumer overlay's installer drops the appropriate flag:
 //
-//   resources/enable_calibration.flag    -- OpenVR-WKSpaceCalibrator
-//   resources/enable_smoothing.flag      -- OpenVR-WKSmoothing
-//   resources/enable_inputhealth.flag    -- OpenVR-WKInputHealth
+//   resources/enable_calibration.flag    -- WKOpenVR-SpaceCalibrator
+//   resources/enable_smoothing.flag      -- WKOpenVR-Smoothing
+//   resources/enable_inputhealth.flag    -- WKOpenVR-InputHealth
 //   resources/enable_facetracking.flag   -- OpenVR-WKFaceTracking
 //
 // Any subset (including the empty subset) may be present. With no flags the

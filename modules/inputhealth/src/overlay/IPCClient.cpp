@@ -61,7 +61,7 @@ void IPCClient::Connect()
 
 	if (pipe == INVALID_HANDLE_VALUE) {
 		throw std::runtime_error(
-			"InputHealth driver unavailable. SteamVR is not running, the OpenVR-WKPairDriver shared driver is not installed, or the InputHealth feature is not enabled (enable_inputhealth.flag missing in the driver's resources folder).");
+			"InputHealth driver unavailable. SteamVR is not running, the WKOpenVR shared driver is not installed, or the InputHealth feature is not enabled (enable_inputhealth.flag missing in the driver's resources folder).");
 	}
 
 	DWORD mode = PIPE_READMODE_MESSAGE;

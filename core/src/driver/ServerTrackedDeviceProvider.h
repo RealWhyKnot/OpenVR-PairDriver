@@ -78,7 +78,7 @@ public:
 	void SetFingerSmoothingConfig(const protocol::FingerSmoothingConfig &cfg);
 	protocol::FingerSmoothingConfig GetFingerSmoothingConfig() const;
 
-	// Input-health config cache. Written by IPCServer when the OpenVR-WKInputHealth
+	// Input-health config cache. Written by IPCServer when the WKOpenVR-InputHealth
 	// overlay pushes a new config (rare). Read by the boolean / scalar input
 	// detours on every component update once Stage 1B lands (same atomic-pack
 	// pattern as fingerCfgPacked so the per-tick read is a single relaxed load).

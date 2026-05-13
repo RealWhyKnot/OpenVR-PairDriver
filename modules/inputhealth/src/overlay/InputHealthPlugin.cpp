@@ -32,7 +32,7 @@ InputHealthPlugin::InputHealthPlugin()
 void InputHealthPlugin::OnStart(openvr_pair::overlay::ShellContext &)
 {
 	OpenLogFile();
-	LOG("OpenVR-WKInputHealth plugin starting");
+	LOG("WKOpenVR-InputHealth plugin starting");
 	profiles_.LoadAll();
 	try {
 		ipc_.Connect();
@@ -54,7 +54,7 @@ void InputHealthPlugin::OnShutdown(openvr_pair::overlay::ShellContext &)
 	engine_.Flush();
 	reader_.Close();
 	ipc_.Close();
-	LOG("OpenVR-WKInputHealth plugin shutting down");
+	LOG("WKOpenVR-InputHealth plugin shutting down");
 	LogFlush();
 }
 

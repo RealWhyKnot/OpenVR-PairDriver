@@ -5,7 +5,7 @@ Two independent features for Valve Index Knuckles controllers, both controllable
 - **Finger smoothing** -- a per-bone slerp filter on the skeleton data so hand poses sent to VRChat (and any other `/input/skeleton` consumer) are smoothed rather than jittery.
 - **Pose-prediction suppression** -- dials down how aggressively SteamVR extrapolates each tracker's position. Helpful for IMU-based trackers (SlimeVR, Quest controller passthrough) that feel jittery from over-eager prediction.
 
-Source: [modules/smoothing/](https://github.com/RealWhyKnot/OpenVR-WKPairDriver/tree/main/modules/smoothing)
+Source: [modules/smoothing/](https://github.com/RealWhyKnot/WKOpenVR/tree/main/modules/smoothing)
 
 ## Driver hooks
 

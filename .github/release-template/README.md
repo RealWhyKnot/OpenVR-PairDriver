@@ -11,12 +11,12 @@ Each template runs through token substitution before the body composes. Any of t
 | `{tag}` | `v2026.5.6.0` |
 | `{version}` | `2026.5.6.0` |
 | `{owner}` | `RealWhyKnot` |
-| `{repo}` | `OpenVR-WKPairDriver` |
-| `{full-repo}` | `RealWhyKnot/OpenVR-WKPairDriver` |
+| `{repo}` | `WKOpenVR` |
+| `{full-repo}` | `RealWhyKnot/WKOpenVR` |
 | `{commit-sha}` | full 40-char hash of the tag's commit |
 | `{commit-sha-short}` | first 12 chars of the same hash |
 | `{prior-tag}` | `v2026.5.5.0` (empty on first release) |
-| `{zip-name}` | `OpenVR-WKPairDriver-v2026.5.6.0.zip` |
+| `{zip-name}` | `WKOpenVR-v2026.5.6.0.zip` |
 
 Tokens that the resolver could not compute render as the literal token string. A missing token is visible to a reader so they can file an operator fix.
 

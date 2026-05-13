@@ -540,8 +540,8 @@ namespace Metrics {
 		// %LocalAppDataLow%\OpenVR-Pair\Logs\. Was \SpaceCalibrator\Logs\
 		// pre-monorepo when SC ran as its own product; that path persisted
 		// after the umbrella consolidation and split logs between three
-		// different directories. Driver-side logs still land in
-		// \OpenVR-WKPairDriver\Logs\ (those are written by the driver DLL,
+		// different directories. Driver-side logs also land in
+		// \OpenVR-Pair\Logs\ (those are written by the driver DLL,
 		// not the overlay).
 		path += LR"(\OpenVR-Pair)";
 		if (CreateDirectoryW(path.c_str(), 0) == 0 && GetLastError() != ERROR_ALREADY_EXISTS) {

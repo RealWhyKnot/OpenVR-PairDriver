@@ -1,11 +1,11 @@
 # This workflow publishes a release on this repo AND mirrors per-feature
-# zips to the four sibling repos (OpenVR-WKSpaceCalibrator,
-# OpenVR-WKSmoothing, OpenVR-WKInputHealth, OpenVR-WKVRCFT). The mirror
+# zips to the four sibling repos (WKOpenVR-SpaceCalibrator,
+# WKOpenVR-Smoothing, WKOpenVR-InputHealth, WKOpenVR-VRCFT). The mirror
 # step needs a token with contents:write on all four repos, stored as the
 # secret MIRROR_RELEASE_TOKEN. Provision via:
 #   1. github.com -> Settings -> Developer settings -> Fine-grained PAT
-#   2. Resource owner: RealWhyKnot. Repos: OpenVR-WKSpaceCalibrator,
-#      OpenVR-WKSmoothing, OpenVR-WKInputHealth, OpenVR-WKVRCFT.
+#   2. Resource owner: RealWhyKnot. Repos: WKOpenVR-SpaceCalibrator,
+#      WKOpenVR-Smoothing, WKOpenVR-InputHealth, WKOpenVR-VRCFT.
 #   3. Permissions: Contents = Read and write.
 #   4. Copy token, then in this repo: Settings -> Secrets and variables
 #      -> Actions -> New repository secret -> name MIRROR_RELEASE_TOKEN.
@@ -202,10 +202,10 @@ jobs:
           # pre-dropped in driver_openvrpair/resources/ so the user's SteamVR
           # picks up that feature immediately after extracting into the driver dir.
           $features = @(
-            [pscustomobject]@{ Name = 'Calibration';  Flag = 'enable_calibration.flag';  Repo = 'RealWhyKnot/OpenVR-WKSpaceCalibrator' }
-            [pscustomobject]@{ Name = 'Smoothing';    Flag = 'enable_smoothing.flag';    Repo = 'RealWhyKnot/OpenVR-WKSmoothing' }
-            [pscustomobject]@{ Name = 'InputHealth';  Flag = 'enable_inputhealth.flag';  Repo = 'RealWhyKnot/OpenVR-WKInputHealth' }
-            [pscustomobject]@{ Name = 'FaceTracking'; Flag = 'enable_facetracking.flag'; Repo = 'RealWhyKnot/OpenVR-WKVRCFT' }
+            [pscustomobject]@{ Name = 'Calibration';  Flag = 'enable_calibration.flag';  Repo = 'RealWhyKnot/WKOpenVR-SpaceCalibrator' }
+            [pscustomobject]@{ Name = 'Smoothing';    Flag = 'enable_smoothing.flag';    Repo = 'RealWhyKnot/WKOpenVR-Smoothing' }
+            [pscustomobject]@{ Name = 'InputHealth';  Flag = 'enable_inputhealth.flag';  Repo = 'RealWhyKnot/WKOpenVR-InputHealth' }
+            [pscustomobject]@{ Name = 'FaceTracking'; Flag = 'enable_facetracking.flag'; Repo = 'RealWhyKnot/WKOpenVR-VRCFT' }
           )
 
           $mirrorPaths = @{}
@@ -368,7 +368,7 @@ jobs:
       # (a fine-grained PAT with contents:write on the three sibling repos).
       # The notes reference back to this repo's release so users clicking
       # through from a sibling repo's releases tab find the full changelog.
-      - name: Mirror release to OpenVR-WKSpaceCalibrator
+      - name: Mirror release to WKOpenVR-SpaceCalibrator
         env:
           GH_TOKEN: ${{ secrets.MIRROR_RELEASE_TOKEN }}
           GITHUB_SHA: ${{ github.sha }}
@@ -376,11 +376,11 @@ jobs:
         run: |
           $tag  = "${{ github.ref_name }}"
           $zip  = "${{ steps.zips.outputs.mirror_calibration }}"
-          $repo = "RealWhyKnot/OpenVR-WKSpaceCalibrator"
-          $notes = "Mirror of OpenVR-WKPairDriver release $tag. Zip includes enable_calibration.flag so calibration activates immediately. Source: https://github.com/RealWhyKnot/OpenVR-WKPairDriver/commit/$env:GITHUB_SHA"
+          $repo = "RealWhyKnot/WKOpenVR-SpaceCalibrator"
+          $notes = "Mirror of WKOpenVR release $tag. Zip includes enable_calibration.flag so calibration activates immediately. Source: https://github.com/RealWhyKnot/WKOpenVR/commit/$env:GITHUB_SHA"
           gh release create $tag $zip --repo $repo --title $tag --notes $notes
 
-      - name: Mirror release to OpenVR-WKSmoothing
+      - name: Mirror release to WKOpenVR-Smoothing
         env:
           GH_TOKEN: ${{ secrets.MIRROR_RELEASE_TOKEN }}
           GITHUB_SHA: ${{ github.sha }}
@@ -388,11 +388,11 @@ jobs:
         run: |
           $tag  = "${{ github.ref_name }}"
           $zip  = "${{ steps.zips.outputs.mirror_smoothing }}"
-          $repo = "RealWhyKnot/OpenVR-WKSmoothing"
-          $notes = "Mirror of OpenVR-WKPairDriver release $tag. Zip includes enable_smoothing.flag so smoothing activates immediately. Source: https://github.com/RealWhyKnot/OpenVR-WKPairDriver/commit/$env:GITHUB_SHA"
+          $repo = "RealWhyKnot/WKOpenVR-Smoothing"
+          $notes = "Mirror of WKOpenVR release $tag. Zip includes enable_smoothing.flag so smoothing activates immediately. Source: https://github.com/RealWhyKnot/WKOpenVR/commit/$env:GITHUB_SHA"
           gh release create $tag $zip --repo $repo --title $tag --notes $notes
 
-      - name: Mirror release to OpenVR-WKInputHealth
+      - name: Mirror release to WKOpenVR-InputHealth
         env:
           GH_TOKEN: ${{ secrets.MIRROR_RELEASE_TOKEN }}
           GITHUB_SHA: ${{ github.sha }}
@@ -400,11 +400,11 @@ jobs:
         run: |
           $tag  = "${{ github.ref_name }}"
           $zip  = "${{ steps.zips.outputs.mirror_inputhealth }}"
-          $repo = "RealWhyKnot/OpenVR-WKInputHealth"
-          $notes = "Mirror of OpenVR-WKPairDriver release $tag. Zip includes enable_inputhealth.flag so input health monitoring activates immediately. Source: https://github.com/RealWhyKnot/OpenVR-WKPairDriver/commit/$env:GITHUB_SHA"
+          $repo = "RealWhyKnot/WKOpenVR-InputHealth"
+          $notes = "Mirror of WKOpenVR release $tag. Zip includes enable_inputhealth.flag so input health monitoring activates immediately. Source: https://github.com/RealWhyKnot/WKOpenVR/commit/$env:GITHUB_SHA"
           gh release create $tag $zip --repo $repo --title $tag --notes $notes
 
-      - name: Mirror release to OpenVR-WKVRCFT
+      - name: Mirror release to WKOpenVR-VRCFT
         env:
           GH_TOKEN: ${{ secrets.MIRROR_RELEASE_TOKEN }}
           GITHUB_SHA: ${{ github.sha }}
@@ -412,8 +412,8 @@ jobs:
         run: |
           $tag  = "${{ github.ref_name }}"
           $zip  = "${{ steps.zips.outputs.mirror_facetracking }}"
-          $repo = "RealWhyKnot/OpenVR-WKVRCFT"
-          $notes = "Mirror of OpenVR-WKPairDriver release $tag. Zip includes enable_facetracking.flag so face and eye tracking activate immediately. Source: https://github.com/RealWhyKnot/OpenVR-WKPairDriver/commit/$env:GITHUB_SHA"
+          $repo = "RealWhyKnot/WKOpenVR-VRCFT"
+          $notes = "Mirror of WKOpenVR release $tag. Zip includes enable_facetracking.flag so face and eye tracking activate immediately. Source: https://github.com/RealWhyKnot/WKOpenVR/commit/$env:GITHUB_SHA"
           gh release create $tag $zip --repo $repo --title $tag --notes $notes
 
       - name: Push promoted changelog back to main (verified)

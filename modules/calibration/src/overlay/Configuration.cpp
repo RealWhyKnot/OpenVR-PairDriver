@@ -224,7 +224,7 @@ void ParseProfile(CalibrationContext &ctx, std::istream &stream)
 	if (profileVersion > kProfileSchemaVersion) {
 		std::cerr << "Refusing to load profile: schema_version " << profileVersion
 			<< " is newer than this build supports (" << kProfileSchemaVersion << ")."
-			<< " Update OpenVR-WKSpaceCalibrator to use this profile." << std::endl;
+			<< " Update WKOpenVR-SpaceCalibrator to use this profile." << std::endl;
 		ctx.validProfile = false;
 		return;
 	}
@@ -631,7 +631,7 @@ void WriteProfile(CalibrationContext &ctx, std::ostream &out)
 
 	// finger_smoothing_* and tracker_smoothness moved out of SC profiles
 	// on 2026-05-11 (Protocol v12 migration). The Smoothing overlay owns
-	// that state in its own config file now -- see OpenVR-WKSmoothing's
+	// that state in its own config file now -- see WKOpenVR-Smoothing's
 	// Config.cpp.
 
 #undef WRITE_IF_CHANGED_BOOL

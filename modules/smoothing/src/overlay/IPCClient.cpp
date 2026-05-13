@@ -50,7 +50,7 @@ void SmoothingIPCClient::Connect()
     if (pipe == INVALID_HANDLE_VALUE) {
         DWORD lastError = GetLastError();
         throw std::runtime_error(
-            "OpenVR-WKPairDriver smoothing pipe unavailable. Make sure SteamVR is running and the OpenVR-WKSmoothing addon is installed. Error " +
+            "WKOpenVR smoothing pipe unavailable. Make sure SteamVR is running and the WKOpenVR-Smoothing addon is installed. Error " +
             std::to_string(lastError) + ": " + LastErrorString(lastError));
     }
 
@@ -63,7 +63,7 @@ void SmoothingIPCClient::Connect()
     auto response = SendBlocking(protocol::Request(protocol::RequestHandshake));
     if (response.type != protocol::ResponseHandshake || response.protocol.version != protocol::Version) {
         throw std::runtime_error(
-            "Driver protocol version mismatch. Reinstall OpenVR-WKSmoothing and OpenVR-WKSpaceCalibrator at compatible versions. (Client: " +
+            "Driver protocol version mismatch. Reinstall WKOpenVR-Smoothing and WKOpenVR-SpaceCalibrator at compatible versions. (Client: " +
             std::to_string(protocol::Version) + ", Driver: " + std::to_string(response.protocol.version) + ")");
     }
 }

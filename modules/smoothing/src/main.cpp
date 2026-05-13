@@ -1,7 +1,7 @@
-// OpenVR-WKSmoothing -- minimal config-UI overlay for the finger-smoothing
-// feature implemented inside OpenVR-WKPairDriver. Connects to the driver via
+// WKOpenVR-Smoothing -- minimal config-UI overlay for the finger-smoothing
+// feature implemented inside WKOpenVR. Connects to the driver via
 // the smoothing named pipe and pushes RequestSetFingerSmoothing on every UI
-// change. Persists the live state to %LocalAppDataLow%\OpenVR-WKSmoothing\
+// change. Persists the live state to %LocalAppDataLow%\WKOpenVR-Smoothing\
 // config.txt so the next launch (or the next driver reconnect) restores it.
 
 #define WIN32_LEAN_AND_MEAN
@@ -56,7 +56,7 @@ int main(int /*argc*/, char ** /*argv*/)
 {
     glfwSetErrorCallback(GlfwErrorCallback);
     if (!glfwInit()) {
-        MessageBoxA(nullptr, "Failed to initialise GLFW.", "OpenVR-WKSmoothing", MB_ICONERROR);
+        MessageBoxA(nullptr, "Failed to initialise GLFW.", "WKOpenVR-Smoothing", MB_ICONERROR);
         return 1;
     }
 
@@ -65,9 +65,9 @@ int main(int /*argc*/, char ** /*argv*/)
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-    GLFWwindow *window = glfwCreateWindow(640, 480, "OpenVR-WKSmoothing", nullptr, nullptr);
+    GLFWwindow *window = glfwCreateWindow(640, 480, "WKOpenVR-Smoothing", nullptr, nullptr);
     if (!window) {
-        MessageBoxA(nullptr, "Failed to create window.", "OpenVR-WKSmoothing", MB_ICONERROR);
+        MessageBoxA(nullptr, "Failed to create window.", "WKOpenVR-Smoothing", MB_ICONERROR);
         glfwTerminate();
         return 1;
     }
@@ -76,7 +76,7 @@ int main(int /*argc*/, char ** /*argv*/)
     glfwSwapInterval(1);
 
     if (gl3wInit() != 0) {
-        MessageBoxA(nullptr, "Failed to load OpenGL functions.", "OpenVR-WKSmoothing", MB_ICONERROR);
+        MessageBoxA(nullptr, "Failed to load OpenGL functions.", "WKOpenVR-Smoothing", MB_ICONERROR);
         glfwDestroyWindow(window);
         glfwTerminate();
         return 1;
@@ -234,7 +234,7 @@ int main(int /*argc*/, char ** /*argv*/)
         }
 
         ImGui::Spacing();
-        ImGui::TextDisabled("OpenVR-WKSmoothing %s", SMOOTHING_VERSION_STRING);
+        ImGui::TextDisabled("WKOpenVR-Smoothing %s", SMOOTHING_VERSION_STRING);
 
         if (dirty) {
             SaveConfig(cfg);

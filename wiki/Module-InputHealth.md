@@ -2,7 +2,7 @@
 
 Watches every button, trigger, and thumbstick on connected controllers for drift and degradation. Learns what "normal" looks like for each input path (rest position, full-travel range, polar coverage across thumbstick angles) and silently corrects deviations -- pulling a drifting thumbstick back to centre, remapping a trigger whose full range has shrunk. The Diagnostics tab shows what the driver is observing per input path so the user can see drift being detected before it becomes noticeable.
 
-Source: [modules/inputhealth/](https://github.com/RealWhyKnot/OpenVR-WKPairDriver/tree/main/modules/inputhealth)
+Source: [modules/inputhealth/](https://github.com/RealWhyKnot/WKOpenVR/tree/main/modules/inputhealth)
 
 ## Driver hooks
 

@@ -17,10 +17,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 	{
 	case DLL_PROCESS_ATTACH:
 		OpenLogFile();
-		LOG("OpenVR-WKPairDriver " PAIRDRIVER_VERSION_STRING " loaded");
+		LOG("WKOpenVR " PAIRDRIVER_VERSION_STRING " loaded");
 		break;
 	case DLL_PROCESS_DETACH:
-		LOG("OpenVR-WKPairDriver unloaded");
+		LOG("WKOpenVR unloaded");
 		break;
 	case DLL_THREAD_ATTACH:
 	case DLL_THREAD_DETACH:

@@ -25,7 +25,7 @@
 void SmoothingPlugin::OnStart(openvr_pair::overlay::ShellContext &)
 {
 	smoothing::logging::OpenLogFile();
-	SM_LOG("OpenVR-WKSmoothing plugin starting (protocol=v%u)", (unsigned)protocol::Version);
+	SM_LOG("WKOpenVR-Smoothing plugin starting (protocol=v%u)", (unsigned)protocol::Version);
 	ConnectIfNeeded();
 	if (ipc_.IsConnected()) {
 		SM_LOG("[ipc] connected on first try");
@@ -181,7 +181,7 @@ void SmoothingPlugin::DrawLogsTab()
 		"other logs. Driver logs are emitted by the shared driver DLL.");
 	ImGui::Spacing();
 	ImGui::TextWrapped("Overlay:  %%LocalAppDataLow%%\\OpenVR-Pair\\Logs\\smoothing_log.<ts>.txt");
-	ImGui::TextWrapped("Driver:   %%LocalAppDataLow%%\\OpenVR-WKPairDriver\\Logs\\driver_log.<ts>.txt");
+	ImGui::TextWrapped("Driver:   %%LocalAppDataLow%%\\OpenVR-Pair\\Logs\\driver_log.<ts>.txt");
 	ImGui::TextWrapped("Settings: %%LocalAppDataLow%%\\OpenVR-Pair\\profiles\\smoothing.txt");
 }
 

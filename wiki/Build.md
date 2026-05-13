@@ -10,8 +10,8 @@
 ## One-shot build
 
 ```
-git clone --recursive https://github.com/RealWhyKnot/OpenVR-WKPairDriver
-cd OpenVR-WKPairDriver
+git clone --recursive https://github.com/RealWhyKnot/WKOpenVR
+cd WKOpenVR
 ./build.ps1
 ```
 

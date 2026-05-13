@@ -1,11 +1,11 @@
-# OpenVR-WKPairDriver
+# WKOpenVR
 
 Umbrella SteamVR overlay + driver for the OpenVR-Pair toolset. One binary (`OpenVR-Pair.exe`) and one driver DLL (`driver_openvrpair.dll`) host four feature modules under `modules/`:
 
-- **calibration** -- continuous calibration of HMDs against lighthouse-tracked full-body trackers. Forked from the original OpenVR-SpaceCalibrator. Mirrors releases to [OpenVR-WKSpaceCalibrator](https://github.com/RealWhyKnot/OpenVR-WKSpaceCalibrator).
-- **smoothing** -- One-Euro finger smoothing and per-device pose-prediction suppression for Valve Index Knuckles. Mirrors releases to [OpenVR-WKSmoothing](https://github.com/RealWhyKnot/OpenVR-WKSmoothing).
-- **inputhealth** -- per-button / per-axis / per-finger drift and degradation detection with learned compensation. Mirrors releases to [OpenVR-WKInputHealth](https://github.com/RealWhyKnot/OpenVR-WKInputHealth).
-- **facetracking** -- face and eye tracking via a C# .NET 10 host sidecar that loads hardware-vendor modules, normalises against Unified Expressions, and feeds the driver over a shared-memory ring. Mirrors releases to [OpenVR-WKVRCFT](https://github.com/RealWhyKnot/OpenVR-WKVRCFT).
+- **calibration** -- continuous calibration of HMDs against lighthouse-tracked full-body trackers. Forked from the original OpenVR-SpaceCalibrator. Mirrors releases to [WKOpenVR-SpaceCalibrator](https://github.com/RealWhyKnot/WKOpenVR-SpaceCalibrator).
+- **smoothing** -- One-Euro finger smoothing and per-device pose-prediction suppression for Valve Index Knuckles. Mirrors releases to [WKOpenVR-Smoothing](https://github.com/RealWhyKnot/WKOpenVR-Smoothing).
+- **inputhealth** -- per-button / per-axis / per-finger drift and degradation detection with learned compensation. Mirrors releases to [WKOpenVR-InputHealth](https://github.com/RealWhyKnot/WKOpenVR-InputHealth).
+- **facetracking** -- face and eye tracking via a C# .NET 10 host sidecar that loads hardware-vendor modules, normalises against Unified Expressions, and feeds the driver over a shared-memory ring. Mirrors releases to [WKOpenVR-VRCFT](https://github.com/RealWhyKnot/WKOpenVR-VRCFT).
 
 Each feature is wired up at SteamVR startup based on a marker file in the driver's `resources/` directory:
 
@@ -25,8 +25,8 @@ A SteamVR driver hooks into `vrserver.exe` via MinHook. MinHook is process-globa
 Requires CMake 3.15+, Visual Studio Build Tools 2022 (or the VS 2022 IDE), and submodules initialised. The .NET 10 SDK is needed for the face-tracking host; the build skips that target when the SDK is missing or when `-DOPENVR_PAIR_BUILD_FACE_HOST=OFF` is passed.
 
 ```
-git clone --recursive https://github.com/RealWhyKnot/OpenVR-WKPairDriver
-cd OpenVR-WKPairDriver
+git clone --recursive https://github.com/RealWhyKnot/WKOpenVR
+cd WKOpenVR
 ./build.ps1
 ```
 
@@ -49,7 +49,7 @@ Wire format is defined in [core/src/common/Protocol.h](core/src/common/Protocol.
 
 ## Documentation
 
-See the [wiki](https://github.com/RealWhyKnot/OpenVR-WKPairDriver/wiki) for architecture overview, per-module deep-dives, protocol reference, build environment notes, and the release pipeline.
+See the [wiki](https://github.com/RealWhyKnot/WKOpenVR/wiki) for architecture overview, per-module deep-dives, protocol reference, build environment notes, and the release pipeline.
 
 ## License
 

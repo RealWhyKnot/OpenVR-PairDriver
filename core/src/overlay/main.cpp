@@ -95,7 +95,7 @@ void DrawGlobalLogs(openvr_pair::overlay::ShellContext &context,
 	openvr_pair::overlay::ui::DrawTextWrapped(
 		"Per-module logs. All overlay-side logs land in "
 		"%LocalAppDataLow%\\OpenVR-Pair\\Logs\\; driver-side logs land in "
-		"%LocalAppDataLow%\\OpenVR-WKPairDriver\\Logs\\.");
+		"%LocalAppDataLow%\\OpenVR-Pair\\Logs\\.");
 	ImGui::Spacing();
 
 	bool anyDrawn = false;

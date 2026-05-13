@@ -5,7 +5,7 @@ OpenVR-Pair is a single SteamVR driver DLL + a single overlay binary that compos
 ## Layout
 
 ```
-OpenVR-WKPairDriver/
+WKOpenVR/
   core/
     src/
       common/   -- Protocol.h, shared utilities used by both sides

@@ -4,7 +4,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(OPENVR_PAIRDRIVER_ROOT ${CMAKE_SOURCE_DIR} CACHE PATH "OpenVR-WKPairDriver checkout" FORCE)
+set(OPENVR_PAIRDRIVER_ROOT ${CMAKE_SOURCE_DIR} CACHE PATH "WKOpenVR checkout" FORCE)
 set(OPENVR_PAIR_BUILD_UMBRELLA ON CACHE BOOL "Build feature overlay plugins for OpenVR-Pair" FORCE)
 
 # Feature modules are always present in the monorepo; add unconditionally.

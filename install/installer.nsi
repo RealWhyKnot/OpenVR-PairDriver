@@ -23,7 +23,7 @@ ShowInstDetails show
 VIProductVersion "${VERSION}"
 VIAddVersionKey /LANG=1033 "ProductName" "OpenVR-Pair"
 VIAddVersionKey /LANG=1033 "FileDescription" "OpenVR-Pair Installer"
-VIAddVersionKey /LANG=1033 "LegalCopyright" "GPL-3.0-only, https://github.com/RealWhyKnot/OpenVR-WKPairDriver"
+VIAddVersionKey /LANG=1033 "LegalCopyright" "GPL-3.0-only, https://github.com/RealWhyKnot/WKOpenVR"
 VIAddVersionKey /LANG=1033 "FileVersion" "${VERSION}"
 VIAddVersionKey /LANG=1033 "ProductVersion" "${VERSION}"
 

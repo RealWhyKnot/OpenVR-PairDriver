@@ -16,5 +16,5 @@
 
 **Issues**
 
-- [Open an issue](https://github.com/RealWhyKnot/OpenVR-WKPairDriver/issues)
-- [Releases](https://github.com/RealWhyKnot/OpenVR-WKPairDriver/releases)
+- [Open an issue](https://github.com/RealWhyKnot/WKOpenVR/issues)
+- [Releases](https://github.com/RealWhyKnot/WKOpenVR/releases)

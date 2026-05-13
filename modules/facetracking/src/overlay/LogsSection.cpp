@@ -119,7 +119,7 @@ void DrawLogsSection(FacetrackingPlugin &plugin)
     // ---- File paths (reference) ----
     DrawSectionHeading("Paths");
     ImGui::TextWrapped("Overlay:   %%LocalAppDataLow%%\\OpenVR-Pair\\Logs\\facetracking_log.<ts>.txt");
-    ImGui::TextWrapped("Driver:    %%LocalAppDataLow%%\\OpenVR-WKPairDriver\\Logs\\driver_log.<ts>.txt");
+    ImGui::TextWrapped("Driver:    %%LocalAppDataLow%%\\OpenVR-Pair\\Logs\\driver_log.<ts>.txt");
     ImGui::TextWrapped("Profiles:  %%LocalAppDataLow%%\\OpenVR-Pair\\profiles\\facetracking.json");
     ImGui::TextWrapped("Calib:     %%LocalAppDataLow%%\\OpenVR-Pair\\profiles\\facetracking_calib_<uuid>.json");
     ImGui::TextWrapped("Trust:     %%LocalAppDataLow%%\\OpenVR-Pair\\facetracking\\trust.json");

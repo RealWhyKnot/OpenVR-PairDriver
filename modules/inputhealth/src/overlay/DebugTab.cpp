@@ -58,7 +58,7 @@ void DrawLogsTab(InputHealthPlugin &ui)
 		"File logging is always on. Paths are listed verbatim so they can be "
 		"copy-pasted into Explorer.");
 	ImGui::Spacing();
-	ImGui::TextWrapped("Driver:   %%LocalAppDataLow%%\\OpenVR-WKPairDriver\\Logs\\driver_log.<ts>.txt");
+	ImGui::TextWrapped("Driver:   %%LocalAppDataLow%%\\OpenVR-Pair\\Logs\\driver_log.<ts>.txt");
 	ImGui::TextWrapped("Overlay:  %%LocalAppDataLow%%\\OpenVR-Pair\\Logs\\overlay_log.<ts>.txt");
 	ImGui::TextWrapped("Profiles: %%LocalAppDataLow%%\\OpenVR-Pair\\profiles\\<hash>.json");
 }

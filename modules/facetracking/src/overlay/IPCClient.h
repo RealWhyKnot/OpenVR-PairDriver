@@ -2,7 +2,7 @@
 
 #include "Protocol.h"
 
-// IPC client for the FaceTracking overlay. Talks to the OpenVR-WKPairDriver
+// IPC client for the FaceTracking overlay. Talks to the WKOpenVR
 // shared driver over OPENVR_PAIRDRIVER_FACETRACKING_PIPE_NAME. Same
 // Request / Response protocol as the other feature pipes; this client sends
 // RequestHandshake, RequestSetFaceTrackingConfig,

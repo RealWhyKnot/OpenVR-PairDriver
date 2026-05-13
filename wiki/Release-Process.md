@@ -17,10 +17,10 @@ Releases are produced by `.github/workflows/release.yml` on a `v*` tag push. The
 
 The mirror step needs a fine-grained PAT with `contents: read and write` scoped to all four mirror repos:
 
-- `RealWhyKnot/OpenVR-WKSpaceCalibrator`
-- `RealWhyKnot/OpenVR-WKSmoothing`
-- `RealWhyKnot/OpenVR-WKInputHealth`
-- `RealWhyKnot/OpenVR-WKVRCFT`
+- `RealWhyKnot/WKOpenVR-SpaceCalibrator`
+- `RealWhyKnot/WKOpenVR-Smoothing`
+- `RealWhyKnot/WKOpenVR-InputHealth`
+- `RealWhyKnot/WKOpenVR-VRCFT`
 
 Store as the `MIRROR_RELEASE_TOKEN` secret on this repo (Settings -> Secrets and variables -> Actions). Without it, the umbrella release publishes but the four mirror steps fail -- acceptable for a smoke test, fix before promoting any real version. Widening the token to add a new mirror repo is an in-place edit on the PAT under `github.com/settings/tokens?type=beta`; no need to regenerate.
 
