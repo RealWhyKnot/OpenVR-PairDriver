@@ -146,8 +146,23 @@ jobs:
             Copy-Item -Recurse -Path $srcFt -Destination "$stage/driver_wkopenvr/resources/facetracking"
           }
 
-          Copy-Item "$artifacts/WKOpenVR.exe"   "$stage/WKOpenVR.exe"
-          Copy-Item "$artifacts/openvr_api.dll"    "$stage/openvr_api.dll"
+          if (-not (Test-Path "$artifacts/dashboard_icon.png")) {
+            throw "dashboard_icon.png not found at $artifacts"
+          }
+          if (-not (Test-Path "$artifacts/resources/face-module-sync.ps1")) {
+            throw "face-module-sync.ps1 not found at $artifacts/resources"
+          }
+
+          Copy-Item "$artifacts/WKOpenVR.exe"        "$stage/WKOpenVR.exe"
+          Copy-Item "$artifacts/openvr_api.dll"      "$stage/openvr_api.dll"
+          # manifest.vrmanifest is what RegisterApplicationManifest in
+          # WKOpenVR.exe loads on first launch to register the overlay with
+          # SteamVR. Zip-extract users would get no SteamVR autolaunch
+          # without it.
+          Copy-Item "$artifacts/manifest.vrmanifest" "$stage/manifest.vrmanifest"
+          Copy-Item "$artifacts/dashboard_icon.png"  "$stage/dashboard_icon.png"
+          New-Item -ItemType Directory -Force -Path "$stage/resources" | Out-Null
+          Copy-Item "$artifacts/resources/face-module-sync.ps1" "$stage/resources/face-module-sync.ps1"
 
           # Stage the C# face-tracking host. CMake publishes it to
           # build/artifacts/FaceModuleHost/; build.ps1 copies that into the
@@ -232,6 +247,12 @@ jobs:
           "mirror_inputhealth=$($mirrorPaths['InputHealth'])"   >> $env:GITHUB_OUTPUT
           "mirror_facetracking=$($mirrorPaths['FaceTracking'])" >> $env:GITHUB_OUTPUT
 
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "NSIS install failed (exit $LASTEXITCODE)" }
+
       - name: Build NSIS installer
         id: installer
         shell: pwsh
@@ -257,6 +278,38 @@ jobs:
           "name=$(Split-Path -Leaf $versioned)"    >> $env:GITHUB_OUTPUT
           "sha256=$hash"                           >> $env:GITHUB_OUTPUT
           Write-Host "Installer: $versioned sha256=$hash"
+
+      - name: Build per-feature NSIS installers
+        id: feature_installers
+        shell: pwsh
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          $version = $env:TAG_NAME -replace '^v', ''
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (-not (Test-Path $makensis)) { $makensis = "C:\Program Files\NSIS\makensis.exe" }
+          if (-not (Test-Path $makensis)) { throw "makensis.exe not found." }
+          $features = @('Calibration', 'Smoothing', 'InputHealth', 'FaceTracking')
+          $outputs = @{}
+          foreach ($feat in $features) {
+            Push-Location install
+            & $makensis "/DVERSION=$version" "/DFEATURE=$feat" installer.nsi
+            $exitCode = $LASTEXITCODE
+            Pop-Location
+            if ($exitCode -ne 0) { throw "makensis ($feat) exited $exitCode" }
+            $raw = "build/artifacts/Release/WKOpenVR-$feat-Setup.exe"
+            if (-not (Test-Path $raw)) { throw "expected $raw missing after makensis" }
+            New-Item -ItemType Directory -Force -Path "release" | Out-Null
+            $versioned = "release/WKOpenVR-$feat-v$version-Setup.exe"
+            Move-Item $raw $versioned -Force
+            $hash = (Get-FileHash $versioned -Algorithm SHA256).Hash
+            $outputs[$feat] = (Resolve-Path $versioned).Path
+            Write-Host "Per-feature installer ($feat): $versioned sha256=$hash"
+          }
+          "installer_calibration=$($outputs['Calibration'])"   >> $env:GITHUB_OUTPUT
+          "installer_smoothing=$($outputs['Smoothing'])"       >> $env:GITHUB_OUTPUT
+          "installer_inputhealth=$($outputs['InputHealth'])"   >> $env:GITHUB_OUTPUT
+          "installer_facetracking=$($outputs['FaceTracking'])" >> $env:GITHUB_OUTPUT
 
       - name: Generate release body
         id: changelog
@@ -374,11 +427,12 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
         shell: pwsh
         run: |
-          $tag  = "${{ github.ref_name }}"
-          $zip  = "${{ steps.zips.outputs.mirror_calibration }}"
-          $repo = "RealWhyKnot/WKOpenVR-SpaceCalibrator"
+          $tag       = "${{ github.ref_name }}"
+          $zip       = "${{ steps.zips.outputs.mirror_calibration }}"
+          $installer = "${{ steps.feature_installers.outputs.installer_calibration }}"
+          $repo  = "RealWhyKnot/WKOpenVR-SpaceCalibrator"
           $notes = "Mirror of WKOpenVR release $tag. Zip includes enable_calibration.flag so calibration activates immediately. Source: https://github.com/RealWhyKnot/WKOpenVR/commit/$env:GITHUB_SHA"
-          gh release create $tag $zip --repo $repo --title $tag --notes $notes
+          gh release create $tag $zip $installer --repo $repo --title $tag --notes $notes
 
       - name: Mirror release to WKOpenVR-Smoothing
         env:
@@ -386,11 +440,12 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
         shell: pwsh
         run: |
-          $tag  = "${{ github.ref_name }}"
-          $zip  = "${{ steps.zips.outputs.mirror_smoothing }}"
-          $repo = "RealWhyKnot/WKOpenVR-Smoothing"
+          $tag       = "${{ github.ref_name }}"
+          $zip       = "${{ steps.zips.outputs.mirror_smoothing }}"
+          $installer = "${{ steps.feature_installers.outputs.installer_smoothing }}"
+          $repo  = "RealWhyKnot/WKOpenVR-Smoothing"
           $notes = "Mirror of WKOpenVR release $tag. Zip includes enable_smoothing.flag so smoothing activates immediately. Source: https://github.com/RealWhyKnot/WKOpenVR/commit/$env:GITHUB_SHA"
-          gh release create $tag $zip --repo $repo --title $tag --notes $notes
+          gh release create $tag $zip $installer --repo $repo --title $tag --notes $notes
 
       - name: Mirror release to WKOpenVR-InputHealth
         env:
@@ -398,11 +453,12 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
         shell: pwsh
         run: |
-          $tag  = "${{ github.ref_name }}"
-          $zip  = "${{ steps.zips.outputs.mirror_inputhealth }}"
-          $repo = "RealWhyKnot/WKOpenVR-InputHealth"
+          $tag       = "${{ github.ref_name }}"
+          $zip       = "${{ steps.zips.outputs.mirror_inputhealth }}"
+          $installer = "${{ steps.feature_installers.outputs.installer_inputhealth }}"
+          $repo  = "RealWhyKnot/WKOpenVR-InputHealth"
           $notes = "Mirror of WKOpenVR release $tag. Zip includes enable_inputhealth.flag so input health monitoring activates immediately. Source: https://github.com/RealWhyKnot/WKOpenVR/commit/$env:GITHUB_SHA"
-          gh release create $tag $zip --repo $repo --title $tag --notes $notes
+          gh release create $tag $zip $installer --repo $repo --title $tag --notes $notes
 
       - name: Mirror release to WKOpenVR-VRCFT
         env:
@@ -410,11 +466,12 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
         shell: pwsh
         run: |
-          $tag  = "${{ github.ref_name }}"
-          $zip  = "${{ steps.zips.outputs.mirror_facetracking }}"
-          $repo = "RealWhyKnot/WKOpenVR-VRCFT"
+          $tag       = "${{ github.ref_name }}"
+          $zip       = "${{ steps.zips.outputs.mirror_facetracking }}"
+          $installer = "${{ steps.feature_installers.outputs.installer_facetracking }}"
+          $repo  = "RealWhyKnot/WKOpenVR-VRCFT"
           $notes = "Mirror of WKOpenVR release $tag. Zip includes enable_facetracking.flag so face and eye tracking activate immediately. Source: https://github.com/RealWhyKnot/WKOpenVR/commit/$env:GITHUB_SHA"
-          gh release create $tag $zip --repo $repo --title $tag --notes $notes
+          gh release create $tag $zip $installer --repo $repo --title $tag --notes $notes
 
       - name: Push promoted changelog back to main (verified)
         # Use the GraphQL createCommitOnBranch mutation so the promotion

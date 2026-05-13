@@ -67,6 +67,29 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "$($t.Name) failed (exit $LASTEXITCODE)" }
           }
 
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "NSIS install failed (exit $LASTEXITCODE)" }
+
+      - name: Validate NSIS installer script
+        shell: pwsh
+        run: |
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (-not (Test-Path $makensis)) { $makensis = "C:\Program Files\NSIS\makensis.exe" }
+          if (-not (Test-Path $makensis)) { throw "makensis.exe not found." }
+          # Dry-run umbrella build.
+          Push-Location install
+          & $makensis /V2 installer.nsi
+          $exitUmbrella = $LASTEXITCODE
+          # Dry-run one per-feature build to exercise the FEATURE= code path.
+          & $makensis /V2 /DFEATURE=Calibration installer.nsi
+          $exitFeature = $LASTEXITCODE
+          Pop-Location
+          if ($exitUmbrella -ne 0) { throw "makensis (umbrella) exited $exitUmbrella" }
+          if ($exitFeature  -ne 0) { throw "makensis (Calibration) exited $exitFeature" }
+
       - name: Stage artifacts
         shell: pwsh
         run: |
