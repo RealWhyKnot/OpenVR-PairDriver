@@ -35,6 +35,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **facetracking:** Wire driver telemetry; replace V1 stubs with real wiring or removal (1c0b487)
 - **facetracking:** Module sources (folder + GitHub) with SHA verify; drop legacy trust UI (46a4224)
 - **facetracking:** Redesign Modules tab around multi-select (32e0d77)
+- **overlay:** Responsive resize, theme system, and UI helper additions (afc4c05)
 
 ### Changed
 - Rename export macro to OPENVRPAIRDRIVER_EXPORTS (c7df7e6)
@@ -72,3 +73,4 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **quick.ps1:** Copy openvr_api.dll alongside the umbrella exe (22e2ccb)
 - **quick.ps1:** Deploy the overlay resources tree alongside the exe (2f4ca75)
 - **facetracking:** Make the Sync subprocess actually work end-to-end (7322dc2)
+- **overlay:** Suppress shell scrollbar so SC tab does not stack two (61d51f6)
