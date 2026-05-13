@@ -47,6 +47,40 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Set up .NET 10 SDK
+        # Pinned by modules/facetracking/src/host/global.json. Without an
+        # explicit setup the runner default may not include 10.x and the
+        # CMake host target silently skips itself, masking the gap until
+        # release time.
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache build directory
+        # CMake handles incremental builds natively; restoring build/
+        # cuts ~5 min off the cold MSVC pass when a PR touches only a
+        # few files. Falls back to the most recent build on a hash miss.
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: build-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', 'core/src/**/*.cpp', 'core/src/**/*.h', 'modules/**/*.cpp', 'modules/**/*.h', 'modules/**/*.cs', '.gitmodules', 'version.txt') }}
+          restore-keys: |
+            build-${{ runner.os }}-
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('modules/facetracking/src/host/**/*.csproj', 'modules/facetracking/src/host/**/packages.lock.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Cache NSIS install
+        uses: actions/cache@v4
+        with:
+          path: 'C:\Program Files (x86)\NSIS'
+          key: nsis-${{ runner.os }}-3.12
+
       - name: Configure
         # The minhook submodule declares cmake_minimum_required(2.8.12) which
         # CMake 4.x rejects. -DCMAKE_POLICY_VERSION_MINIMUM=3.5 lets us configure
@@ -68,10 +102,43 @@ jobs:
           }
 
       - name: Install NSIS
+        # No-op when the NSIS cache step above restored the install tree.
         shell: pwsh
         run: |
+          if (Test-Path "C:\Program Files (x86)\NSIS\makensis.exe") {
+            Write-Host "NSIS already present (cache hit) -- skipping choco install."
+            exit 0
+          }
           choco install nsis -y --no-progress
           if ($LASTEXITCODE -ne 0) { throw "NSIS install failed (exit $LASTEXITCODE)" }
+
+      - name: Verify NSIS input artifacts staged
+        # Same precondition check release.yml uses, run in CI so a staging
+        # gap fails the PR / push instead of surfacing only at tag time.
+        shell: pwsh
+        run: |
+          $required = @(
+            'build/artifacts/Release/WKOpenVR.exe',
+            'build/artifacts/Release/openvr_api.dll',
+            'build/artifacts/Release/manifest.vrmanifest',
+            'build/artifacts/Release/dashboard_icon.png',
+            'build/artifacts/Release/resources/face-module-sync.ps1',
+            'build/driver_wkopenvr/driver.vrdrivermanifest',
+            'build/driver_wkopenvr/resources/driver.vrresources',
+            'build/driver_wkopenvr/resources/settings/default.vrsettings',
+            'build/driver_wkopenvr/bin/win64/driver_wkopenvr.dll',
+            'build/driver_wkopenvr/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe'
+          )
+          $missing = @()
+          foreach ($p in $required) {
+            if (-not (Test-Path -LiteralPath $p)) { $missing += $p }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Host "Missing artifacts required by installer.nsi:"
+            $missing | ForEach-Object { Write-Host "  - $_" }
+            throw "NSIS input artifacts are not fully staged."
+          }
+          Write-Host "All NSIS input artifacts present."
 
       - name: Validate NSIS installer script
         shell: pwsh

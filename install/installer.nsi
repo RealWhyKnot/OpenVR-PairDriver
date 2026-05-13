@@ -208,18 +208,16 @@ Section "Install"
     ; enable_facetracking.flag is present. The /r flag pulls in the entire
     ; published .NET tree (exe + .deps.json + .runtimeconfig.json + dependent
     ; DLLs). The whole folder is missing when the build host doesn't have the
-    ; .NET 10 SDK; in that case the IfFileExists guard skips the install step
-    ; and the feature simply runs inert -- driver still loads, just no host.
-    ;
-    ; Labels are required here instead of "+3": File /r expands at compile
-    ; time into one runtime instruction per included file, so a numeric
-    ; "+3" jump would land somewhere inside the per-file expansion rather
-    ; than after it.
-    IfFileExists "${DRIVER_BASEDIR}\resources\facetracking\host\OpenVRPair.FaceModuleHost.exe" hasFaceHost skipFaceHost
-    hasFaceHost:
+    ; .NET 10 SDK -- in that case the !if /FileExists guard omits the File
+    ; directive entirely at compile time so makensis does not abort with
+    ; "no files found", and the feature simply runs inert at runtime
+    ; (driver still loads, just no host process).
+    !if /FileExists "${DRIVER_BASEDIR}\resources\facetracking\host\OpenVRPair.FaceModuleHost.exe"
         SetOutPath "$vrRuntimePath\drivers\01wkopenvr\resources\facetracking\host"
         File /r "${DRIVER_BASEDIR}\resources\facetracking\host\*.*"
-    skipFaceHost:
+    !else
+        DetailPrint "FaceModuleHost not embedded in this installer (build host had no .NET 10 SDK); FaceTracking feature will run inert until the host is staged manually."
+    !endif
 
     ; Drop the feature enable flag when building a per-feature installer.
     ; Content matches what ShellContext::SetFlagPresent writes:

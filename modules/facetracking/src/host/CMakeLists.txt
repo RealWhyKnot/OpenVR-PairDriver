@@ -31,6 +31,13 @@ set(FACE_HOST_SOLUTION "${CMAKE_CURRENT_LIST_DIR}/OpenVRPair.FaceTracking.sln")
 set(FACE_HOST_PROJECT  "${CMAKE_CURRENT_LIST_DIR}/OpenVRPair.FaceModuleHost/OpenVRPair.FaceModuleHost.csproj")
 set(FACE_HOST_PUBLISH_DIR "${CMAKE_BINARY_DIR}/facetracking-host-publish")
 set(FACE_HOST_ARTIFACT_DIR "${CMAKE_BINARY_DIR}/artifacts/FaceModuleHost")
+# Mirror the published tree into the driver staging directory so the
+# NSIS installer + the umbrella zip both find OpenVRPair.FaceModuleHost.exe
+# under driver_wkopenvr/resources/facetracking/host/ without any caller-
+# side post-build copy. build.ps1 used to handle this, but the CI workflow
+# runs cmake directly and skipped the step -- doing it here keeps every
+# build path (local + CI + future ones) producing the same tree.
+set(FACE_HOST_DRIVER_STAGE_DIR "${CMAKE_BINARY_DIR}/driver_wkopenvr/resources/facetracking/host")
 set(FACE_HOST_STAMP "${CMAKE_CURRENT_BINARY_DIR}/face_host.stamp")
 
 file(GLOB_RECURSE FACE_HOST_INPUTS
@@ -52,6 +59,8 @@ add_custom_command(
 		--verbosity minimal
 	COMMAND ${CMAKE_COMMAND} -E make_directory "${FACE_HOST_ARTIFACT_DIR}"
 	COMMAND ${CMAKE_COMMAND} -E copy_directory "${FACE_HOST_PUBLISH_DIR}" "${FACE_HOST_ARTIFACT_DIR}"
+	COMMAND ${CMAKE_COMMAND} -E make_directory "${FACE_HOST_DRIVER_STAGE_DIR}"
+	COMMAND ${CMAKE_COMMAND} -E copy_directory "${FACE_HOST_PUBLISH_DIR}" "${FACE_HOST_DRIVER_STAGE_DIR}"
 	COMMAND ${CMAKE_COMMAND} -E touch "${FACE_HOST_STAMP}"
 	DEPENDS ${FACE_HOST_INPUTS}
 	WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"

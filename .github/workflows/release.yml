@@ -64,6 +64,51 @@ jobs:
           Copy-Item CHANGELOG.md       .changelog-stash/CHANGELOG.md       -Force
           Copy-Item wiki/Changelog.md  .changelog-stash/wiki/Changelog.md  -Force
 
+      - name: Set up .NET 10 SDK
+        # FaceModuleHost is a .NET 10 sidecar (pinned by
+        # modules/facetracking/src/host/global.json). Without an explicit
+        # setup the runner's default dotnet may not include 10.x, which
+        # makes the CMake host target silently skip itself via
+        # `if(NOT DOTNET_EXECUTABLE) return()` -- the build "succeeds" but
+        # the installer would ship without the face-tracking host process.
+        # Pinning here means a future runner-image change still produces
+        # the same artifact set.
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache build directory
+        # CMake handles incremental builds natively. Caching build/ between
+        # runs cuts a cold ~6 min MSVC pass down to ~1 min when only a few
+        # files changed since the last successful run. The restore-keys
+        # fallback lets a near-miss (different source hash) reuse the
+        # most recent build state -- CMake then recompiles only what
+        # changed.
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: build-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', 'core/src/**/*.cpp', 'core/src/**/*.h', 'modules/**/*.cpp', 'modules/**/*.h', 'modules/**/*.cs', '.gitmodules', 'version.txt') }}
+          restore-keys: |
+            build-${{ runner.os }}-
+
+      - name: Cache NuGet packages
+        # FaceModuleHost's dotnet publish restores NuGet packages on every
+        # cold run. Caching the user-level NuGet folder keeps them warm.
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('modules/facetracking/src/host/**/*.csproj', 'modules/facetracking/src/host/**/packages.lock.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Cache NSIS install
+        # Skips the ~30 s choco install on warm runs. Key bumped on NSIS
+        # upgrades.
+        uses: actions/cache@v4
+        with:
+          path: 'C:\Program Files (x86)\NSIS'
+          key: nsis-${{ runner.os }}-3.12
+
       - name: Configure
         # The minhook submodule declares cmake_minimum_required(2.8.12) which
         # CMake 4.x rejects. -DCMAKE_POLICY_VERSION_MINIMUM=3.5 lets us configure
@@ -247,9 +292,44 @@ jobs:
           "mirror_inputhealth=$($mirrorPaths['InputHealth'])"   >> $env:GITHUB_OUTPUT
           "mirror_facetracking=$($mirrorPaths['FaceTracking'])" >> $env:GITHUB_OUTPUT
 
-      - name: Install NSIS
+      - name: Verify NSIS input artifacts staged
+        # makensis errors with an obscure "no files found" when File /r is
+        # pointed at an empty or missing directory. Failing here with the
+        # exact missing path makes future staging gaps trivial to diagnose
+        # instead of leaving the user to read the makensis output.
         shell: pwsh
         run: |
+          $required = @(
+            'build/artifacts/Release/WKOpenVR.exe',
+            'build/artifacts/Release/openvr_api.dll',
+            'build/artifacts/Release/manifest.vrmanifest',
+            'build/artifacts/Release/dashboard_icon.png',
+            'build/artifacts/Release/resources/face-module-sync.ps1',
+            'build/driver_wkopenvr/driver.vrdrivermanifest',
+            'build/driver_wkopenvr/resources/driver.vrresources',
+            'build/driver_wkopenvr/resources/settings/default.vrsettings',
+            'build/driver_wkopenvr/bin/win64/driver_wkopenvr.dll',
+            'build/driver_wkopenvr/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe'
+          )
+          $missing = @()
+          foreach ($p in $required) {
+            if (-not (Test-Path -LiteralPath $p)) { $missing += $p }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Host "Missing artifacts required by installer.nsi:"
+            $missing | ForEach-Object { Write-Host "  - $_" }
+            throw "NSIS input artifacts are not fully staged. The CMake build did not produce one or more required files."
+          }
+          Write-Host "All NSIS input artifacts present."
+
+      - name: Install NSIS
+        # No-op when the NSIS cache step above restored the install tree.
+        shell: pwsh
+        run: |
+          if (Test-Path "C:\Program Files (x86)\NSIS\makensis.exe") {
+            Write-Host "NSIS already present (cache hit) -- skipping choco install."
+            exit 0
+          }
           choco install nsis -y --no-progress
           if ($LASTEXITCODE -ne 0) { throw "NSIS install failed (exit $LASTEXITCODE)" }
 
