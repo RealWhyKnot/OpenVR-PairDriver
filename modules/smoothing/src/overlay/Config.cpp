@@ -19,7 +19,7 @@ namespace
         }
         std::wstring dir(root);
         CoTaskMemFree(root);
-        dir += L"\\OpenVR-Pair";
+        dir += L"\\WKOpenVR";
         if (!CreateDirectoryW(dir.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
             return {};
         }

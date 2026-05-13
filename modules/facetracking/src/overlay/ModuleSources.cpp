@@ -81,8 +81,8 @@ std::wstring FtDataDir()
     std::wstring root(raw);
     CoTaskMemFree(raw);
 
-    std::wstring base = root + L"\\OpenVR-Pair\\facetracking";
-    CreateDirectoryW((root + L"\\OpenVR-Pair").c_str(), nullptr);
+    std::wstring base = root + L"\\WKOpenVR\\facetracking";
+    CreateDirectoryW((root + L"\\WKOpenVR").c_str(), nullptr);
     CreateDirectoryW(base.c_str(), nullptr);
     return base;
 }

@@ -15,7 +15,7 @@
 name: Release
 
 # Triggered by pushing a tag like v2026.5.12.0. Builds the umbrella binary
-# (OpenVR-Pair.exe), driver (driver_openvrpair.dll), and the C# face-tracking
+# (WKOpenVR.exe), driver (driver_wkopenvr.dll), and the C# face-tracking
 # host (OpenVRPair.FaceModuleHost.exe) via CMake + MSVC + dotnet publish,
 # runs the test suite, packages an umbrella zip and four per-feature mirror
 # zips, publishes the umbrella release on this repo, and pushes a mirror
@@ -116,37 +116,37 @@ jobs:
         run: |
           $version   = $env:TAG_NAME -replace '^v', ''
           $artifacts = "build/artifacts/Release"
-          $driverSrc = "build/driver_openvrpair"
+          $driverSrc = "build/driver_wkopenvr"
 
-          if (-not (Test-Path "$artifacts/OpenVR-Pair.exe")) {
-            throw "OpenVR-Pair.exe not found at $artifacts"
+          if (-not (Test-Path "$artifacts/WKOpenVR.exe")) {
+            throw "WKOpenVR.exe not found at $artifacts"
           }
-          if (-not (Test-Path "$driverSrc/bin/win64/driver_openvrpair.dll")) {
-            throw "driver_openvrpair.dll not found at $driverSrc/bin/win64"
+          if (-not (Test-Path "$driverSrc/bin/win64/driver_wkopenvr.dll")) {
+            throw "driver_wkopenvr.dll not found at $driverSrc/bin/win64"
           }
           if (-not (Test-Path "$artifacts/manifest.vrmanifest")) {
             throw "manifest.vrmanifest not found at $artifacts (build step copies it from core/src/overlay/)"
           }
 
           # --- Assemble the driver tree into a staging directory ----------
-          # The installer convention: the DLL is renamed driver_01openvrpair.dll
+          # The installer convention: the DLL is renamed driver_01wkopenvr.dll
           # so SteamVR's alphabetic-sort loads it after any existing drivers.
           $stage = "release/_stage_$version"
           if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
-          New-Item -ItemType Directory -Force -Path "$stage/driver_openvrpair/bin/win64" | Out-Null
-          New-Item -ItemType Directory -Force -Path "$stage/driver_openvrpair/resources/settings" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$stage/driver_wkopenvr/bin/win64" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$stage/driver_wkopenvr/resources/settings" | Out-Null
 
-          Copy-Item "$driverSrc/driver.vrdrivermanifest"                  "$stage/driver_openvrpair/driver.vrdrivermanifest"
-          Copy-Item "$driverSrc/resources/driver.vrresources"              "$stage/driver_openvrpair/resources/driver.vrresources"
-          Copy-Item "$driverSrc/resources/settings/default.vrsettings"    "$stage/driver_openvrpair/resources/settings/default.vrsettings"
-          Copy-Item "$driverSrc/bin/win64/driver_openvrpair.dll"           "$stage/driver_openvrpair/bin/win64/driver_01openvrpair.dll"
+          Copy-Item "$driverSrc/driver.vrdrivermanifest"                  "$stage/driver_wkopenvr/driver.vrdrivermanifest"
+          Copy-Item "$driverSrc/resources/driver.vrresources"              "$stage/driver_wkopenvr/resources/driver.vrresources"
+          Copy-Item "$driverSrc/resources/settings/default.vrsettings"    "$stage/driver_wkopenvr/resources/settings/default.vrsettings"
+          Copy-Item "$driverSrc/bin/win64/driver_wkopenvr.dll"           "$stage/driver_wkopenvr/bin/win64/driver_01wkopenvr.dll"
 
           $srcFt = "$driverSrc/resources/facetracking"
           if (Test-Path $srcFt) {
-            Copy-Item -Recurse -Path $srcFt -Destination "$stage/driver_openvrpair/resources/facetracking"
+            Copy-Item -Recurse -Path $srcFt -Destination "$stage/driver_wkopenvr/resources/facetracking"
           }
 
-          Copy-Item "$artifacts/OpenVR-Pair.exe"   "$stage/OpenVR-Pair.exe"
+          Copy-Item "$artifacts/WKOpenVR.exe"   "$stage/WKOpenVR.exe"
           Copy-Item "$artifacts/openvr_api.dll"    "$stage/openvr_api.dll"
 
           # Stage the C# face-tracking host. CMake publishes it to
@@ -155,7 +155,7 @@ jobs:
           # do the same copy here. The driver's HostSupervisor resolves the
           # host exe relative to the driver's own resources directory.
           $faceHostBuildDir = "build/artifacts/FaceModuleHost"
-          $faceHostStageDir = "$stage/driver_openvrpair/resources/facetracking/host"
+          $faceHostStageDir = "$stage/driver_wkopenvr/resources/facetracking/host"
           if (-not (Test-Path $faceHostBuildDir)) {
             throw "Face-tracking host build output missing at $faceHostBuildDir (was OPENVR_PAIR_BUILD_FACE_HOST=OFF or did dotnet publish fail?)"
           }
@@ -193,13 +193,13 @@ jobs:
           }
 
           # --- Umbrella zip (all three flag files absent; installer drops them) ---
-          $umbrellaZipPath = "release/OpenVR-Pair-$version.zip"
+          $umbrellaZipPath = "release/WKOpenVR-$version.zip"
           $umbrella = New-ReleaseZip -StageDir $stage -ZipPath $umbrellaZipPath
           Write-Host "Umbrella zip: $($umbrella.Name) ($($umbrella.Size) bytes) sha256=$($umbrella.Sha256)"
 
           # --- Per-feature mirror zips ----------------------------------------
           # Each mirror zip is identical to the umbrella plus one flag file
-          # pre-dropped in driver_openvrpair/resources/ so the user's SteamVR
+          # pre-dropped in driver_wkopenvr/resources/ so the user's SteamVR
           # picks up that feature immediately after extracting into the driver dir.
           $features = @(
             [pscustomobject]@{ Name = 'Calibration';  Flag = 'enable_calibration.flag';  Repo = 'RealWhyKnot/WKOpenVR-SpaceCalibrator' }
@@ -210,9 +210,9 @@ jobs:
 
           $mirrorPaths = @{}
           foreach ($feat in $features) {
-            $flagFile = "$stage/driver_openvrpair/resources/$($feat.Flag)"
+            $flagFile = "$stage/driver_wkopenvr/resources/$($feat.Flag)"
             New-Item -ItemType File -Force -Path $flagFile | Out-Null
-            $zipPath = "release/OpenVR-Pair-$($feat.Name)-$version.zip"
+            $zipPath = "release/WKOpenVR-$($feat.Name)-$version.zip"
             $z = New-ReleaseZip -StageDir $stage -ZipPath $zipPath
             $mirrorPaths[$feat.Name] = $z.Path
             Write-Host "Mirror zip ($($feat.Name)): $($z.Name) ($($z.Size) bytes)"
@@ -242,15 +242,15 @@ jobs:
           $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
           if (-not (Test-Path $makensis)) { $makensis = "C:\Program Files\NSIS\makensis.exe" }
           if (-not (Test-Path $makensis)) { throw "makensis.exe not found in the standard NSIS install paths." }
-          # installer.nsi OutFile is "..\build\artifacts\Release\OpenVR-Pair-Installer.exe"
+          # installer.nsi OutFile is "..\build\artifacts\Release\WKOpenVR-Installer.exe"
           # (relative to the install/ directory), so it writes to build/artifacts/Release/.
           Push-Location install
           & $makensis "/DVERSION=$version" installer.nsi
           $exitCode = $LASTEXITCODE
           Pop-Location
           if ($exitCode -ne 0) { throw "makensis exited $exitCode" }
-          $raw = Get-Item "build/artifacts/Release/OpenVR-Pair-Installer.exe"
-          $versioned = "release/OpenVR-Pair-v$version-Setup.exe"
+          $raw = Get-Item "build/artifacts/Release/WKOpenVR-Installer.exe"
+          $versioned = "release/WKOpenVR-v$version-Setup.exe"
           Move-Item $raw.FullName $versioned -Force
           $hash = (Get-FileHash $versioned -Algorithm SHA256).Hash
           "path=$((Resolve-Path $versioned).Path)" >> $env:GITHUB_OUTPUT

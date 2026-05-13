@@ -15,7 +15,7 @@ FILE *LogFile;
 namespace {
 
 // Drop any driver_log.*.txt older than 24 hours so the
-// LocalAppDataLow\OpenVR-Pair\Logs directory doesn't accumulate forever.
+// LocalAppDataLow\WKOpenVR\Logs directory doesn't accumulate forever.
 // Files newer than the cutoff are retained so a recent diagnostic session can
 // grab them.
 void ClearOldDriverLogs(const std::wstring& dir)
@@ -48,7 +48,7 @@ void ClearOldDriverLogs(const std::wstring& dir)
 	FindClose(h);
 }
 
-// Build %LocalAppDataLow%\OpenVR-Pair\Logs\driver_log.<date>T<time>.txt.
+// Build %LocalAppDataLow%\WKOpenVR\Logs\driver_log.<date>T<time>.txt.
 // Returns the wide path on success, empty on any failure (caller falls back
 // to the legacy cwd path so a missing AppDataLow doesn't lose logs entirely).
 std::wstring BuildLogPath()
@@ -61,7 +61,7 @@ std::wstring BuildLogPath()
 	std::wstring root(rootRaw);
 	CoTaskMemFree(rootRaw);
 
-	std::wstring dir = root + L"\\OpenVR-Pair";
+	std::wstring dir = root + L"\\WKOpenVR";
 	if (!CreateDirectoryW(dir.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return {};
 	dir += L"\\Logs";
 	if (!CreateDirectoryW(dir.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return {};

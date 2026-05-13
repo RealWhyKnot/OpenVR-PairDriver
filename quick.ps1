@@ -6,8 +6,8 @@ param(
 	# Don't prompt before launching the elevated copy. Still pops UAC.
 	[switch]$Yes,
 
-	# Override the deployed install dir. Defaults to "C:\Program Files\OpenVR-Pair".
-	[string]$InstallDir = "C:\Program Files\OpenVR-Pair",
+	# Override the deployed install dir. Defaults to "C:\Program Files\WKOpenVR".
+	[string]$InstallDir = "C:\Program Files\WKOpenVR",
 
 	# Override the SteamVR driver dir. Defaults to the standard Steam install
 	# path. The "01" prefix is the loader-renamed copy of the bare driver DLL.
@@ -32,16 +32,16 @@ function Resolve-Version($exePath) {
 }
 
 if (-not $SkipBuild) {
-	Write-Host "Building OpenVR-Pair umbrella + driver + features..."
+	Write-Host "Building WKOpenVR umbrella + driver + features..."
 	& "$PSScriptRoot\build.ps1"
 	if ($LASTEXITCODE -ne 0) { throw "build.ps1 failed (exit $LASTEXITCODE)" }
 }
 
 # Build outputs we care about. The umbrella exe lands here; the driver DLL is
 # emitted under the staged driver tree with its bare name (the loader-renamed
-# "01openvrpair" prefix is applied only inside the release zip stage dir).
-$srcExe      = Join-Path $PSScriptRoot "build\artifacts\Release\OpenVR-Pair.exe"
-$srcDll      = Join-Path $PSScriptRoot "build\driver_openvrpair\bin\win64\driver_openvrpair.dll"
+# "01wkopenvr" prefix is applied only inside the release zip stage dir).
+$srcExe      = Join-Path $PSScriptRoot "build\artifacts\Release\WKOpenVR.exe"
+$srcDll      = Join-Path $PSScriptRoot "build\driver_wkopenvr\bin\win64\driver_wkopenvr.dll"
 $srcManifest = Join-Path $PSScriptRoot "build\artifacts\Release\manifest.vrmanifest"
 $srcIcon     = Join-Path $PSScriptRoot "build\artifacts\Release\dashboard_icon.png"
 
@@ -53,17 +53,17 @@ foreach ($p in @($srcExe, $srcDll, $srcManifest, $srcIcon)) {
 # is on (default) and the .NET 10 SDK is available. If absent, the driver loads
 # without the host and the FaceTracking feature runs inert -- so a missing host
 # tree is a warning, not a hard failure.
-$srcHostDir = Join-Path $PSScriptRoot "build\driver_openvrpair\resources\facetracking\host"
+$srcHostDir = Join-Path $PSScriptRoot "build\driver_wkopenvr\resources\facetracking\host"
 $srcHostExe = Join-Path $srcHostDir "OpenVRPair.FaceModuleHost.exe"
 $hostPresent = (Test-Path -LiteralPath $srcHostExe)
 
 # Deployed copies.
-$dstExe       = Join-Path $InstallDir "OpenVR-Pair.exe"
+$dstExe       = Join-Path $InstallDir "WKOpenVR.exe"
 $dstManifest  = Join-Path $InstallDir "manifest.vrmanifest"
 $dstIcon      = Join-Path $InstallDir "dashboard_icon.png"
-$dstDriverRoot = Join-Path $SteamVRDriversDir "01openvrpair"
+$dstDriverRoot = Join-Path $SteamVRDriversDir "01wkopenvr"
 $dstDriverDir = Join-Path $dstDriverRoot "bin\win64"
-$dstDll       = Join-Path $dstDriverDir "driver_01openvrpair.dll"
+$dstDll       = Join-Path $dstDriverDir "driver_01wkopenvr.dll"
 $dstHostDir   = Join-Path $dstDriverRoot "resources\facetracking\host"
 $dstHostExe   = Join-Path $dstHostDir "OpenVRPair.FaceModuleHost.exe"
 
@@ -125,9 +125,9 @@ if (-not $Yes) {
 # every step + the post-copy SHA so a failure is easy to read in the report
 # file. We capture stdout/stderr to a known log path so a denied UAC or a
 # write failure shows up here, not just in the elevated console window.
-$helperOut = Join-Path $env:TEMP "OpenVR-Pair-deploy-stdout.log"
-$helperErr = Join-Path $env:TEMP "OpenVR-Pair-deploy-stderr.log"
-$resultFile = Join-Path $env:TEMP "OpenVR-Pair-deploy-result.txt"
+$helperOut = Join-Path $env:TEMP "WKOpenVR-deploy-stdout.log"
+$helperErr = Join-Path $env:TEMP "WKOpenVR-deploy-stderr.log"
+$resultFile = Join-Path $env:TEMP "WKOpenVR-deploy-result.txt"
 foreach ($p in @($helperOut, $helperErr, $resultFile)) { if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force } }
 
 $hostPresentBool = if ($hostPresent) { '$true' } else { '$false' }
@@ -148,7 +148,7 @@ try {
 	}
 	Copy-Item -LiteralPath '$srcDll' -Destination '$dstDll' -Force
 
-	# vrmanifest sits next to the exe so OpenVR-Pair.exe can resolve it via
+	# vrmanifest sits next to the exe so WKOpenVR.exe can resolve it via
 	# GetModuleFileName + replace_filename at startup.
 	Copy-Item -LiteralPath '$srcManifest' -Destination '$dstManifest' -Force
 
@@ -188,8 +188,30 @@ try {
 }
 "@
 
-$helperPath = Join-Path $env:TEMP "OpenVR-Pair-deploy.ps1"
+$helperPath = Join-Path $env:TEMP "WKOpenVR-deploy.ps1"
 Set-Content -LiteralPath $helperPath -Value $helperScript -Encoding UTF8
+
+# One-time cleanup: if the old driver dir still exists under the SteamVR
+# drivers folder, rename it so SteamVR stops trying to load it.  Do NOT
+# delete -- the user can clean up manually after verifying the new driver works.
+$oldDriverRoot = Join-Path $SteamVRDriversDir "01openvrpair"
+if (Test-Path -LiteralPath $oldDriverRoot) {
+	$renamedOldDriver = $oldDriverRoot + ".old-pre-wkopenvr-rename"
+	if (-not (Test-Path -LiteralPath $renamedOldDriver)) {
+		try {
+			Rename-Item -LiteralPath $oldDriverRoot -NewName (Split-Path -Leaf $renamedOldDriver) -Force
+			Write-Host "Renamed old driver dir $oldDriverRoot -> $renamedOldDriver (safe to delete after verifying new driver)"
+		} catch {
+			Write-Host "Could not rename old driver dir $oldDriverRoot -- rename it manually: $_" -ForegroundColor Yellow
+		}
+	}
+}
+
+# Similarly note the old install dir if it still exists.
+$oldInstallDir = "C:\Program Files\OpenVR-Pair"
+if (Test-Path -LiteralPath $oldInstallDir) {
+	Write-Host "Note: old install dir $oldInstallDir still exists. You can remove it after verifying the new install." -ForegroundColor Yellow
+}
 
 $proc = Start-Process -FilePath "powershell.exe" `
 	-ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-File",$helperPath) `

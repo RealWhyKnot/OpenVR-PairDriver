@@ -1,6 +1,6 @@
 # WKOpenVR
 
-Umbrella SteamVR overlay + driver for the OpenVR-Pair toolset. One binary (`OpenVR-Pair.exe`) and one driver DLL (`driver_openvrpair.dll`) host four feature modules under `modules/`:
+Umbrella SteamVR overlay + driver. One binary (`WKOpenVR.exe`) and one driver DLL (`driver_wkopenvr.dll`) host four feature modules under `modules/`:
 
 - **calibration** -- continuous calibration of HMDs against lighthouse-tracked full-body trackers. Forked from the original OpenVR-SpaceCalibrator. Mirrors releases to [WKOpenVR-SpaceCalibrator](https://github.com/RealWhyKnot/WKOpenVR-SpaceCalibrator).
 - **smoothing** -- One-Euro finger smoothing and per-device pose-prediction suppression for Valve Index Knuckles. Mirrors releases to [WKOpenVR-Smoothing](https://github.com/RealWhyKnot/WKOpenVR-Smoothing).
@@ -32,15 +32,15 @@ cd WKOpenVR
 
 Output:
 
-- `build/artifacts/Release/OpenVR-Pair.exe`
-- `build/driver_openvrpair/bin/win64/driver_openvrpair.dll`
-- `build/driver_openvrpair/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe` (when the host build is enabled)
+- `build/artifacts/Release/WKOpenVR.exe`
+- `build/driver_wkopenvr/bin/win64/driver_wkopenvr.dll`
+- `build/driver_wkopenvr/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe` (when the host build is enabled)
 
 ## Pipes and shared memory
 
 - `\\.\pipe\OpenVR-Calibration` -- calibration overlay <-> driver
-- `\\.\pipe\OpenVR-WKSmoothing` -- smoothing overlay <-> driver
-- `\\.\pipe\OpenVR-WKInputHealth` -- input-health overlay <-> driver
+- `\\.\pipe\WKOpenVR-Smoothing` -- smoothing overlay <-> driver
+- `\\.\pipe\WKOpenVR-InputHealth` -- input-health overlay <-> driver
 - `\\.\pipe\OpenVR-FaceTracking` -- face-tracking overlay <-> driver
 
 Plus the shmem ring `OpenVRPairFaceTrackingFrameRingV1` for high-rate samples from the C# host into the driver, and `OpenVRPairInputHealthMemoryV1` for the input-health snapshot stream.

@@ -6,7 +6,7 @@
 #include <string>
 
 // Overlay-side settings for the FaceTracking feature.
-// Serialised to %LocalAppDataLow%\OpenVR-Pair\profiles\facetracking.json.
+// Serialised to %LocalAppDataLow%\WKOpenVR\profiles\facetracking.json.
 // The driver owns its own per-module calibration files; this file holds
 // only settings that the overlay itself needs across sessions.
 

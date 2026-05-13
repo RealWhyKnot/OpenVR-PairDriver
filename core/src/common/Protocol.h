@@ -16,8 +16,8 @@
 // is the same protocol::Request/Response struct; the driver routes by
 // request type and rejects out-of-feature requests.
 #define OPENVR_PAIRDRIVER_CALIBRATION_PIPE_NAME  "\\\\.\\pipe\\OpenVR-Calibration"
-#define OPENVR_PAIRDRIVER_SMOOTHING_PIPE_NAME    "\\\\.\\pipe\\OpenVR-WKSmoothing"
-#define OPENVR_PAIRDRIVER_INPUTHEALTH_PIPE_NAME  "\\\\.\\pipe\\OpenVR-WKInputHealth"
+#define OPENVR_PAIRDRIVER_SMOOTHING_PIPE_NAME    "\\\\.\\pipe\\WKOpenVR-Smoothing"
+#define OPENVR_PAIRDRIVER_INPUTHEALTH_PIPE_NAME  "\\\\.\\pipe\\WKOpenVR-InputHealth"
 #define OPENVR_PAIRDRIVER_FACETRACKING_PIPE_NAME "\\\\.\\pipe\\OpenVR-FaceTracking"
 
 // Pose telemetry shmem segment. Created by the driver only when the calibration
@@ -131,7 +131,7 @@ namespace protocol
 	// so the user sees a clean handshake error instead of a silently-ignored new
 	// request type if they upgrade only one half.
 	// v10 (2026-05-06): adds the InputHealth subsystem. Driver opens a third pipe
-	// (\\.\pipe\OpenVR-WKInputHealth) gated on enable_inputhealth.flag, accepts
+	// (\\.\pipe\WKOpenVR-InputHealth) gated on enable_inputhealth.flag, accepts
 	// RequestSetInputHealthConfig + RequestResetInputHealthStats. Wire layout
 	// unchanged because both new structs are much smaller than SetDeviceTransform;
 	// the bump is again purely to force paired install. The driver-side hooks on

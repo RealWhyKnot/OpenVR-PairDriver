@@ -1,4 +1,4 @@
-// Minimal Win32 resource script for OpenVR-Pair.exe. Embeds an application
+// Minimal Win32 resource script for WKOpenVR.exe. Embeds an application
 // icon so the Start menu shortcut, taskbar, alt-tab, and File Explorer all
 // render an icon instead of the generic blank application graphic. The icon
 // itself is the SC standalone icon as a placeholder until the umbrella

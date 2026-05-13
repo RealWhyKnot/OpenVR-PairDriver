@@ -249,12 +249,12 @@ ShellContext CreateShellContext()
 	// --- Install dir: prefer exe's own directory over the hard-coded fallback.
 	std::wstring exeDir = ExeDir();
 	ctx.installDir = exeDir.empty()
-		? L"C:\\Program Files\\OpenVR-Pair"
+		? L"C:\\Program Files\\WKOpenVR"
 		: exeDir;
 
 	const std::wstring root = LocalAppDataLow();
 	if (!root.empty()) {
-		std::wstring pairRoot = root + L"\\OpenVR-Pair";
+		std::wstring pairRoot = root + L"\\WKOpenVR";
 		EnsureDir(pairRoot);
 		ctx.profileRoot = pairRoot + L"\\profiles";
 		ctx.logRoot = pairRoot + L"\\Logs";
@@ -266,11 +266,11 @@ ShellContext CreateShellContext()
 	// Fall back to the hard-coded path if any step fails so that known-good
 	// installs continue to work even if the discovery logic hits an edge case.
 	static const std::wstring kFallbackResources =
-		L"C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\drivers\\01openvrpair\\resources";
+		L"C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\drivers\\01wkopenvr\\resources";
 	std::wstring resources;
 	std::wstring steamvrRoot = DiscoverSteamVRRoot();
 	if (!steamvrRoot.empty()) {
-		resources = steamvrRoot + L"\\steamapps\\common\\SteamVR\\drivers\\01openvrpair\\resources";
+		resources = steamvrRoot + L"\\steamapps\\common\\SteamVR\\drivers\\01wkopenvr\\resources";
 	}
 	if (resources.empty()) {
 		resources = kFallbackResources;

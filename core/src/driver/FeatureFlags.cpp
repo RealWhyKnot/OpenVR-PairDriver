@@ -15,7 +15,7 @@ namespace {
 // GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS) using the address
 // of this very function, which works regardless of what the DLL was renamed
 // to and regardless of how SteamVR resolved it. Walk up from
-//   <root>\bin\win64\driver_openvrpair.dll
+//   <root>\bin\win64\driver_wkopenvr.dll
 // to <root> (three pop-segments) then append "\resources".
 std::wstring GetResourcesDir()
 {

@@ -1,15 +1,15 @@
 {
 	"source" : "builtin",
 	"applications": [{
-		"app_key": "wk.openvr-pair",
+		"app_key": "wk.wkopenvr",
 		"launch_type": "binary",
-		"binary_path_windows": "OpenVR-Pair.exe",
+		"binary_path_windows": "WKOpenVR.exe",
 		"is_dashboard_overlay": true,
 
 		"strings": {
 			"en_us": {
-				"name": "OpenVR-Pair",
-				"description": "Umbrella overlay for calibration, smoothing, and input health"
+				"name": "WKOpenVR",
+				"description": "Umbrella overlay for calibration, smoothing, input health, and face tracking"
 			}
 		}
 	}]

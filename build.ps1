@@ -133,7 +133,7 @@ Invoke-NativeQuiet { cmake --build build --config Release --parallel }
 if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)" }
 
 # Verify the artifact lands where we expect.
-$dllPath = "build/driver_openvrpair/bin/win64/driver_openvrpair.dll"
+$dllPath = "build/driver_wkopenvr/bin/win64/driver_wkopenvr.dll"
 if (-not (Test-Path $dllPath)) {
 	throw "Expected driver DLL not found at $dllPath"
 }
@@ -147,12 +147,12 @@ Write-Host ("  -> {0}" -f $dll.FullName)
 # build/artifacts/FaceModuleHost/ (the host CMakeLists.txt publishes there).
 # The driver's HostSupervisor resolves the host exe relative to its own
 # resources directory, so the deployable tree must contain:
-#   driver_openvrpair/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe
+#   driver_wkopenvr/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe
 # If OPENVR_PAIR_BUILD_FACE_HOST=OFF (no .NET SDK on the build host), the
 # artifacts dir is absent and the staging step no-ops. The driver detects
 # the missing exe at runtime, logs once, and keeps the feature inert.
 $hostBuildDir = "build/artifacts/FaceModuleHost"
-$hostStageDir = "build/driver_openvrpair/resources/facetracking/host"
+$hostStageDir = "build/driver_wkopenvr/resources/facetracking/host"
 if (Test-Path $hostBuildDir) {
 	New-Item -ItemType Directory -Force -Path $hostStageDir | Out-Null
 	Copy-Item -Recurse -Force -Path "$hostBuildDir\*" -Destination $hostStageDir
@@ -172,7 +172,7 @@ if ($Release) {
 	# a zip plus a sibling manifest TSV. The release workflow consumes both --
 	# the zip is the asset, the manifest feeds the File integrity section of
 	# the release body.
-	$driverTree = "build/driver_openvrpair"
+	$driverTree = "build/driver_wkopenvr"
 	if (-not (Test-Path $driverTree)) {
 		throw "Driver tree not found at $driverTree -- expected the CMake post-build copy step to populate it."
 	}
@@ -183,8 +183,8 @@ if ($Release) {
 	Copy-Item -Recurse -Path "$driverTree/*" -Destination $stageDir
 
 	$stagedDriverBin = Join-Path $stageDir "bin/win64"
-	$bareDriverDll = Join-Path $stagedDriverBin "driver_openvrpair.dll"
-	$loaderDriverDll = Join-Path $stagedDriverBin "driver_01openvrpair.dll"
+	$bareDriverDll = Join-Path $stagedDriverBin "driver_wkopenvr.dll"
+	$loaderDriverDll = Join-Path $stagedDriverBin "driver_01wkopenvr.dll"
 	if (Test-Path $bareDriverDll) {
 		Move-Item -Force -Path $bareDriverDll -Destination $loaderDriverDll
 	}

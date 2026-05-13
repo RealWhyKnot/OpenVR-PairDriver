@@ -79,7 +79,7 @@ void FtIPCClient::Connect()
         Close();
         throw std::runtime_error(
             "FaceTracking driver protocol version mismatch. "
-            "Reinstall OpenVR-Pair so the overlay and driver are paired. "
+            "Reinstall WKOpenVR so the overlay and driver are paired. "
             "(Overlay: " + std::to_string(protocol::Version) +
             ", driver: "  + std::to_string(resp.protocol.version) + ")");
     }

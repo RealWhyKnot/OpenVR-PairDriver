@@ -4,8 +4,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(TARGET_NAME 01openvrpair)
-set(DRIVER_NAME "driver_openvrpair")
+set(TARGET_NAME 01wkopenvr)
+set(DRIVER_NAME "driver_wkopenvr")
 
 project(OpenVRPairDriver)
 message("WKOpenVR - Driver")
@@ -120,7 +120,7 @@ target_compile_definitions(OpenVRPairDriver
 set_target_properties(OpenVRPairDriver PROPERTIES OUTPUT_NAME ${DRIVER_NAME})
 
 # Stage the driver folder (manifest + resources) next to the built DLL so
-# `<build>/driver_openvrpair/` is a complete deployable tree the consumer
+# `<build>/driver_wkopenvr/` is a complete deployable tree the consumer
 # repos can copy to <SteamVR>\drivers\.
 add_custom_command(
 	TARGET OpenVRPairDriver

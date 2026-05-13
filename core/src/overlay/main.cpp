@@ -1,5 +1,6 @@
 #include "FeaturePlugin.h"
 #include "ManifestRegistration.h"
+#include "Migration.h"
 #include "ShellContext.h"
 #include "UiHelpers.h"
 #include "VrOverlayHost.h"
@@ -94,8 +95,8 @@ void DrawGlobalLogs(openvr_pair::overlay::ShellContext &context,
 	// not push Smoothing / InputHealth off-screen.
 	openvr_pair::overlay::ui::DrawTextWrapped(
 		"Per-module logs. All overlay-side logs land in "
-		"%LocalAppDataLow%\\OpenVR-Pair\\Logs\\; driver-side logs land in "
-		"%LocalAppDataLow%\\OpenVR-Pair\\Logs\\.");
+		"%LocalAppDataLow%\\WKOpenVR\\Logs\\; driver-side logs land in "
+		"%LocalAppDataLow%\\WKOpenVR\\Logs\\.");
 	ImGui::Spacing();
 
 	bool anyDrawn = false;
@@ -241,6 +242,11 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
+	// First-launch migration: copy AppData tree and SC registry key from
+	// the old OpenVR-Pair paths to WKOpenVR. Idempotent -- short-circuits
+	// immediately once the new locations already exist.
+	RunFirstLaunchMigration();
+
 	// Register vrmanifest with SteamVR if not already installed. Idempotent;
 	// no-ops on subsequent launches and when the runtime is unavailable.
 	RegisterApplicationManifest();
@@ -257,7 +263,7 @@ int main(int argc, char **argv)
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-	GLFWwindow *window = glfwCreateWindow(1200, 780, "OpenVR-Pair", nullptr, nullptr);
+	GLFWwindow *window = glfwCreateWindow(1200, 780, "WKOpenVR", nullptr, nullptr);
 	if (!window) {
 		glfwTerminate();
 		return 1;
@@ -323,7 +329,7 @@ int main(int argc, char **argv)
 	GLenum drawBuffers[1] = { GL_COLOR_ATTACHMENT0 };
 	glDrawBuffers(1, drawBuffers);
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-		fprintf(stderr, "[OpenVR-Pair] offscreen framebuffer incomplete\n");
+		fprintf(stderr, "[WKOpenVR] offscreen framebuffer incomplete\n");
 	}
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -373,7 +379,7 @@ int main(int argc, char **argv)
 			ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
 			ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
 			ImGuiWindowFlags_NoBringToFrontOnFocus;
-		ImGui::Begin("OpenVR-Pair", nullptr, flags);
+		ImGui::Begin("WKOpenVR", nullptr, flags);
 
 		if (ImGui::BeginTabBar("tabs")) {
 			for (auto &plugin : plugins) {

@@ -15,9 +15,14 @@ namespace openvr_pair::overlay {
 
 namespace {
 
-// New umbrella app key. Anything starting with a non-"steam." prefix avoids
+// Umbrella app key. Anything starting with a non-"steam." prefix avoids
 // colliding with Steam's appid-derived overlay keys.
-constexpr const char *kAppKey = "wk.openvr-pair";
+constexpr const char *kAppKey = "wk.wkopenvr";
+
+// Pre-rename app key (was wk.openvr-pair). After registering the new key,
+// attempt to remove the old registration so SteamVR does not show a stale
+// duplicate row in the overlay list.
+constexpr const char *kRenamedLegacyAppKey = "wk.openvr-pair";
 
 // Pre-monorepo SC standalone key. Its registration still points at the now-
 // deleted SpaceCalibrator.exe so SteamVR keeps a phantom autolaunch entry.
@@ -47,7 +52,7 @@ void RegisterApplicationManifest()
 
 	const std::filesystem::path manifestPath = ResolveManifestPath();
 	if (manifestPath.empty() || !std::filesystem::exists(manifestPath)) {
-		fprintf(stderr, "manifest.vrmanifest missing next to OpenVR-Pair.exe; skipping SteamVR registration\n");
+		fprintf(stderr, "manifest.vrmanifest missing next to WKOpenVR.exe; skipping SteamVR registration\n");
 		return;
 	}
 
@@ -78,11 +83,35 @@ void RegisterApplicationManifest()
 		}
 	}
 
+	// Remove the pre-rename registration (wk.openvr-pair) if it still exists.
+	// The new key (wk.wkopenvr) is registered above; leaving the old one would
+	// show a stale duplicate row in the SteamVR overlay list.
+	if (VRApplications()->IsApplicationInstalled(kRenamedLegacyAppKey)) {
+		VRApplications()->SetApplicationAutoLaunch(kRenamedLegacyAppKey, false);
+
+		char oldBuf[MAX_PATH + 64] = {};
+		EVRApplicationError oldErr = VRApplicationError_None;
+		VRApplications()->GetApplicationPropertyString(
+			kRenamedLegacyAppKey, VRApplicationProperty_BinaryPath_String,
+			oldBuf, sizeof(oldBuf), &oldErr);
+		if (oldErr == VRApplicationError_None) {
+			char *slash = std::strrchr(oldBuf, '\\');
+			if (slash) {
+				*(slash + 1) = '\0';
+				strcat_s(oldBuf, sizeof(oldBuf), "manifest.vrmanifest");
+				EVRApplicationError rmErr =
+					VRApplications()->RemoveApplicationManifest(oldBuf);
+				fprintf(stderr, "Removed old wk.openvr-pair manifest: %s\n",
+					VRApplications()->GetApplicationsErrorNameFromEnum(rmErr));
+			}
+		}
+	}
+
 	// Belt-and-suspenders cleanup of the SC standalone registration. The
 	// vrappconfig entry persisted after SC.exe was deleted and SteamVR keeps
 	// trying to autolaunch the missing binary, which appears to swallow the
 	// umbrella's autolaunch too. Disabling autolaunch on the orphan is the
-	// minimum that unblocks SteamVR from autolaunching wk.openvr-pair; the
+	// minimum that unblocks SteamVR from autolaunching the old key; the
 	// manifest-removal step below is the cosmetic follow-up.
 	if (VRApplications()->IsApplicationInstalled(kLegacyAppKey)) {
 		VRApplications()->SetApplicationAutoLaunch(kLegacyAppKey, false);

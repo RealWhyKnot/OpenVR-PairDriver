@@ -3,7 +3,7 @@ namespace OpenVRPair.FaceModuleHost;
 /// <summary>
 /// Runtime options for the host process. Populated from command-line args and
 /// environment variable overrides. All paths default to the standard
-/// %LocalAppDataLow%\OpenVR-Pair tree.
+/// %LocalAppDataLow%\WKOpenVR tree.
 /// </summary>
 public sealed class HostOptions
 {
@@ -23,11 +23,11 @@ public sealed class HostOptions
 
     /// <summary>Directory where installed hardware modules live, one uuid/version sub-tree each.</summary>
     public string ModulesInstallDir { get; set; } = Path.Combine(
-        LocalAppDataLow(), "OpenVR-Pair", "facetracking", "modules");
+        LocalAppDataLow(), "WKOpenVR", "facetracking", "modules");
 
     /// <summary>Where the host writes its periodic status JSON for the overlay to poll.</summary>
     public string StatusFilePath { get; set; } = Path.Combine(
-        LocalAppDataLow(), "OpenVR-Pair", "facetracking", "host_status.json");
+        LocalAppDataLow(), "WKOpenVR", "facetracking", "host_status.json");
 
     public static HostOptions FromArgs(string[] args)
     {

@@ -72,7 +72,7 @@ jobs:
         run: |
           $stage = "stage"
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
-          foreach ($name in @("OpenVR-Pair.exe", "driver_openvrpair.dll")) {
+          foreach ($name in @("WKOpenVR.exe", "driver_wkopenvr.dll")) {
               $src = "build/artifacts/Release/$name"
               if (Test-Path $src) {
                   Copy-Item -Path $src -Destination $stage

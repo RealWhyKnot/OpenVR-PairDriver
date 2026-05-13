@@ -1,5 +1,5 @@
 {
-	"driver_openvrpair": {
+	"driver_wkopenvr": {
 		"loadPriority": 9999
 	}
 }

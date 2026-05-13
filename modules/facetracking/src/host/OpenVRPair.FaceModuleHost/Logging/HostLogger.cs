@@ -4,7 +4,7 @@ namespace OpenVRPair.FaceModuleHost.Logging;
 
 /// <summary>
 /// Minimal logger that appends UTF-8 lines to
-/// %LocalAppDataLow%\OpenVR-Pair\Logs\facetracking_log.&lt;timestamp&gt;.txt.
+/// %LocalAppDataLow%\WKOpenVR\Logs\facetracking_log.&lt;timestamp&gt;.txt.
 /// Opened with FileShare.ReadWrite | FileShare.Delete so the overlay's log
 /// viewer can tail the file concurrently, and the file can be rotated under us.
 /// </summary>
@@ -49,7 +49,7 @@ public sealed class HostLogger : IDisposable
     {
         string localLow = LocalAppDataLow();
         string ts       = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
-        return Path.Combine(localLow, "OpenVR-Pair", "Logs", $"facetracking_log.{ts}.txt");
+        return Path.Combine(localLow, "WKOpenVR", "Logs", $"facetracking_log.{ts}.txt");
     }
 
     private static string LocalAppDataLow()

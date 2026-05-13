@@ -180,9 +180,9 @@ void SmoothingPlugin::DrawLogsTab()
 		"Smoothing writes a per-session overlay log next to the umbrella's "
 		"other logs. Driver logs are emitted by the shared driver DLL.");
 	ImGui::Spacing();
-	ImGui::TextWrapped("Overlay:  %%LocalAppDataLow%%\\OpenVR-Pair\\Logs\\smoothing_log.<ts>.txt");
-	ImGui::TextWrapped("Driver:   %%LocalAppDataLow%%\\OpenVR-Pair\\Logs\\driver_log.<ts>.txt");
-	ImGui::TextWrapped("Settings: %%LocalAppDataLow%%\\OpenVR-Pair\\profiles\\smoothing.txt");
+	ImGui::TextWrapped("Overlay:  %%LocalAppDataLow%%\\WKOpenVR\\Logs\\smoothing_log.<ts>.txt");
+	ImGui::TextWrapped("Driver:   %%LocalAppDataLow%%\\WKOpenVR\\Logs\\driver_log.<ts>.txt");
+	ImGui::TextWrapped("Settings: %%LocalAppDataLow%%\\WKOpenVR\\profiles\\smoothing.txt");
 }
 
 void SmoothingPlugin::DrawLogsSection(openvr_pair::overlay::ShellContext &)

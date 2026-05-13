@@ -5,7 +5,7 @@
 // channel. The driver writes the file atomically (.tmp + rename) every ~500 ms
 // from the worker thread; we re-read at the same cadence on the overlay tick.
 //
-// File location: %LocalAppDataLow%\OpenVR-Pair\facetracking\driver_telemetry.json
+// File location: %LocalAppDataLow%\WKOpenVR\facetracking\driver_telemetry.json
 //
 // All accessors are safe to call on the same thread that calls Tick(); the
 // parsed snapshot is updated in-place during Tick() and read by the UI draw

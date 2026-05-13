@@ -7,6 +7,6 @@ Download the zip for the feature you want from the appropriate release page and 
 - **Input health monitoring only**: [WKOpenVR-InputHealth releases](https://github.com/RealWhyKnot/WKOpenVR-InputHealth/releases/latest) -- zip includes `enable_inputhealth.flag`.
 - **All features**: download and extract all three zips into the same driver folder; each adds its own flag file.
 
-Or download this repo's `OpenVR-Pair-{version}.zip` (no flag files) and add the flag files yourself.
+Or download this repo's `WKOpenVR-{version}.zip` (no flag files) and add the flag files yourself.
 
-Extract into: `<SteamVR runtime>\drivers\01openvrpair\`. Restart SteamVR. The driver loads the features whose flag files it finds.
+Extract into: `<SteamVR runtime>\drivers\01wkopenvr\`. Restart SteamVR. The driver loads the features whose flag files it finds.

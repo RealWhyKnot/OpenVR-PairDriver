@@ -17,7 +17,7 @@
 
 namespace {
 
-// %LocalAppDataLow%\OpenVR-Pair\profiles\facetracking.json
+// %LocalAppDataLow%\WKOpenVR\profiles\facetracking.json
 std::wstring ProfilePath()
 {
     PWSTR raw = nullptr;
@@ -28,7 +28,7 @@ std::wstring ProfilePath()
     std::wstring root(raw);
     CoTaskMemFree(raw);
 
-    std::wstring dir = root + L"\\OpenVR-Pair";
+    std::wstring dir = root + L"\\WKOpenVR";
     CreateDirectoryW(dir.c_str(), nullptr);
     dir += L"\\profiles";
     CreateDirectoryW(dir.c_str(), nullptr);

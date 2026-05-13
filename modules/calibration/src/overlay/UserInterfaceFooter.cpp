@@ -90,7 +90,7 @@ void ShowVersionLine() {
 	}
 
 	ImGui::SameLine();
-	ImGui::Text("  |  OpenVR-Pair " SPACECAL_BUILD_STAMP);
+	ImGui::Text("  |  WKOpenVR " SPACECAL_BUILD_STAMP);
 	if (runningInOverlay)
 	{
 		ImGui::SameLine();

@@ -41,6 +41,8 @@ add_executable(OpenVRPairOverlay WIN32
 	IpcClientBase.h
 	ManifestRegistration.cpp
 	ManifestRegistration.h
+	Migration.cpp
+	Migration.h
 	ProfileStoreBase.h
 	ShellContext.cpp
 	ShellContext.h
@@ -51,7 +53,7 @@ add_executable(OpenVRPairOverlay WIN32
 	main.cpp
 	${OPENVR_PAIR_RC_SOURCES})
 
-set_target_properties(OpenVRPairOverlay PROPERTIES OUTPUT_NAME "OpenVR-Pair")
+set_target_properties(OpenVRPairOverlay PROPERTIES OUTPUT_NAME "WKOpenVR")
 
 target_include_directories(OpenVRPairOverlay PRIVATE
 	${CMAKE_CURRENT_LIST_DIR}

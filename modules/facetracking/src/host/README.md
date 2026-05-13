@@ -9,7 +9,7 @@ SteamVR inputs and the OSC sender.
 To add a hardware module, implement `FaceTrackingModule` (from `OpenVRPair.FaceTracking.ModuleSdk`),
 package it as a `.zip` with a `manifest.json` matching the v1 schema served at
 `legacy-registry.whyknot.dev`, and install it under
-`%LocalAppDataLow%\OpenVR-Pair\facetracking\modules\<uuid>\<version>\`. The host discovers and
+`%LocalAppDataLow%\WKOpenVR\facetracking\modules\<uuid>\<version>\`. The host discovers and
 loads new modules on startup and responds to `SelectModule` messages over the driver control pipe.
 Modules are integrity-checked at install time via the manifest's `payload_sha256`; there is no
 cryptographic signature, because both the curated legacy mirror and the future native registry are

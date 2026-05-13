@@ -5,7 +5,7 @@
 #include <unordered_map>
 
 // Persisted Smoothing overlay state. Saved to
-// %LocalAppDataLow%\OpenVR-Pair\profiles\smoothing.txt as plain key=value
+// %LocalAppDataLow%\WKOpenVR\profiles\smoothing.txt as plain key=value
 // lines so it's trivially editable by hand if needed.
 struct SmoothingConfig
 {

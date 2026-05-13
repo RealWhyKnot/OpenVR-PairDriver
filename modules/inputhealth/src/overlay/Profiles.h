@@ -7,7 +7,7 @@
 
 // Per-device-serial profile persistence.
 //
-// Stored as `%LocalAppDataLow%\OpenVR-Pair\profiles\<serial>.json`,
+// Stored as `%LocalAppDataLow%\WKOpenVR\profiles\<serial>.json`,
 // one file per device serial. Each file holds the wizard's "start fresh"
 // baseline (factory-norm references), the user's per-category opt-in
 // toggles, and the most recently observed health classification. Profiles

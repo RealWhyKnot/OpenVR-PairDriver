@@ -3,7 +3,7 @@
 // ModuleSources.h -- manage sources.json + per-module source.json sidecars,
 // scan the installed-modules directory, and drive async PowerShell sync runs.
 //
-// File layout (all under %LocalAppDataLow%\OpenVR-Pair\facetracking\):
+// File layout (all under %LocalAppDataLow%\WKOpenVR\facetracking\):
 //   sources.json                                -- source catalogue
 //   modules/<uuid>/<version>/manifest.json      -- installed module manifest
 //   modules/<uuid>/<version>/source.json        -- where the module came from
@@ -71,7 +71,7 @@ struct SyncResult
 
 // ---- sources.json helpers -----------------------------------------------
 
-// Resolve %LocalAppDataLow%\OpenVR-Pair\facetracking\ (ensures dirs exist).
+// Resolve %LocalAppDataLow%\WKOpenVR\facetracking\ (ensures dirs exist).
 std::wstring FtDataDir();
 
 // Generate a random 128-bit hex ID (no dashes, lower case).

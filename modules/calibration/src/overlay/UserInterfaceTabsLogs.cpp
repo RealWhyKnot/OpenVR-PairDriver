@@ -61,7 +61,7 @@ std::string FormatBytesShort(uint64_t n) {
 // Resolve the logs directory. ListRecordings discovers it internally for
 // scanning; we want the parent path for the Explorer button. If the list is
 // empty, derive from the first entry's full path; if THAT's empty too, fall
-// back to the standard %LocalAppDataLow%\OpenVR-Pair\Logs path.
+// back to the standard %LocalAppDataLow%\WKOpenVR\Logs path.
 std::wstring GetLogsDirectory() {
 	auto& s = LogsState();
 	if (!s.files.empty()) {
@@ -79,7 +79,7 @@ std::wstring GetLogsDirectory() {
 	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &appDataLow)) && appDataLow) {
 		std::wstring path(appDataLow);
 		CoTaskMemFree(appDataLow);
-		path += L"\\OpenVR-Pair\\Logs";
+		path += L"\\WKOpenVR\\Logs";
 		return path;
 	}
 	return L"";
@@ -143,7 +143,7 @@ void CCal_DrawLogsPanel() {
 	}
 	ImGui::Checkbox("Enable debug logging", &Metrics::enableLogs);
 	if (ImGui::IsItemHovered()) {
-		ImGui::SetTooltip("Write a per-tick CSV of calibration state to %%LocalAppDataLow%%\\OpenVR-Pair\\Logs\\\n"
+		ImGui::SetTooltip("Write a per-tick CSV of calibration state to %%LocalAppDataLow%%\\WKOpenVR\\Logs\\\n"
 		                  "while this is on. The new log shows up in the list below as soon as the next calibration tick fires.");
 	}
 	if (isDevBuild) {

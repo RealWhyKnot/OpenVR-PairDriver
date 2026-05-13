@@ -54,7 +54,7 @@ std::wstring ResolveTelemetryPath()
     }
     std::wstring root(raw);
     CoTaskMemFree(raw);
-    return root + L"\\OpenVR-Pair\\facetracking\\driver_telemetry.json";
+    return root + L"\\WKOpenVR\\facetracking\\driver_telemetry.json";
 }
 
 int64_t FileMtime(const std::wstring &path)

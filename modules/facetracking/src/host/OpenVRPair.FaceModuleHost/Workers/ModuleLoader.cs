@@ -61,7 +61,7 @@ public sealed class ModuleLoadContext(string modulePath) : AssemblyLoadContext(
 
 /// <summary>
 /// Discovers, validates, loads, and (on demand) unloads hardware modules from the
-/// per-module install directories under <c>%LocalAppDataLow%\OpenVR-Pair\facetracking\modules\</c>.
+/// per-module install directories under <c>%LocalAppDataLow%\WKOpenVR\facetracking\modules\</c>.
 /// </summary>
 public sealed class ModuleLoader(
     HostOptions opts,

@@ -5,10 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Authors>OpenVR-Pair</Authors>
-    <Company>OpenVR-Pair</Company>
-    <Product>OpenVR-Pair</Product>
-    <Copyright>Copyright 2026 OpenVR-Pair</Copyright>
+    <Authors>WKOpenVR</Authors>
+    <Company>WKOpenVR</Company>
+    <Product>WKOpenVR</Product>
+    <Copyright>Copyright 2026 WKOpenVR</Copyright>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 </Project>

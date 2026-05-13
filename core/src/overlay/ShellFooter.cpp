@@ -51,9 +51,9 @@ void DrawShellFooter(const ShellFooterStatus &status)
 	DrawStatusDot(dotColor);
 	ImGui::PushStyleColor(ImGuiCol_Text, textColor);
 	// TextWrapped wraps at the right edge of the current content region, so
-	// the "Driver: connected  |  OpenVR-Pair <stamp>" line reflows instead of
+	// the "Driver: connected  |  WKOpenVR <stamp>" line reflows instead of
 	// overflowing on a desktop-mode window that has been shrunk.
-	ImGui::TextWrapped("%s: %s  |  OpenVR-Pair %s", label, state, stamp);
+	ImGui::TextWrapped("%s: %s  |  WKOpenVR %s", label, state, stamp);
 	ImGui::PopStyleColor();
 }
 

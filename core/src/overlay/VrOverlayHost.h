@@ -11,7 +11,7 @@ namespace openvr_pair::overlay {
 // The umbrella runs as a desktop GLFW + ImGui app first and an in-VR
 // overlay second. VrOverlayHost is the bridge: it probes for SteamVR,
 // upgrades to an overlay-mode VR session, creates a dashboard overlay
-// keyed against the same `wk.openvr-pair` manifest the umbrella
+// keyed against the same `wk.wkopenvr` manifest the umbrella
 // already registers, and translates OpenVR mouse / scroll / keyboard
 // events into ImGuiIO so the in-VR overlay drives the same ImGui
 // state that the desktop window does.

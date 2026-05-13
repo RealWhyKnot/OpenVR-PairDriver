@@ -44,7 +44,7 @@ function Get-FtModulesDir {
     # LocalApplicationData is %AppData%\..\..\LocalLow on some systems; use the
     # registry key to get the real LocalAppDataLow path.
     $low = [System.Environment]::GetFolderPath('ApplicationData') -replace 'Roaming$','LocalLow'
-    $dir = Join-Path $low 'OpenVR-Pair\facetracking\modules'
+    $dir = Join-Path $low 'WKOpenVR\facetracking\modules'
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
     return $dir
 }
@@ -183,7 +183,7 @@ if ($srcKind -eq 'github') {
     $apiUrl = "https://api.github.com/repos/$ownerRepo/releases/latest"
     try {
         $release = Invoke-RestMethod -Uri $apiUrl -UseBasicParsing `
-                       -Headers @{ 'User-Agent' = 'OpenVR-Pair/1.0' }
+                       -Headers @{ 'User-Agent' = 'WKOpenVR/1.0' }
     } catch {
         Write-Result $false "GitHub API error for ${ownerRepo}: $_"
         exit 1
@@ -211,7 +211,7 @@ if ($srcKind -eq 'github') {
     $tmpZip = [System.IO.Path]::GetTempFileName() + '.zip'
     try {
         Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmpZip `
-            -UseBasicParsing -Headers @{ 'User-Agent' = 'OpenVR-Pair/1.0' }
+            -UseBasicParsing -Headers @{ 'User-Agent' = 'WKOpenVR/1.0' }
     } catch {
         Write-Result $false "Download failed for $($asset.browser_download_url): $_"
         exit 1

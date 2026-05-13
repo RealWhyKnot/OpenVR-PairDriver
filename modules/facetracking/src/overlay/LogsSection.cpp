@@ -30,7 +30,7 @@ std::wstring LogsDir()
     }
     std::wstring root(raw);
     CoTaskMemFree(raw);
-    return root + L"\\OpenVR-Pair\\Logs";
+    return root + L"\\WKOpenVR\\Logs";
 }
 
 void OpenInExplorer(const std::wstring &dir)
@@ -113,16 +113,16 @@ void DrawLogsSection(FacetrackingPlugin &plugin)
         OpenInExplorer(dir);
     }
     TooltipForLastItem(
-        "%LocalAppDataLow%\\OpenVR-Pair\\Logs\\\n"
+        "%LocalAppDataLow%\\WKOpenVR\\Logs\\\n"
         "Contains overlay, driver, and host log files for all features.");
 
     // ---- File paths (reference) ----
     DrawSectionHeading("Paths");
-    ImGui::TextWrapped("Overlay:   %%LocalAppDataLow%%\\OpenVR-Pair\\Logs\\facetracking_log.<ts>.txt");
-    ImGui::TextWrapped("Driver:    %%LocalAppDataLow%%\\OpenVR-Pair\\Logs\\driver_log.<ts>.txt");
-    ImGui::TextWrapped("Profiles:  %%LocalAppDataLow%%\\OpenVR-Pair\\profiles\\facetracking.json");
-    ImGui::TextWrapped("Calib:     %%LocalAppDataLow%%\\OpenVR-Pair\\profiles\\facetracking_calib_<uuid>.json");
-    ImGui::TextWrapped("Trust:     %%LocalAppDataLow%%\\OpenVR-Pair\\facetracking\\trust.json");
+    ImGui::TextWrapped("Overlay:   %%LocalAppDataLow%%\\WKOpenVR\\Logs\\facetracking_log.<ts>.txt");
+    ImGui::TextWrapped("Driver:    %%LocalAppDataLow%%\\WKOpenVR\\Logs\\driver_log.<ts>.txt");
+    ImGui::TextWrapped("Profiles:  %%LocalAppDataLow%%\\WKOpenVR\\profiles\\facetracking.json");
+    ImGui::TextWrapped("Calib:     %%LocalAppDataLow%%\\WKOpenVR\\profiles\\facetracking_calib_<uuid>.json");
+    ImGui::TextWrapped("Trust:     %%LocalAppDataLow%%\\WKOpenVR\\facetracking\\trust.json");
 
     (void)plugin; // profile_.current is not needed here at present
 }

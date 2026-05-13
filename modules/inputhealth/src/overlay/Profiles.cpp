@@ -30,7 +30,7 @@ std::wstring ProfilesDir()
 	std::wstring root(rootRaw);
 	CoTaskMemFree(rootRaw);
 
-	std::wstring dir = root + L"\\OpenVR-Pair";
+	std::wstring dir = root + L"\\WKOpenVR";
 	CreateDirectoryW(dir.c_str(), nullptr);
 	dir += L"\\profiles";
 	CreateDirectoryW(dir.c_str(), nullptr);

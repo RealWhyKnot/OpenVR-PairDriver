@@ -21,8 +21,8 @@ namespace {
 // constant in ManifestRegistration.cpp. SteamVR keys overlays by app key,
 // so re-using the manifest key makes the dashboard tile and the autolaunch
 // registration point at the same entity.
-constexpr const char *kAppKey = "wk.openvr-pair";
-constexpr const char *kFriendlyName = "OpenVR-Pair";
+constexpr const char *kAppKey = "wk.wkopenvr";
+constexpr const char *kFriendlyName = "WKOpenVR";
 
 // Width of the dashboard panel in metres. SC used 3.0; same value
 // renders comfortably at typical viewing distance.
@@ -141,7 +141,7 @@ void VrOverlayHost::TryCreateOverlay()
 		// vrserver. Log but don't crash -- the user can fix this by
 		// closing the other instance.
 		fprintf(stderr, "[VrOverlayHost] CreateDashboardOverlay: key in use "
-			"(another OpenVR-Pair instance is registered)\n");
+			"(another WKOpenVR instance is registered)\n");
 		return;
 	}
 	if (err != vr::VROverlayError_None) {

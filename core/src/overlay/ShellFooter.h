@@ -4,7 +4,7 @@ namespace openvr_pair::overlay {
 
 // Status snapshot a feature plugin passes to DrawShellFooter at the bottom of
 // its tab body. Mirrors SC's ShowVersionLine layout (status dot + driver
-// label + " | OpenVR-Pair <build>") in a simpler form -- one line, no mode
+// label + " | WKOpenVR <build>") in a simpler form -- one line, no mode
 // pill, no hover hint -- so InputHealth and Smoothing get a consistent
 // footer without duplicating SC's calibration-state-aware logic.
 struct ShellFooterStatus
@@ -19,9 +19,9 @@ struct ShellFooterStatus
 	// "<driverLabel>: disconnected". Must not be null.
 	const char *driverLabel = "Driver";
 
-	// Per-build version stamp shown after "OpenVR-Pair". May be null; the
+	// Per-build version stamp shown after "WKOpenVR". May be null; the
 	// helper falls back to OPENVR_PAIR_VERSION_STRING when both are absent
-	// the value just reads "OpenVR-Pair".
+	// the value just reads "WKOpenVR".
 	const char *buildStamp = nullptr;
 };
 

@@ -44,7 +44,7 @@ void ClearOldLogs(const std::wstring &dir)
     FindClose(h);
 }
 
-// %LocalAppDataLow%\OpenVR-Pair\Logs\facetracking_log.<date>T<time>.txt
+// %LocalAppDataLow%\WKOpenVR\Logs\facetracking_log.<date>T<time>.txt
 std::wstring BuildLogPath()
 {
     PWSTR rootRaw = nullptr;
@@ -55,7 +55,7 @@ std::wstring BuildLogPath()
     std::wstring root(rootRaw);
     CoTaskMemFree(rootRaw);
 
-    std::wstring dir = root + L"\\OpenVR-Pair";
+    std::wstring dir = root + L"\\WKOpenVR";
     if (!CreateDirectoryW(dir.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return {};
     dir += L"\\Logs";
     if (!CreateDirectoryW(dir.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return {};

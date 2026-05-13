@@ -6,7 +6,7 @@
 // the file atomically (.tmp + rename) once per second; we re-read at the
 // same cadence on the overlay's tick thread.
 //
-// File location: %LocalAppDataLow%\OpenVR-Pair\facetracking\host_status.json
+// File location: %LocalAppDataLow%\WKOpenVR\facetracking\host_status.json
 //
 // All accessors are safe to call on the same thread that calls Tick();
 // the parsed snapshot is updated in-place during Tick() and read by the

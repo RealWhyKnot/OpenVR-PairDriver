@@ -34,7 +34,7 @@ namespace {
 // Telemetry sidecar helpers
 // -----------------------------------------------------------------------
 
-// %LocalAppDataLow%\OpenVR-Pair\facetracking\
+// %LocalAppDataLow%\WKOpenVR\facetracking\
 static std::wstring ResolveTelemetryDir()
 {
     PWSTR raw = nullptr;
@@ -44,7 +44,7 @@ static std::wstring ResolveTelemetryDir()
     }
     std::wstring root(raw);
     CoTaskMemFree(raw);
-    return root + L"\\OpenVR-Pair\\facetracking";
+    return root + L"\\WKOpenVR\\facetracking";
 }
 
 // Atomically write `content` to `final_path` via a .tmp rename.
@@ -153,7 +153,7 @@ std::string ResolveHostExePath(vr::IVRDriverContext *driverContext)
         char dllPath[MAX_PATH] = {};
         GetModuleFileNameA(hSelf, dllPath, MAX_PATH);
         std::string path(dllPath);
-        // Walk up to the driver root (bin/win64/driver_openvrpair.dll -> ../..)
+        // Walk up to the driver root (bin/win64/driver_wkopenvr.dll -> ../..)
         for (int up = 0; up < 2; ++up) {
             auto sep = path.find_last_of("/\\");
             if (sep == std::string::npos) break;

@@ -1,6 +1,6 @@
 {
 	"alwaysActivate": true,
-	"name" : "01openvrpair",
+	"name" : "01wkopenvr",
 	"directory" : "",
 	"resourceOnly" : false,
 	"activateOtherDriversWhenEnabled" : true
