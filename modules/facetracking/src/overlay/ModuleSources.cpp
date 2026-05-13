@@ -49,6 +49,21 @@ static std::wstring Utf8ToWide(const std::string &s)
     return out;
 }
 
+// Strip a UTF-8 BOM (EF BB BF) from the start of `s` if present. picojson does
+// not skip a leading BOM and reports it as a parse error -- which silently
+// drops fields like source_id from JSON files written by the static .NET
+// `Encoding.UTF8` instance (it emits a BOM by default). Applied at every
+// JSON-from-disk read site below.
+static void StripUtf8Bom(std::string &s)
+{
+    if (s.size() >= 3
+     && static_cast<unsigned char>(s[0]) == 0xEF
+     && static_cast<unsigned char>(s[1]) == 0xBB
+     && static_cast<unsigned char>(s[2]) == 0xBF) {
+        s.erase(0, 3);
+    }
+}
+
 // ---- picojson helpers ---------------------------------------------------
 
 static std::string PjStr(const picojson::value &v, const char *key,
@@ -140,8 +155,10 @@ SourcesCatalogue LoadSourcesCatalogue()
 
     std::stringstream ss;
     ss << in.rdbuf();
+    std::string txt = ss.str();
+    StripUtf8Bom(txt);
     picojson::value root;
-    std::string err = picojson::parse(root, ss.str());
+    std::string err = picojson::parse(root, txt);
     if (!err.empty() || !root.is<picojson::object>()) return {};
 
     SourcesCatalogue cat;
@@ -299,8 +316,10 @@ std::vector<InstalledModule> ScanInstalledModules()
                 if (mf.is_open()) {
                     std::stringstream ss;
                     ss << mf.rdbuf();
+                    std::string txt = ss.str();
+                    StripUtf8Bom(txt);
                     picojson::value root;
-                    if (picojson::parse(root, ss.str()).empty()) {
+                    if (picojson::parse(root, txt).empty()) {
                         mod.name   = PjStr(root, "name");
                         mod.vendor = PjStr(root, "vendor");
                     }
@@ -316,8 +335,10 @@ std::vector<InstalledModule> ScanInstalledModules()
                 if (sf.is_open()) {
                     std::stringstream ss;
                     ss << sf.rdbuf();
+                    std::string txt = ss.str();
+                    StripUtf8Bom(txt);
                     picojson::value root;
-                    if (picojson::parse(root, ss.str()).empty()) {
+                    if (picojson::parse(root, txt).empty()) {
                         mod.source_id       = PjStr(root, "source_id");
                         mod.source_kind_str = PjStr(root, "source_kind");
                         mod.sha_verified    = PjBool(root, "verified_sha256");
@@ -429,8 +450,10 @@ std::optional<SyncResult> ModuleSyncRunner::Poll()
         if (rf.is_open()) {
             std::stringstream ss;
             ss << rf.rdbuf();
+            std::string txt = ss.str();
+            StripUtf8Bom(txt);
             picojson::value root;
-            if (picojson::parse(root, ss.str()).empty()) {
+            if (picojson::parse(root, txt).empty()) {
                 result.ok               = PjBool(root, "ok");
                 result.message          = PjStr(root, "message");
                 result.installed_uuid   = PjStr(root, "installed_uuid");

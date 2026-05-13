@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 // Overlay-side settings for the FaceTracking feature.
 // Serialised to %LocalAppDataLow%\WKOpenVR\profiles\facetracking.json.
@@ -29,7 +30,14 @@ struct FacetrackingProfile
     int     gaze_smoothing             = 30;   // 0..100
     int     openness_smoothing         = 20;   // 0..100
 
-    std::string active_module_uuid;            // empty = host auto-selects
+    // Which installed modules the user has toggled on in the Modules tab.
+    // Empty list = host picks the first available module on its own; a
+    // populated list is the user's explicit selection (multi-select-capable
+    // UI; the backend currently activates the first entry until the host
+    // is upgraded to run multiple simultaneously). Serialised order is
+    // load order -- preserve the user's row order so an upgrade to true
+    // multi-run has a stable priority.
+    std::vector<std::string> enabled_module_uuids;
 
     // --- overlay-only preferences ---
     bool    show_raw_values            = false;

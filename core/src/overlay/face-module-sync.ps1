@@ -62,8 +62,14 @@ function Read-Manifest([string]$folder) {
 
 function Write-SourceJson([string]$destDir, [hashtable]$data) {
     $json = $data | ConvertTo-Json -Compress
-    [System.IO.File]::WriteAllText((Join-Path $destDir 'source.json'), $json,
-        [System.Text.Encoding]::UTF8)
+    # Same BOM-avoidance dance as Write-Result -- the overlay's picojson
+    # reader rejects files that start with the UTF-8 BOM (EF BB BF), so
+    # source.json files written with the static UTF8 encoder ended up
+    # silently empty when parsed and SourceLabel reported "Unknown" for
+    # every installed module.
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText((Join-Path $destDir 'source.json'),
+                                    $json, $utf8NoBom)
 }
 
 function Copy-ModuleFolder([string]$srcDir, [string]$uuid, [string]$version,

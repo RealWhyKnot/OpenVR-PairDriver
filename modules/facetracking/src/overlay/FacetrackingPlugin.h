@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 class FacetrackingPlugin;
 
@@ -44,8 +45,13 @@ public:
     // Send a FaceCalibrationCommand to the driver.
     void SendCalibrationCommand(protocol::FaceCalibrationOp op);
 
-    // Tell the driver / host to load a specific hardware module by UUID.
-    void SendActiveModule(const std::string &uuid);
+    // Persist the user's enabled-modules set and push the active selection
+    // to the driver / host. Backend currently runs a single module at a
+    // time, so the first UUID in `uuids` is the one the host loads; the
+    // remaining entries are stored in the profile against the day the
+    // host learns to run multiple. Pass an empty list to clear (host
+    // auto-selects).
+    void SendEnabledModules(const std::vector<std::string> &uuids);
 
     // Called by Tick() and by the tab functions to keep the pipe alive
     // across SteamVR restarts. Not normally called directly from UI code.
@@ -53,9 +59,10 @@ public:
 
     // Accessors used by Modules-tab helper functions (static helpers in
     // ModulesTab.cpp cannot be friends; these expose only what is needed).
-    facetracking::HostStatusPoller      &HostStatus()    { return host_status_; }
-    FacetrackingProfileStore            &Profile()       { return profile_; }
-    facetracking::ModuleSyncRunner      &SyncRunner()    { return sync_runner_; }
+    facetracking::HostStatusPoller      &HostStatus()          { return host_status_; }
+    FacetrackingProfileStore            &Profile()             { return profile_; }
+    const FacetrackingProfileStore      &Profile() const       { return profile_; }
+    facetracking::ModuleSyncRunner      &SyncRunner()          { return sync_runner_; }
 
 private:
     friend void facetracking::ui::DrawSettingsTab(FacetrackingPlugin &plugin);

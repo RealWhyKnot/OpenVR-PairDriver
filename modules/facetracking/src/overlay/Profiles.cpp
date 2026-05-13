@@ -76,7 +76,24 @@ FacetrackingProfile Decode(const picojson::value &v)
     getInt ("osc_port",                   p.osc_port);
     getInt ("gaze_smoothing",             p.gaze_smoothing);
     getInt ("openness_smoothing",         p.openness_smoothing);
-    getStr ("active_module_uuid",         p.active_module_uuid);
+    // enabled_module_uuids -- the multi-select list the Modules tab edits.
+    // Read the array form first; if missing, fall back to the deprecated
+    // single-uuid string field so users upgrading across this change keep
+    // their selection.
+    auto enabledIt = obj.find("enabled_module_uuids");
+    if (enabledIt != obj.end() && enabledIt->second.is<picojson::array>()) {
+        for (const auto &el : enabledIt->second.get<picojson::array>()) {
+            if (el.is<std::string>()) {
+                const std::string &s = el.get<std::string>();
+                if (!s.empty()) p.enabled_module_uuids.push_back(s);
+            }
+        }
+    } else {
+        std::string legacy;
+        getStr("active_module_uuid", legacy);
+        if (!legacy.empty()) p.enabled_module_uuids.push_back(std::move(legacy));
+    }
+
     getBool("show_raw_values",            p.show_raw_values);
     getInt ("last_tab_index",             p.last_tab_index);
 
@@ -97,7 +114,12 @@ std::string Encode(const FacetrackingProfile &p)
     obj["osc_port"]                   = picojson::value((double)p.osc_port);
     obj["gaze_smoothing"]             = picojson::value((double)p.gaze_smoothing);
     obj["openness_smoothing"]         = picojson::value((double)p.openness_smoothing);
-    obj["active_module_uuid"]         = picojson::value(p.active_module_uuid);
+    {
+        picojson::array arr;
+        for (const auto &u : p.enabled_module_uuids)
+            arr.push_back(picojson::value(u));
+        obj["enabled_module_uuids"]   = picojson::value(arr);
+    }
     obj["show_raw_values"]            = picojson::value(p.show_raw_values);
     obj["last_tab_index"]             = picojson::value((double)p.last_tab_index);
     return picojson::value(obj).serialize(true);

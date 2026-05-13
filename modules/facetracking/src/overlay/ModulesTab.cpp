@@ -13,6 +13,7 @@
 #include <windows.h>
 #include <shobjidl.h>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -29,9 +30,6 @@ struct ModulesTabState
     std::vector<InstalledModule>  installed;
     SourcesCatalogue              catalogue;
     int64_t                       last_scan_tick = 0;   // ::GetTickCount64()
-
-    // Dropdown selection index for active-module picker.
-    int  selected_idx = 0;  // 0 = (none/auto), 1..N = installed[idx-1]
 
     // Last sync status string shown near the sources table.
     // Populated by polling plugin.sync_runner_ each draw.
@@ -122,138 +120,144 @@ static std::string BuildSourceDataJson(const ModuleSource &src)
 
 // ---- section helpers ----------------------------------------------------
 
-static void DrawActiveModuleSection(FacetrackingPlugin &plugin)
+// Resolve a display label for an installed module's source. Falls back to
+// the kind tag from source.json when the catalogue lookup misses (e.g. a
+// source that was removed since install, or a source.json that was written
+// before the catalogue learned about its id). Distinguishes "no source
+// metadata at all" from "metadata present but unmatched in the catalogue".
+static std::string ResolveSourceLabel(const InstalledModule &m,
+                                      const SourcesCatalogue &cat)
 {
-    DrawSectionHeading("Active module");
+    for (const auto &src : cat.sources)
+        if (src.id == m.source_id && !src.label.empty()) return src.label;
 
-    const auto &hs = plugin.HostStatus().Snapshot();
-    const std::string *hostActiveUuid =
-        hs.valid && hs.active_module.has_value() ? &hs.active_module->uuid : nullptr;
-
-    // Build combo items: first entry is auto-select.
-    std::vector<std::string> items;
-    items.push_back("(none -- host auto-selects)");
-    for (const auto &m : g_state.installed)
-        items.push_back(m.name + " v" + m.version + " -- " + m.vendor);
-
-    // Sync selected_idx with the persisted profile on first use.
-    static bool idx_synced = false;
-    if (!idx_synced) {
-        idx_synced = true;
-        const std::string &saved = plugin.Profile().current.active_module_uuid;
-        if (!saved.empty()) {
-            for (size_t i = 0; i < g_state.installed.size(); ++i) {
-                if (g_state.installed[i].uuid == saved) {
-                    g_state.selected_idx = static_cast<int>(i + 1);
-                    break;
-                }
-            }
-        }
+    if (!m.source_kind_str.empty()) {
+        if (m.source_kind_str == "registry") return "Registry";
+        if (m.source_kind_str == "github")   return m.release_tag.empty()
+                                                     ? std::string{"GitHub"}
+                                                     : "GitHub @ " + m.release_tag;
+        if (m.source_kind_str == "folder")   return "Folder";
+        return m.source_kind_str;
     }
-
-    // Clamp in case the installed list shrank.
-    if (g_state.selected_idx > static_cast<int>(g_state.installed.size()))
-        g_state.selected_idx = 0;
-
-    // Current combo label.
-    const char *preview = items[static_cast<size_t>(g_state.selected_idx)].c_str();
-
-    // Show "[active]" badge when host confirms it.
-    std::string activeLabel;
-    if (hostActiveUuid) {
-        const std::string *selUuid = g_state.selected_idx > 0
-            ? &g_state.installed[static_cast<size_t>(g_state.selected_idx - 1)].uuid
-            : nullptr;
-        if (selUuid && *selUuid == *hostActiveUuid)
-            activeLabel = "  [active]";
-    }
-
-    ImGui::SetNextItemWidth(340.0f);
-    if (ImGui::BeginCombo("##ft_active_mod", preview)) {
-        for (int i = 0; i < static_cast<int>(items.size()); ++i) {
-            bool sel = (g_state.selected_idx == i);
-            if (ImGui::Selectable(items[static_cast<size_t>(i)].c_str(), sel))
-                g_state.selected_idx = i;
-            if (sel) ImGui::SetItemDefaultFocus();
-        }
-        ImGui::EndCombo();
-    }
-    TooltipForLastItem("Choose which hardware module the host should load.\n"
-                       "Leave on auto to let the host pick the first available.");
-
-    if (!activeLabel.empty()) {
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f), "%s", activeLabel.c_str());
-    }
-
-    ImGui::SameLine();
-    if (ImGui::Button("Apply##ft_mod_apply")) {
-        std::string uuid;
-        if (g_state.selected_idx > 0)
-            uuid = g_state.installed[static_cast<size_t>(g_state.selected_idx - 1)].uuid;
-        FT_LOG_OVL("[modules] user set active module: '%s'", uuid.c_str());
-        plugin.SendActiveModule(uuid);
-        idx_synced = false;  // re-sync next frame
-    }
-    TooltipForLastItem("Persist the selection and tell the host (if running) to switch modules.");
+    return "(unknown)";
 }
 
-static void DrawInstalledModulesSection()
+// True if `uuid` is currently in the user's enabled set.
+static bool IsModuleEnabled(const FacetrackingPlugin &plugin,
+                            const std::string &uuid)
 {
-    DrawSectionHeading("Installed modules");
+    const auto &v = plugin.Profile().current.enabled_module_uuids;
+    for (const auto &id : v) if (id == uuid) return true;
+    return false;
+}
+
+static void DrawInstalledModulesSection(FacetrackingPlugin &plugin)
+{
+    DrawSectionHeading("Modules");
 
     if (g_state.installed.empty()) {
         DrawWaitingBanner("No modules installed. Add a source below to fetch modules.");
         return;
     }
 
+    // Host-confirmed currently-running module UUID, if any.
+    const auto &hs = plugin.HostStatus().Snapshot();
+    const std::string *hostActiveUuid =
+        hs.valid && hs.active_module.has_value() ? &hs.active_module->uuid : nullptr;
+
     ImGuiTableFlags tf = ImGuiTableFlags_Borders
                        | ImGuiTableFlags_RowBg
                        | ImGuiTableFlags_Resizable
                        | ImGuiTableFlags_SizingStretchProp;
 
-    if (!ImGui::BeginTable("ft_installed_v2", 5, tf)) return;
+    if (!ImGui::BeginTable("ft_installed_v3", 5, tf)) return;
+    ImGui::TableSetupColumn("On",       ImGuiTableColumnFlags_WidthFixed,  36.0f);
     ImGui::TableSetupColumn("Name");
     ImGui::TableSetupColumn("Version",  ImGuiTableColumnFlags_WidthFixed,  80.0f);
-    ImGui::TableSetupColumn("Vendor",   ImGuiTableColumnFlags_WidthFixed, 130.0f);
-    ImGui::TableSetupColumn("Source",   ImGuiTableColumnFlags_WidthFixed, 160.0f);
-    ImGui::TableSetupColumn("Notes");
+    ImGui::TableSetupColumn("Vendor",   ImGuiTableColumnFlags_WidthFixed, 140.0f);
+    ImGui::TableSetupColumn("Source",   ImGuiTableColumnFlags_WidthFixed, 180.0f);
     ImGui::TableHeadersRow();
+
+    // Collect the new enabled set, applied once at the end of the table so
+    // we don't fire one SendEnabledModules per row when the user clicks a
+    // single box. Order: start from the profile so the user's current order
+    // is preserved; flip entries whose row got toggled.
+    std::vector<std::string> nextEnabled = plugin.Profile().current.enabled_module_uuids;
+    bool changed = false;
 
     for (size_t i = 0; i < g_state.installed.size(); ++i) {
         const auto &m = g_state.installed[i];
-        bool isSelected = g_state.selected_idx == static_cast<int>(i + 1);
+        bool enabled = IsModuleEnabled(plugin, m.uuid);
 
         ImGui::TableNextRow();
+
+        // Column 0: Enabled checkbox.
         ImGui::TableSetColumnIndex(0);
-        if (isSelected)
+        const std::string boxId = "##ft_en_" + m.uuid;
+        if (ImGui::Checkbox(boxId.c_str(), &enabled)) {
+            if (enabled) {
+                // Append to the end -- preserves the priority order the
+                // user has already established.
+                bool present = false;
+                for (const auto &id : nextEnabled) if (id == m.uuid) { present = true; break; }
+                if (!present) nextEnabled.push_back(m.uuid);
+            } else {
+                nextEnabled.erase(
+                    std::remove(nextEnabled.begin(), nextEnabled.end(), m.uuid),
+                    nextEnabled.end());
+            }
+            changed = true;
+        }
+        TooltipForLastItem("Toggle whether this module is enabled for the host.\n"
+                           "Multiple can be on at once; the host currently runs the\n"
+                           "first enabled entry (multi-run support is on the roadmap).");
+
+        // Column 1: Name. Tint green when the host confirms this row is the
+        // currently running module.
+        ImGui::TableSetColumnIndex(1);
+        const bool isHostActive = hostActiveUuid && *hostActiveUuid == m.uuid;
+        if (isHostActive)
             ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f), "%s", m.name.c_str());
         else
             ImGui::TextUnformatted(m.name.c_str());
+        if (isHostActive)
+            TooltipForLastItem("The host is currently running this module.");
 
-        ImGui::TableSetColumnIndex(1);
+        // Column 2: Version.
+        ImGui::TableSetColumnIndex(2);
         ImGui::TextUnformatted(m.version.c_str());
 
-        ImGui::TableSetColumnIndex(2);
+        // Column 3: Vendor.
+        ImGui::TableSetColumnIndex(3);
         ImGui::TextUnformatted(m.vendor.c_str());
 
-        ImGui::TableSetColumnIndex(3);
-        std::string srcLabel = SourceLabel(g_state.catalogue, m.source_id);
-        ImGui::TextDisabled("%s", srcLabel.c_str());
-
+        // Column 4: Source. Resolves through the catalogue, falls back to
+        // the kind tag, and lights up red for GitHub modules whose SHA-256
+        // wasn't verified at install time + amber for local folders.
         ImGui::TableSetColumnIndex(4);
+        const std::string srcLabel = ResolveSourceLabel(m, g_state.catalogue);
         if (m.source_kind_str == "github" && !m.sha_verified) {
-            ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Unverified");
+            ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+                               "%s (unverified)", srcLabel.c_str());
             TooltipForLastItem("This module was installed without SHA-256 verification.\n"
                                "The release notes did not contain a recognisable SHA-256 hash.\n"
                                "Confirm the developer publishes verifiable hashes before trusting this source.");
         } else if (m.source_kind_str == "folder") {
-            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.35f, 1.0f), "Local");
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.35f, 1.0f),
+                               "%s", srcLabel.c_str());
             TooltipForLastItem("This module was installed from a local folder.\n"
                                "Local modules are not signature-verified.");
+        } else {
+            ImGui::TextDisabled("%s", srcLabel.c_str());
         }
     }
     ImGui::EndTable();
+
+    if (changed) {
+        FT_LOG_OVL("[modules] user changed enabled set: count=%zu",
+                   nextEnabled.size());
+        plugin.SendEnabledModules(nextEnabled);
+    }
 }
 
 static void DrawSourcesSection(FacetrackingPlugin &plugin)
@@ -489,8 +493,7 @@ void DrawModulesTab(FacetrackingPlugin &plugin)
 {
     RefreshIfStale();
 
-    DrawActiveModuleSection(plugin);
-    DrawInstalledModulesSection();
+    DrawInstalledModulesSection(plugin);
     DrawSourcesSection(plugin);
     DrawTrustBanners();
 }

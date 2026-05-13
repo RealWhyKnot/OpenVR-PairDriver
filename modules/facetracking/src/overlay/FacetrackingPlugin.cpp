@@ -175,7 +175,14 @@ void FacetrackingPlugin::PushConfigToDriver()
             sizeof(cfg.osc_host) - 1);
         cfg.osc_host[sizeof(cfg.osc_host) - 1] = '\0';
 
-        std::strncpy(cfg.active_module_uuid, p.active_module_uuid.c_str(),
+        // Active module = first enabled entry (backend is single-active for
+        // now; once the host learns to run multiple, this entry should grow
+        // to carry the full list via a protocol bump). Empty list = empty
+        // string = host picks automatically.
+        const std::string &primary = p.enabled_module_uuids.empty()
+            ? std::string{}
+            : p.enabled_module_uuids.front();
+        std::strncpy(cfg.active_module_uuid, primary.c_str(),
             sizeof(cfg.active_module_uuid) - 1);
         cfg.active_module_uuid[sizeof(cfg.active_module_uuid) - 1] = '\0';
 
@@ -224,10 +231,15 @@ void FacetrackingPlugin::SendCalibrationCommand(protocol::FaceCalibrationOp op)
     }
 }
 
-void FacetrackingPlugin::SendActiveModule(const std::string &uuid)
+void FacetrackingPlugin::SendEnabledModules(const std::vector<std::string> &uuids)
 {
-    profile_.current.active_module_uuid = uuid;
+    // Persist the full list so the order survives across sessions. Backend
+    // currently consumes only the first entry; remaining entries are kept
+    // for the future multi-run host upgrade.
+    profile_.current.enabled_module_uuids = uuids;
     profile_.Save();
+
+    const std::string &primary = uuids.empty() ? std::string{} : uuids.front();
 
     if (!ipc_.IsConnected()) {
         // Config will be pushed on the next successful heartbeat reconnect.
@@ -235,7 +247,7 @@ void FacetrackingPlugin::SendActiveModule(const std::string &uuid)
     }
     try {
         protocol::Request req(protocol::RequestSetFaceActiveModule);
-        std::strncpy(req.setFaceActiveModule.uuid, uuid.c_str(),
+        std::strncpy(req.setFaceActiveModule.uuid, primary.c_str(),
             sizeof(req.setFaceActiveModule.uuid) - 1);
         req.setFaceActiveModule.uuid[sizeof(req.setFaceActiveModule.uuid) - 1] = '\0';
         std::memset(req.setFaceActiveModule._reserved, 0,
@@ -248,10 +260,11 @@ void FacetrackingPlugin::SendActiveModule(const std::string &uuid)
             return;
         }
         last_error_.clear();
-        FT_LOG_OVL("[ipc] active module set: uuid='%s'", uuid.c_str());
+        FT_LOG_OVL("[ipc] enabled modules set: count=%zu primary='%s'",
+            uuids.size(), primary.c_str());
     } catch (const std::exception &e) {
         last_error_ = std::string("IPC error: ") + e.what();
-        FT_LOG_OVL("[ipc] SendActiveModule failed: %s", e.what());
+        FT_LOG_OVL("[ipc] SendEnabledModules failed: %s", e.what());
     }
 }
 
