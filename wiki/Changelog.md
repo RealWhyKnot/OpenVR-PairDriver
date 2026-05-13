@@ -67,3 +67,4 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **hooks:** Refresh stale version.txt stamp to today when prepare-commit-msg fires (b3e127a)
 - **calibration:** Suppress continuous-cal when a non-HMD anchor goes silent (528ab12)
 - **quick.ps1:** Copy openvr_api.dll alongside the umbrella exe (22e2ccb)
+- **quick.ps1:** Deploy the overlay resources tree alongside the exe (2f4ca75)
