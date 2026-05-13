@@ -217,8 +217,6 @@ private:
                 cfg = config_;
             }
 
-            if (!cfg.master_enabled) continue;
-
             // Continuous calibration ingestion + normalization.
             if (cfg.continuous_calib_mode > 0) {
                 calib_.IngestFrame(frame);
@@ -238,7 +236,7 @@ private:
             }
 
             // Publish to SteamVR inputs.
-            if (cfg.output_native_enabled && device_) {
+            if (cfg._reserved_native && device_) {
                 device_->PublishFrame(frame);
             }
         }

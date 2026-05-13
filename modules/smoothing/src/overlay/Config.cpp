@@ -60,9 +60,7 @@ SmoothingConfig LoadConfig()
         const char *key = line;
         const char *val = eq + 1;
 
-        if (strcmp(key, "master_enabled") == 0) {
-            cfg.master_enabled = (atoi(val) != 0);
-        } else if (strcmp(key, "smoothness") == 0) {
+        if (strcmp(key, "smoothness") == 0) {
             int n = atoi(val);
             if (n < 0) n = 0;
             if (n > 100) n = 100;
@@ -98,7 +96,6 @@ void SaveConfig(const SmoothingConfig &cfg)
 
     FILE *f = _wfopen(path.c_str(), L"w");
     if (!f) return;
-    fprintf(f, "master_enabled=%d\n", cfg.master_enabled ? 1 : 0);
     fprintf(f, "smoothness=%d\n", cfg.smoothness);
     fprintf(f, "finger_mask=%u\n", (unsigned)cfg.finger_mask);
     for (int i = 0; i < 10; ++i) {

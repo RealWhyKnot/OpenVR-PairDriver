@@ -10,8 +10,7 @@
 struct SmoothingConfig
 {
     // Finger smoothing (Index Knuckles bone arrays).
-    bool     master_enabled = false;
-    int      smoothness     = 50;          // 0..100, global fallback
+    int      smoothness     = 0;           // 0..100, global fallback; 0 = pass-through
     uint16_t finger_mask    = 0x03FF;      // protocol::kAllFingersMask -- all 10 fingers
 
     // Per-finger strength override (0..100). Indexed the same way as

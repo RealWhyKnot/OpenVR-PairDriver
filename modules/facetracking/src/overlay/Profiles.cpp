@@ -65,7 +65,6 @@ FacetrackingProfile Decode(const picojson::value &v)
             out = it->second.get<std::string>();
     };
 
-    getBool("master_enabled",             p.master_enabled);
     getBool("eyelid_sync_enabled",        p.eyelid_sync_enabled);
     getBool("eyelid_sync_preserve_winks", p.eyelid_sync_preserve_winks);
     getInt ("eyelid_sync_strength",       p.eyelid_sync_strength);
@@ -73,7 +72,6 @@ FacetrackingProfile Decode(const picojson::value &v)
     getInt ("vergence_lock_strength",     p.vergence_lock_strength);
     getInt ("continuous_calib_mode",      p.continuous_calib_mode);
     getBool("output_osc_enabled",         p.output_osc_enabled);
-    getBool("output_native_enabled",      p.output_native_enabled);
     getStr ("osc_host",                   p.osc_host);
     getInt ("osc_port",                   p.osc_port);
     getInt ("gaze_smoothing",             p.gaze_smoothing);
@@ -88,7 +86,6 @@ FacetrackingProfile Decode(const picojson::value &v)
 std::string Encode(const FacetrackingProfile &p)
 {
     picojson::object obj;
-    obj["master_enabled"]             = picojson::value(p.master_enabled);
     obj["eyelid_sync_enabled"]        = picojson::value(p.eyelid_sync_enabled);
     obj["eyelid_sync_preserve_winks"] = picojson::value(p.eyelid_sync_preserve_winks);
     obj["eyelid_sync_strength"]       = picojson::value((double)p.eyelid_sync_strength);
@@ -96,7 +93,6 @@ std::string Encode(const FacetrackingProfile &p)
     obj["vergence_lock_strength"]     = picojson::value((double)p.vergence_lock_strength);
     obj["continuous_calib_mode"]      = picojson::value((double)p.continuous_calib_mode);
     obj["output_osc_enabled"]         = picojson::value(p.output_osc_enabled);
-    obj["output_native_enabled"]      = picojson::value(p.output_native_enabled);
     obj["osc_host"]                   = picojson::value(p.osc_host);
     obj["osc_port"]                   = picojson::value((double)p.osc_port);
     obj["gaze_smoothing"]             = picojson::value((double)p.gaze_smoothing);

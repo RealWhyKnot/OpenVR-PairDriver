@@ -33,8 +33,8 @@ void SmoothingPlugin::OnStart(openvr_pair::overlay::ShellContext &)
 		SM_LOG("[ipc] initial connect failed: %s", connectError_.c_str());
 	}
 	SendConfig();
-	SM_LOG("[config] pushed: master=%d smoothness=%d finger_mask=0x%04x",
-		(int)cfg_.master_enabled, cfg_.smoothness, (unsigned)cfg_.finger_mask);
+	SM_LOG("[config] pushed: smoothness=%d finger_mask=0x%04x",
+		cfg_.smoothness, (unsigned)cfg_.finger_mask);
 	ReplayDevicePredictions();
 }
 
@@ -69,7 +69,7 @@ void SmoothingPlugin::SendConfig()
 {
 	if (!ipc_.IsConnected()) return;
 	protocol::Request req(protocol::RequestSetFingerSmoothing);
-	req.setFingerSmoothing.master_enabled = cfg_.master_enabled;
+	req.setFingerSmoothing.master_enabled = 1;
 	cfg_.smoothness = std::clamp(cfg_.smoothness, 0, 100);
 	req.setFingerSmoothing.smoothness = (uint8_t)cfg_.smoothness;
 	req.setFingerSmoothing.finger_mask = cfg_.finger_mask;

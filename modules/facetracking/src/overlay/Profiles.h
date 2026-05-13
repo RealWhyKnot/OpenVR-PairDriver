@@ -13,8 +13,6 @@
 struct FacetrackingProfile
 {
     // --- wire-side settings (mirrored to the driver on connect) ---
-    bool    master_enabled             = true;
-
     bool    eyelid_sync_enabled        = true;
     bool    eyelid_sync_preserve_winks = true;
     int     eyelid_sync_strength       = 70;   // 0..100
@@ -25,7 +23,6 @@ struct FacetrackingProfile
     int     continuous_calib_mode      = 1;    // 0=off 1=conservative 2=aggressive
 
     bool    output_osc_enabled         = true;
-    bool    output_native_enabled      = true;
     std::string osc_host               = "127.0.0.1";
     int     osc_port                   = 9000;
 

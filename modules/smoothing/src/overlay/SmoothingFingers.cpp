@@ -23,16 +23,6 @@ void SmoothingPlugin::DrawFingersTab()
 		"what reaches VRChat (and any other consumer of /input/skeleton) is the smoothed "
 		"signal.");
 
-	openvr_pair::overlay::ui::DrawSectionHeading("Master");
-	if (openvr_pair::overlay::ui::CheckboxWithTooltip(
-			"Enable finger smoothing", &cfg_.master_enabled,
-			"Off = the driver passes Knuckles bone arrays through untouched.\n"
-			"Exactly the same behaviour as a build without finger smoothing.")) {
-		dirty = true;
-	}
-
-	ImGui::BeginDisabled(!cfg_.master_enabled);
-
 	openvr_pair::overlay::ui::DrawSectionHeading("Strength");
 	int smoothness = cfg_.smoothness;
 	ImGui::SetNextItemWidth(260.0f);
@@ -41,12 +31,15 @@ void SmoothingPlugin::DrawFingersTab()
 			"0   = no smoothing (each frame snaps to incoming bones).\n"
 			"50  = moderate (good starting point).\n"
 			"100 = heavy lag (slerp factor 0.05 per frame). Never fully freezes.\n"
-			"Applied to every enabled finger below.")) {
+			"Applied to every enabled finger below.\n"
+			"Drag above 0% to enable per-finger overrides below.")) {
 		if (smoothness < 0)   smoothness = 0;
 		if (smoothness > 100) smoothness = 100;
 		cfg_.smoothness = smoothness;
 		dirty = true;
 	}
+
+	ImGui::BeginDisabled(cfg_.smoothness == 0);
 
 	openvr_pair::overlay::ui::DrawSectionHeading("Per-finger");
 	openvr_pair::overlay::ui::DrawTextWrapped(

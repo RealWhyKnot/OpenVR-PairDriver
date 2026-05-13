@@ -32,7 +32,7 @@ namespace
     {
         if (!client.IsConnected()) return;
         protocol::Request req(protocol::RequestSetFingerSmoothing);
-        req.setFingerSmoothing.master_enabled = cfg.master_enabled;
+        req.setFingerSmoothing.master_enabled = 1;
         int s = cfg.smoothness;
         if (s < 0) s = 0;
         if (s > 100) s = 100;
@@ -140,19 +140,6 @@ int main(int /*argc*/, char ** /*argv*/)
 
         bool dirty = false;
 
-        if (ImGui::Checkbox("Enable finger smoothing", &cfg.master_enabled)) {
-            dirty = true;
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip(
-                "Master kill switch. When off, the driver passes Knuckles bone\n"
-                "arrays through untouched -- exactly the same behaviour as a build\n"
-                "without the finger-smoothing feature compiled in.");
-        }
-
-        ImGui::Spacing();
-        ImGui::BeginDisabled(!cfg.master_enabled);
-
         int strength = cfg.smoothness;
         if (ImGui::SliderInt("Strength##fingers", &strength, 0, 100, "%d%%")) {
             if (strength < 0) strength = 0;
@@ -165,8 +152,10 @@ int main(int /*argc*/, char ** /*argv*/)
                 "0   = no smoothing (each frame snaps to incoming bones).\n"
                 "50  = moderate (good starting point).\n"
                 "100 = heavy lag (slerp factor 0.05 per frame). Never fully freezes.\n"
-                "Drag the slider live and feel the change immediately in-game.");
+                "Drag above 0%% to enable per-finger overrides below.");
         }
+
+        ImGui::BeginDisabled(cfg.smoothness == 0);
 
         ImGui::Spacing();
         ImGui::Text("Per-finger toggles (uncheck to bypass that finger only)");

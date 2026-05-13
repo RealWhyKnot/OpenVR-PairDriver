@@ -456,8 +456,8 @@ static vr::EVRInputError DetourPublicUpdateSkeletonComponent(
 
     // Look up which hand this is. Unknown handles (non-Index skeletal devices)
     // are counted but NOT smoothed -- they fast-path through. We do this lookup
-    // before the master_enabled gate so the per-hand stats counters give a
-    // meaningful "frames seen per hand" reading even when the feature is off,
+    // before the anySmoothing gate so the per-hand stats counters give a
+    // meaningful "frames seen per hand" reading even when smoothness=0,
     // which is the diagnostic the user needs to know whether the hook is
     // actually receiving the lighthouse skeleton stream.
     int handedness = -1;
@@ -546,7 +546,7 @@ static vr::EVRInputError DetourPublicUpdateSkeletonComponent(
         if (s != 0) anySmoothing = true;
     }
 
-    if (!cfg.master_enabled || !anySmoothing) {
+    if (!anySmoothing) {
         g_stats[handedness].passthroughCalls.fetch_add(1, std::memory_order_relaxed);
         MaybeLogStats("UpdateSkeleton");
         return PublicUpdateSkeletonHook.originalFunc(_this, ulComponent, eMotionRange, pTransforms, unTransformCount);

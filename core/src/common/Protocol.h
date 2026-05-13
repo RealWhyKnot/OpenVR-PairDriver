@@ -522,13 +522,11 @@ namespace protocol
 		// default for cold-start users.
 		uint8_t continuous_calib_mode;
 
-		// Output sink toggles. Driver publishes via OpenXR eye-gaze action +
-		// scalar input components when output_native_enabled is set; the host
-		// process sends OSC to VRChat when output_osc_enabled is set. Both can
-		// be on at once -- VRChat currently consumes only OSC on PCVR, but
-		// Resonite / NeosVR / future VRChat read the native path.
+		// Output sink toggles. The host process sends OSC to VRChat when
+		// output_osc_enabled is set. The native OpenXR eye-gaze path is
+		// reserved for Phase 3 -- always zero for now.
 		uint8_t output_osc_enabled;
-		uint8_t output_native_enabled;
+		uint8_t _reserved_native;   // was output_native_enabled; Phase 3
 		uint8_t _reserved1;
 
 		// Sync feature strengths on a 0..100 scale, identical semantics to

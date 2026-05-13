@@ -25,9 +25,9 @@ class ServerTrackedDeviceProvider;
 // intentionally narrow to minimise risk of breaking existing pose-update
 // behaviour shared with the calibration subsystem.
 //
-// Default-OFF: with master_enabled=false the detour is a one-line counter-bump
-// + originalFunc forward, so installing the hook has zero behaviour change for
-// users who don't opt in.
+// Default pass-through: with smoothness=0 and no per-finger overrides the
+// detour is a one-line counter-bump + originalFunc forward, so installing the
+// hook has zero behaviour change for users who don't opt in.
 
 namespace skeletal {
 

@@ -15,16 +15,6 @@ void DrawSettingsTab(FacetrackingPlugin &plugin)
 {
     FacetrackingProfile &p = plugin.profile_.current;
 
-    // ---- Master toggle ----
-    DrawSectionHeading("Master");
-
-    if (CheckboxWithTooltip("Enable Face Tracking", &p.master_enabled,
-            "Master on/off for the entire face-tracking pipeline.\n"
-            "Off = driver publishes no face/eye inputs and does not\n"
-            "start the hardware module host.")) {
-        plugin.PushConfigToDriver();
-    }
-
     // ---- Eyelid Sync ----
     DrawSectionHeading("Eyelid Sync");
 
@@ -135,20 +125,6 @@ void DrawSettingsTab(FacetrackingPlugin &plugin)
         }
     }
 
-    if (CheckboxWithTooltip("Native (OpenXR eye-gaze)", &p.output_native_enabled,
-            "Publishes gaze pose and eye-openness scalar components via\n"
-            "the SteamVR driver interface so XR_EXT_eye_gaze_interaction\n"
-            "consumers (Resonite, future VRChat) receive live data\n"
-            "without OSC.")) {
-        plugin.PushConfigToDriver();
-    }
-
-    // Native eye gaze path: the host has no observable state for this beyond
-    // the toggle. VRChat doesn't consume native eye-gaze on OpenVR anyway,
-    // so this stays a stub until the pinned openvr SDK exposes
-    // Prop_HasEyeTracking_Bool / CreatePoseComponent (see project memo
-    // project_facetracking_v1_2026-05-12.md).
-    ImGui::TextDisabled("Native status: stub -- not consumed by VRChat on OpenVR.");
 }
 
 } // namespace facetracking::ui

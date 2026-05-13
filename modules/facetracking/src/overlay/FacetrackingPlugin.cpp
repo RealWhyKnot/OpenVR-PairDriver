@@ -89,13 +89,13 @@ void FacetrackingPlugin::PushConfigToDriver()
         auto &cfg = req.setFaceTrackingConfig;
         const auto &p = profile_.current;
 
-        cfg.master_enabled             = p.master_enabled             ? 1 : 0;
+        cfg.master_enabled             = 1;
         cfg.eyelid_sync_enabled        = p.eyelid_sync_enabled        ? 1 : 0;
         cfg.eyelid_sync_preserve_winks = p.eyelid_sync_preserve_winks ? 1 : 0;
         cfg.vergence_lock_enabled      = p.vergence_lock_enabled       ? 1 : 0;
         cfg.continuous_calib_mode      = static_cast<uint8_t>(p.continuous_calib_mode);
         cfg.output_osc_enabled         = p.output_osc_enabled          ? 1 : 0;
-        cfg.output_native_enabled      = p.output_native_enabled       ? 1 : 0;
+        cfg._reserved_native           = 0;
         cfg._reserved1                 = 0;
         cfg.eyelid_sync_strength       = static_cast<uint8_t>(p.eyelid_sync_strength);
         cfg.vergence_lock_strength     = static_cast<uint8_t>(p.vergence_lock_strength);
@@ -120,9 +120,8 @@ void FacetrackingPlugin::PushConfigToDriver()
             return;
         }
         last_error_.clear();
-        FT_LOG_OVL("[ipc] config pushed: master=%d osc=%d native=%d eyelid=%d vergence=%d calib_mode=%d",
-            (int)cfg.master_enabled, (int)cfg.output_osc_enabled,
-            (int)cfg.output_native_enabled, (int)cfg.eyelid_sync_enabled,
+        FT_LOG_OVL("[ipc] config pushed: osc=%d eyelid=%d vergence=%d calib_mode=%d",
+            (int)cfg.output_osc_enabled, (int)cfg.eyelid_sync_enabled,
             (int)cfg.vergence_lock_enabled, (int)cfg.continuous_calib_mode);
     } catch (const std::exception &e) {
         last_error_ = std::string("IPC error: ") + e.what();
