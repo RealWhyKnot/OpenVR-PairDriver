@@ -58,6 +58,15 @@ $srcHostDir = Join-Path $PSScriptRoot "build\driver_wkopenvr\resources\facetrack
 $srcHostExe = Join-Path $srcHostDir "OpenVRPair.FaceModuleHost.exe"
 $hostPresent = (Test-Path -LiteralPath $srcHostExe)
 
+# Overlay-side resources tree (currently: face-module-sync.ps1 for the FaceTracking
+# Modules tab's Sync button). The overlay launches resources\face-module-sync.ps1
+# via CreateProcessW with an absolute path computed from the exe's directory, so the
+# tree has to live next to WKOpenVR.exe. SHA-track the sync script as the canary;
+# the tree is copied wholesale below.
+$srcResourcesDir = Join-Path $PSScriptRoot "build\artifacts\Release\resources"
+$srcSyncScript   = Join-Path $srcResourcesDir "face-module-sync.ps1"
+if (-not (Test-Path -LiteralPath $srcSyncScript)) { throw "Build artifact missing: $srcSyncScript" }
+
 # Deployed copies.
 $dstExe       = Join-Path $InstallDir "WKOpenVR.exe"
 $dstOpenVR    = Join-Path $InstallDir "openvr_api.dll"
@@ -68,19 +77,23 @@ $dstDriverDir = Join-Path $dstDriverRoot "bin\win64"
 $dstDll       = Join-Path $dstDriverDir "driver_01wkopenvr.dll"
 $dstHostDir   = Join-Path $dstDriverRoot "resources\facetracking\host"
 $dstHostExe   = Join-Path $dstHostDir "OpenVRPair.FaceModuleHost.exe"
+$dstResourcesDir = Join-Path $InstallDir "resources"
+$dstSyncScript   = Join-Path $dstResourcesDir "face-module-sync.ps1"
 
 $srcExeSha      = Get-Sha $srcExe
 $srcOpenVRSha   = Get-Sha $srcOpenVR
 $srcDllSha      = Get-Sha $srcDll
 $srcManifestSha = Get-Sha $srcManifest
 $srcIconSha     = Get-Sha $srcIcon
-$srcHostExeSha  = if ($hostPresent) { Get-Sha $srcHostExe } else { $null }
-$dstExeSha      = Get-Sha $dstExe
-$dstOpenVRSha   = Get-Sha $dstOpenVR
-$dstDllSha      = Get-Sha $dstDll
-$dstManifestSha = Get-Sha $dstManifest
-$dstIconSha     = Get-Sha $dstIcon
-$dstHostExeSha  = Get-Sha $dstHostExe
+$srcHostExeSha   = if ($hostPresent) { Get-Sha $srcHostExe } else { $null }
+$srcSyncScriptSha = Get-Sha $srcSyncScript
+$dstExeSha       = Get-Sha $dstExe
+$dstOpenVRSha    = Get-Sha $dstOpenVR
+$dstDllSha       = Get-Sha $dstDll
+$dstManifestSha  = Get-Sha $dstManifest
+$dstIconSha      = Get-Sha $dstIcon
+$dstHostExeSha   = Get-Sha $dstHostExe
+$dstSyncScriptSha = Get-Sha $dstSyncScript
 
 Write-Host ""
 Write-Host ("Source exe:         {0}" -f $srcExeSha)
@@ -93,6 +106,8 @@ Write-Host ("Source manifest:    {0}" -f $srcManifestSha)
 Write-Host ("Deployed manifest:  {0}" -f $dstManifestSha)
 Write-Host ("Source icon:        {0}" -f $srcIconSha)
 Write-Host ("Deployed icon:      {0}" -f $dstIconSha)
+Write-Host ("Source sync-script: {0}" -f $srcSyncScriptSha)
+Write-Host ("Deployed sync-scr:  {0}" -f $dstSyncScriptSha)
 if ($hostPresent) {
 	Write-Host ("Source host:       {0}" -f $srcHostExeSha)
 	Write-Host ("Deployed host:     {0}" -f $dstHostExeSha)
@@ -100,26 +115,28 @@ if ($hostPresent) {
 	Write-Host "Source host:       (not built; OPENVR_PAIR_BUILD_FACE_HOST=OFF or .NET 10 SDK missing)"
 }
 
-$exeStale      = ($srcExeSha -ne $dstExeSha)
-$openVRStale   = ($srcOpenVRSha -ne $dstOpenVRSha)
-$driverStale   = ($srcDllSha -ne $dstDllSha)
-$manifestStale = ($srcManifestSha -ne $dstManifestSha)
-$iconStale     = ($srcIconSha -ne $dstIconSha)
-$hostStale     = $hostPresent -and ($srcHostExeSha -ne $dstHostExeSha)
+$exeStale       = ($srcExeSha -ne $dstExeSha)
+$openVRStale    = ($srcOpenVRSha -ne $dstOpenVRSha)
+$driverStale    = ($srcDllSha -ne $dstDllSha)
+$manifestStale  = ($srcManifestSha -ne $dstManifestSha)
+$iconStale      = ($srcIconSha -ne $dstIconSha)
+$resourcesStale = ($srcSyncScriptSha -ne $dstSyncScriptSha)
+$hostStale      = $hostPresent -and ($srcHostExeSha -ne $dstHostExeSha)
 
-if (-not $exeStale -and -not $openVRStale -and -not $driverStale -and -not $manifestStale -and -not $iconStale -and -not $hostStale) {
+if (-not $exeStale -and -not $openVRStale -and -not $driverStale -and -not $manifestStale -and -not $iconStale -and -not $resourcesStale -and -not $hostStale) {
 	Write-Host ""
 	Write-Host "Already up to date. Deployed build: $(Resolve-Version $dstExe)"
 	exit 0
 }
 
 Write-Host ""
-if ($exeStale)      { Write-Host "Overlay exe needs redeploy." }
-if ($openVRStale)   { Write-Host "openvr_api.dll needs redeploy." }
-if ($driverStale)   { Write-Host "Driver DLL needs redeploy." }
-if ($manifestStale) { Write-Host "vrmanifest needs redeploy." }
-if ($iconStale)     { Write-Host "Dashboard icon needs redeploy." }
-if ($hostStale)     { Write-Host "FaceModuleHost tree needs redeploy." }
+if ($exeStale)       { Write-Host "Overlay exe needs redeploy." }
+if ($openVRStale)    { Write-Host "openvr_api.dll needs redeploy." }
+if ($driverStale)    { Write-Host "Driver DLL needs redeploy." }
+if ($manifestStale)  { Write-Host "vrmanifest needs redeploy." }
+if ($iconStale)      { Write-Host "Dashboard icon needs redeploy." }
+if ($resourcesStale) { Write-Host "Overlay resources tree needs redeploy." }
+if ($hostStale)      { Write-Host "FaceModuleHost tree needs redeploy." }
 
 if (-not $Yes) {
 	$reply = Read-Host "Continue with elevated copy? [y/N]"
@@ -168,6 +185,15 @@ try {
 	# at SetOverlayFromFile time.
 	Copy-Item -LiteralPath '$srcIcon' -Destination '$dstIcon' -Force
 
+	# Overlay-side resources tree (currently: face-module-sync.ps1 for the
+	# FaceTracking Modules tab's Sync button; future overlay scripts land here
+	# too). The overlay launches resources\face-module-sync.ps1 via
+	# CreateProcessW with an absolute path derived from the exe's directory --
+	# missing this tree means the Sync button silently fails ("Result JSON
+	# parse error"). Use -Path (not -LiteralPath) so the * actually globs.
+	New-Item -ItemType Directory -Force -Path '$dstResourcesDir' | Out-Null
+	Copy-Item -Path (Join-Path '$srcResourcesDir' '*') -Destination '$dstResourcesDir' -Recurse -Force
+
 	# Face-tracking host sidecar. Replaced wholesale because the .NET publish
 	# output (deps.json, runtimeconfig.json, dependent DLLs) varies between
 	# builds. Apply the same rename-aside pattern used for the driver DLL: if
@@ -187,13 +213,14 @@ try {
 		Copy-Item -Path (Join-Path `$hostSrc '*') -Destination `$hostDst -Recurse -Force
 	}
 
-	`$exeSha      = (Get-FileHash -LiteralPath '$dstExe' -Algorithm SHA256).Hash
-	`$openVRSha   = (Get-FileHash -LiteralPath '$dstOpenVR' -Algorithm SHA256).Hash
-	`$dllSha      = (Get-FileHash -LiteralPath '$dstDll' -Algorithm SHA256).Hash
-	`$manifestSha = (Get-FileHash -LiteralPath '$dstManifest' -Algorithm SHA256).Hash
-	`$iconSha     = (Get-FileHash -LiteralPath '$dstIcon' -Algorithm SHA256).Hash
-	`$hostSha     = if (Test-Path -LiteralPath '$dstHostExe') { (Get-FileHash -LiteralPath '$dstHostExe' -Algorithm SHA256).Hash } else { '' }
-	Set-Content -LiteralPath '$resultFile' -Value ("OK`n" + `$exeSha + "`n" + `$openVRSha + "`n" + `$dllSha + "`n" + `$manifestSha + "`n" + `$iconSha + "`n" + `$hostSha)
+	`$exeSha       = (Get-FileHash -LiteralPath '$dstExe' -Algorithm SHA256).Hash
+	`$openVRSha    = (Get-FileHash -LiteralPath '$dstOpenVR' -Algorithm SHA256).Hash
+	`$dllSha       = (Get-FileHash -LiteralPath '$dstDll' -Algorithm SHA256).Hash
+	`$manifestSha  = (Get-FileHash -LiteralPath '$dstManifest' -Algorithm SHA256).Hash
+	`$iconSha      = (Get-FileHash -LiteralPath '$dstIcon' -Algorithm SHA256).Hash
+	`$syncScriptSha = (Get-FileHash -LiteralPath '$dstSyncScript' -Algorithm SHA256).Hash
+	`$hostSha      = if (Test-Path -LiteralPath '$dstHostExe') { (Get-FileHash -LiteralPath '$dstHostExe' -Algorithm SHA256).Hash } else { '' }
+	Set-Content -LiteralPath '$resultFile' -Value ("OK`n" + `$exeSha + "`n" + `$openVRSha + "`n" + `$dllSha + "`n" + `$manifestSha + "`n" + `$iconSha + "`n" + `$syncScriptSha + "`n" + `$hostSha)
 	exit 0
 } catch {
 	Set-Content -LiteralPath '$resultFile' -Value ("ERR`n" + `$_.Exception.Message)
@@ -249,38 +276,42 @@ if ($resultLines.Count -lt 1 -or $resultLines[0] -ne "OK") {
 # Re-verify destination SHA against source. The helper already reported a
 # value but we re-read from disk so partial writes or post-write tampering
 # get caught.
-$postExeSha      = Get-Sha $dstExe
-$postOpenVRSha   = Get-Sha $dstOpenVR
-$postDllSha      = Get-Sha $dstDll
-$postManifestSha = Get-Sha $dstManifest
-$postIconSha     = Get-Sha $dstIcon
-$postHostExeSha  = Get-Sha $dstHostExe
+$postExeSha        = Get-Sha $dstExe
+$postOpenVRSha     = Get-Sha $dstOpenVR
+$postDllSha        = Get-Sha $dstDll
+$postManifestSha   = Get-Sha $dstManifest
+$postIconSha       = Get-Sha $dstIcon
+$postSyncScriptSha = Get-Sha $dstSyncScript
+$postHostExeSha    = Get-Sha $dstHostExe
 
-$exeOk      = ($postExeSha -eq $srcExeSha)
-$openVROk   = ($postOpenVRSha -eq $srcOpenVRSha)
-$dllOk      = ($postDllSha -eq $srcDllSha)
-$manifestOk = ($postManifestSha -eq $srcManifestSha)
-$iconOk     = ($postIconSha -eq $srcIconSha)
-$hostOk     = (-not $hostPresent) -or ($postHostExeSha -eq $srcHostExeSha)
+$exeOk         = ($postExeSha -eq $srcExeSha)
+$openVROk      = ($postOpenVRSha -eq $srcOpenVRSha)
+$dllOk         = ($postDllSha -eq $srcDllSha)
+$manifestOk    = ($postManifestSha -eq $srcManifestSha)
+$iconOk        = ($postIconSha -eq $srcIconSha)
+$syncScriptOk  = ($postSyncScriptSha -eq $srcSyncScriptSha)
+$hostOk        = (-not $hostPresent) -or ($postHostExeSha -eq $srcHostExeSha)
 
 Write-Host ""
-Write-Host ("Post-copy exe:        {0} {1}" -f $postExeSha,      ($(if ($exeOk)      { "OK" } else { "MISMATCH" })))
-Write-Host ("Post-copy openvr_api: {0} {1}" -f $postOpenVRSha,   ($(if ($openVROk)   { "OK" } else { "MISMATCH" })))
-Write-Host ("Post-copy DLL:        {0} {1}" -f $postDllSha,      ($(if ($dllOk)      { "OK" } else { "MISMATCH" })))
-Write-Host ("Post-copy manifest:   {0} {1}" -f $postManifestSha, ($(if ($manifestOk) { "OK" } else { "MISMATCH" })))
-Write-Host ("Post-copy icon:       {0} {1}" -f $postIconSha,     ($(if ($iconOk)     { "OK" } else { "MISMATCH" })))
+Write-Host ("Post-copy exe:         {0} {1}" -f $postExeSha,        ($(if ($exeOk)        { "OK" } else { "MISMATCH" })))
+Write-Host ("Post-copy openvr_api:  {0} {1}" -f $postOpenVRSha,     ($(if ($openVROk)     { "OK" } else { "MISMATCH" })))
+Write-Host ("Post-copy DLL:         {0} {1}" -f $postDllSha,        ($(if ($dllOk)        { "OK" } else { "MISMATCH" })))
+Write-Host ("Post-copy manifest:    {0} {1}" -f $postManifestSha,   ($(if ($manifestOk)   { "OK" } else { "MISMATCH" })))
+Write-Host ("Post-copy icon:        {0} {1}" -f $postIconSha,       ($(if ($iconOk)       { "OK" } else { "MISMATCH" })))
+Write-Host ("Post-copy sync-script: {0} {1}" -f $postSyncScriptSha, ($(if ($syncScriptOk) { "OK" } else { "MISMATCH" })))
 if ($hostPresent) {
-	Write-Host ("Post-copy host:       {0} {1}" -f $postHostExeSha, ($(if ($hostOk) { "OK" } else { "MISMATCH" })))
+	Write-Host ("Post-copy host:        {0} {1}" -f $postHostExeSha, ($(if ($hostOk) { "OK" } else { "MISMATCH" })))
 }
 
-if (-not $exeOk -or -not $openVROk -or -not $dllOk -or -not $manifestOk -or -not $iconOk -or -not $hostOk) {
+if (-not $exeOk -or -not $openVROk -or -not $dllOk -or -not $manifestOk -or -not $iconOk -or -not $syncScriptOk -or -not $hostOk) {
 	$detail = @()
-	if (-not $exeOk)      { $detail += "exe at $dstExe still does not match source" }
-	if (-not $openVROk)   { $detail += "openvr_api.dll at $dstOpenVR still does not match source" }
-	if (-not $dllOk)      { $detail += "driver DLL at $dstDll still does not match source" }
-	if (-not $manifestOk) { $detail += "manifest at $dstManifest still does not match source" }
-	if (-not $iconOk)     { $detail += "icon at $dstIcon still does not match source" }
-	if (-not $hostOk)     { $detail += "FaceModuleHost.exe at $dstHostExe still does not match source" }
+	if (-not $exeOk)        { $detail += "exe at $dstExe still does not match source" }
+	if (-not $openVROk)     { $detail += "openvr_api.dll at $dstOpenVR still does not match source" }
+	if (-not $dllOk)        { $detail += "driver DLL at $dstDll still does not match source" }
+	if (-not $manifestOk)   { $detail += "manifest at $dstManifest still does not match source" }
+	if (-not $iconOk)       { $detail += "icon at $dstIcon still does not match source" }
+	if (-not $syncScriptOk) { $detail += "face-module-sync.ps1 at $dstSyncScript still does not match source" }
+	if (-not $hostOk)       { $detail += "FaceModuleHost.exe at $dstHostExe still does not match source" }
 	throw ("Deploy did not converge: " + ($detail -join "; "))
 }
 
