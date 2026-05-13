@@ -72,3 +72,4 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **quick.ps1:** Deploy the overlay resources tree alongside the exe (2f4ca75)
 - **facetracking:** Make the Sync subprocess actually work end-to-end (7322dc2)
 - **overlay:** Suppress shell scrollbar so SC tab does not stack two (61d51f6)
+- **ci:** Delimit MaxAttempts in release verify-body log lines (ad51073)
