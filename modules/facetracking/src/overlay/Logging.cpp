@@ -1,6 +1,7 @@
 #define _CRT_SECURE_NO_DEPRECATE
 #include "Logging.h"
 
+#include <atomic>
 #include <chrono>
 #include <string>
 #include <vector>
@@ -15,6 +16,10 @@
 // real log destination is set inside FtOpenLogFile() once the rotation
 // directory is ready.
 FILE *FtLogFile = stderr;
+
+// Verbose flag. Default false; set true by the Logs tab checkbox and forced
+// true on dev-channel builds (see LogsSection.cpp).
+std::atomic<bool> FtOverlayVerbose{ false };
 
 namespace {
 

@@ -223,6 +223,9 @@ namespace protocol
 		// v15: pick which hardware module (Quest Pro, Vive FT, ...) the host
 		// should load. Driver forwards over its host-side control pipe.
 		RequestSetFaceActiveModule,
+		// v15 (2026-05-13): signal the driver to terminate and respawn the
+		// C# module host. Overlay flushes calibration first, then sends this.
+		RequestFaceHostRestart,
 	};
 
 	enum ResponseType

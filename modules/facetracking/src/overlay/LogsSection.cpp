@@ -2,6 +2,7 @@
 
 #include "BuildStamp.h"
 #include "FacetrackingPlugin.h"
+#include "Logging.h"
 #include "UiHelpers.h"
 
 #include <imgui/imgui.h>
@@ -75,17 +76,16 @@ void DrawLogsSection(FacetrackingPlugin &plugin)
 
     const bool isDev = (std::string(FACETRACKING_BUILD_CHANNEL) == "dev");
 
-    if (isDev) ImGui::BeginDisabled();
+    if (isDev) {
+        FtOverlayVerbose.store(true, std::memory_order_relaxed);
+        ImGui::BeginDisabled();
+    }
 
-    // Overlay-side verbose logging is controlled via the profile.
-    // The driver-side verbose toggle is separate (driver owns its log).
-    static bool verboseOverlay = isDev; // forced on in dev channel
-    if (isDev) verboseOverlay = true;
-
+    bool verboseOverlay = FtOverlayVerbose.load(std::memory_order_relaxed);
     if (CheckboxWithTooltip("Verbose overlay logging", &verboseOverlay,
             "Write extra trace lines from the overlay side to the\n"
             "facetracking_log.* file. Enabled and locked in dev builds.")) {
-        // TODO(V2): propagate to a run-time verbosity flag in Logging.cpp
+        FtOverlayVerbose.store(verboseOverlay, std::memory_order_relaxed);
     }
 
     if (isDev) {

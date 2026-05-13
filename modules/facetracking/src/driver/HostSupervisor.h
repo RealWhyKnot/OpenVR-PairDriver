@@ -33,6 +33,11 @@ public:
     // Terminate the host process and stop the monitor thread.
     void Stop();
 
+    // Terminate the host process and restart it. The monitor thread continues
+    // running; after Stop()+Start() the supervisor will respawn the host and
+    // resume its usual crash-restart loop.
+    void Restart();
+
     // True if the host process is currently alive.
     bool IsRunning() const;
 

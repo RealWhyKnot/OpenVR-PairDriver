@@ -107,6 +107,10 @@ public:
     int WarmShapeCount() const;
     int TotalShapeCount() const;
 
+    // Per-shape warmth query for the telemetry sidecar.  idx must be in
+    // [0, kTotalShapes).  Returns false for out-of-range indices.
+    bool IsShapeWarm(int idx) const;
+
 private:
     // Layout:
     //   [0..62]  expressions[0..62]

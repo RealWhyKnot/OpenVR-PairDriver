@@ -276,6 +276,12 @@ int CalibrationEngine::TotalShapeCount() const
     return kTotalShapes;
 }
 
+bool CalibrationEngine::IsShapeWarm(int idx) const
+{
+    if (idx < 0 || idx >= kTotalShapes) return false;
+    return shapes_[idx].warm;
+}
+
 void CalibrationEngine::Reset(protocol::FaceCalibrationOp op)
 {
     switch (op) {

@@ -42,13 +42,6 @@ static const char *const kShapeNames[63] = {
     "NeckTension",
 };
 
-// V1: the driver publishes shape warmth via telemetry once that channel is
-// wired. For now every shape reports "cold" so the readiness dots show the
-// correct initial state and the UI structure is in place.
-static bool ShapeIsWarm(int /*index*/)
-{
-    return false; // TODO(V2): read from shmem telemetry
-}
 
 void DrawCalibrationTab(FacetrackingPlugin &plugin)
 {
@@ -114,8 +107,18 @@ void DrawCalibrationTab(FacetrackingPlugin &plugin)
     // ---- Vergence / focus-distance readout ----
     DrawSectionHeading("Vergence readout");
 
-    ImGui::TextDisabled("Focus distance: n/a (driver telemetry not wired in V1)");
-    ImGui::TextDisabled("IPD estimate:   n/a");
+    const auto &dt = plugin.driver_telemetry_.Snapshot();
+    if (!dt.valid || dt.stale) {
+        ImGui::TextDisabled("Focus distance: (no driver data)");
+        ImGui::TextDisabled("IPD estimate:   (no driver data)");
+    } else if (!dt.vergence_enabled) {
+        ImGui::TextDisabled("Focus distance: (vergence lock off)");
+        ImGui::TextDisabled("IPD estimate:   %.1f mm",
+            dt.ipd_m * 1000.f);
+    } else {
+        ImGui::Text("Focus distance: %.2f m", dt.focus_distance_m);
+        ImGui::Text("IPD estimate:   %.1f mm", dt.ipd_m * 1000.f);
+    }
 
     // ---- Per-shape readiness grid ----
     DrawSectionHeading("Shape readiness (63 expressions + 2 eyes)");
@@ -135,7 +138,8 @@ void DrawCalibrationTab(FacetrackingPlugin &plugin)
     for (int i = 0; i < kTotalDots; ++i) {
         if (i > 0 && (i % safeCols) != 0) ImGui::SameLine();
 
-        const bool warm = (i < 63) ? ShapeIsWarm(i) : false;
+        // shape_warm[0..62] = expressions, [63] = EyeOpen_L, [64] = EyeOpen_R.
+        const bool warm = dt.valid && !dt.stale && dt.shape_warm[i];
         const char *label = (i < 63)
             ? kShapeNames[i]
             : (i == 63 ? "EyeOpen_L" : "EyeOpen_R");

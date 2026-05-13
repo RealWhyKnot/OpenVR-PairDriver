@@ -9,6 +9,8 @@ add_library(openvr_pair_feature_facetracking_overlay STATIC
 	BuildStamp.h
 	CalibrationTab.cpp
 	CalibrationTab.h
+	DriverTelemetryPoller.cpp
+	DriverTelemetryPoller.h
 	FacetrackingPlugin.cpp
 	FacetrackingPlugin.h
 	HostStatusPoller.cpp

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DriverTelemetryPoller.h"
 #include "FeaturePlugin.h"
 #include "HostStatusPoller.h"
 #include "IPCClient.h"
@@ -56,9 +57,10 @@ private:
     friend void facetracking::ui::DrawAdvancedTab(FacetrackingPlugin &plugin);
     friend void facetracking::ui::DrawLogsSection(FacetrackingPlugin &plugin);
 
-    FtIPCClient                   ipc_;
-    FacetrackingProfileStore      profile_;
-    facetracking::HostStatusPoller host_status_;
+    FtIPCClient                      ipc_;
+    FacetrackingProfileStore         profile_;
+    facetracking::HostStatusPoller   host_status_;
+    facetracking::DriverTelemetryPoller driver_telemetry_;
 
     std::string last_error_;
     uint64_t    observed_ipc_generation_ = 0;

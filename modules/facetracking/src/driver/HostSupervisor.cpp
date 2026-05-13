@@ -44,6 +44,18 @@ void HostSupervisor::Stop()
     if (monitor_thread_.joinable()) monitor_thread_.join();
 }
 
+void HostSupervisor::Restart()
+{
+    FT_LOG_DRV("[host] Restart() requested", 0);
+    Kill(); // terminates the current process; running_ set to false
+    // The monitor thread is still alive and will see process_handle_ ==
+    // INVALID_HANDLE_VALUE on its next iteration and re-Spawn().
+    // To avoid waiting for the next 1-second poll, explicitly respawn now.
+    if (!stop_requested_.load(std::memory_order_acquire)) {
+        Spawn();
+    }
+}
+
 bool HostSupervisor::IsRunning() const
 {
     return running_.load(std::memory_order_acquire);

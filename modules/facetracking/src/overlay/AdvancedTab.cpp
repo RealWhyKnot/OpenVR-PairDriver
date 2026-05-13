@@ -7,6 +7,8 @@
 
 #include <imgui/imgui.h>
 
+#include <exception>
+
 namespace facetracking::ui {
 
 using namespace openvr_pair::overlay::ui;
@@ -68,25 +70,23 @@ void DrawAdvancedTab(FacetrackingPlugin &plugin)
 
     if (ImGui::Button("Restart host process")) {
         plugin.SendCalibrationCommand(protocol::FaceCalibSave); // flush calib first
-        // TODO(V2): host restart control message via driver pipe
-        FT_LOG_OVL("[advanced] user requested host restart (stub)");
+
+        protocol::Request req(protocol::RequestFaceHostRestart);
+        if (plugin.ipc_.IsConnected()) {
+            try {
+                plugin.ipc_.SendBlocking(req);
+                FT_LOG_OVL("[advanced] host restart sent to driver");
+            } catch (const std::exception &e) {
+                FT_LOG_OVL("[advanced] host restart failed: %s", e.what());
+            }
+        } else {
+            FT_LOG_OVL("[advanced] host restart skipped: driver not connected");
+        }
     }
     TooltipForLastItem(
         "Signal the driver to terminate and respawn the C# module host.\n"
         "Use this if the host has wedged or a module update requires\n"
         "a clean reload. Calibration data is flushed first.");
-
-    // ---- OSC discovery override ----
-    DrawSectionHeading("OSC discovery");
-
-    static bool oscDiscoveryOverride = false;
-    if (CheckboxWithTooltip("Disable mDNS VRChat discovery", &oscDiscoveryOverride,
-            "The module host attempts mDNS-based VRChat port discovery\n"
-            "and falls back to 127.0.0.1:9000 when it fails.\n"
-            "Check this box to skip discovery and always use the\n"
-            "host/port configured in Settings.")) {
-        // TODO(V2): send override flag to host via config
-    }
 
     // ---- Value preview ----
     DrawSectionHeading("Value preview");

@@ -42,6 +42,9 @@ void VergenceLock::Apply(protocol::FaceTrackingFrameBody &frame, uint8_t strengt
     Vec3 d_L = Normalize({ frame.eye_gaze_l[0], frame.eye_gaze_l[1], frame.eye_gaze_l[2] });
     Vec3 d_R = Normalize({ frame.eye_gaze_r[0], frame.eye_gaze_r[1], frame.eye_gaze_r[2] });
 
+    // Update IPD estimate whenever both origins are valid.
+    last_ipd_m_ = Length(Sub(o_L, o_R));
+
     // Eye-dropout fallback: if one eye's confidence is below 0.3, drive both
     // gaze directions from the surviving eye (better than independent jitter
     // from a low-confidence sensor feeding the reconstruction separately).
@@ -107,6 +110,7 @@ void VergenceLock::Apply(protocol::FaceTrackingFrameBody &frame, uint8_t strengt
     Vec3 eyeMid = Scale(Add(o_L, o_R), 0.5f);
     Vec3 toFocus = Sub(focus, eyeMid);
     float dist = Length(toFocus);
+    last_focus_m_ = dist; // record before clamping / early-return checks
 
     if (dist < 0.10f) {
         // Non-physiological close distance -- scale focus out to 0.10 m.
