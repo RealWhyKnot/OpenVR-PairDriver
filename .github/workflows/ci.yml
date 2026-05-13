@@ -47,6 +47,15 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Validate workflow / script PowerShell syntax
+        # Catches the class of latent PowerShell parser bug that took
+        # down recent release attempts. Runs first so a syntax mistake
+        # fails the PR / push in seconds instead of after a 5-minute
+        # build.
+        shell: pwsh
+        run: |
+          ./.github/scripts/Test-WorkflowSyntax.ps1
+
       - name: Set up .NET 10 SDK
         # Pinned by modules/facetracking/src/host/global.json. Without an
         # explicit setup the runner default may not include 10.x and the
