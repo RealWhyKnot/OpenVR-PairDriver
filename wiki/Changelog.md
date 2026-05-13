@@ -52,6 +52,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **repo:** Collapse four-repo layout into monorepo tree (f2e1b48)
 - rename: OpenVR-WK* repos -> WKOpenVR* scheme (4135339)
 - ux: drop FT + smoothing master toggles; smoothing strength=0 disables fingers (40ce0a6)
+- rename: product OpenVR-Pair -> WKOpenVR with first-launch AppData + registry + vrmanifest migration (8c99984)
 
 ### Fixed
 - **inputhealth:** Make observation fail open (0.1.0.0) (a01318b)
