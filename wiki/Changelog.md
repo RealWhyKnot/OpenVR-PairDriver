@@ -28,6 +28,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **protocol:** Bump to v15 with face-tracking wire types (2026.5.12.13-3A37) (88651af)
 - **overlay:** Add dashboard renderer for the SteamVR overlay surface (2026.5.12.13-3A37) (1aa0fbf)
 - **facetracking:** Reflection bridge for VRCFT upstream modules (3d6bc1f)
+- **facetracking:** Host_status.json sidecar + native-lib resolver (2372d02)
 
 ### Changed
 - Rename export macro to OPENVRPAIRDRIVER_EXPORTS (c7df7e6)
