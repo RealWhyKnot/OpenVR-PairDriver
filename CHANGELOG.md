@@ -34,6 +34,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **facetracking:** Strip Ed25519 signing path; point host at legacy-registry.whyknot.dev (25a36f0)
 - **facetracking:** Wire driver telemetry; replace V1 stubs with real wiring or removal (1c0b487)
 - **facetracking:** Module sources (folder + GitHub) with SHA verify; drop legacy trust UI (46a4224)
+- **facetracking:** Redesign Modules tab around multi-select (32e0d77)
 
 ### Changed
 - Rename export macro to OPENVRPAIRDRIVER_EXPORTS (c7df7e6)
