@@ -48,6 +48,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - Bump feature modules for build fixes (439ec19)
 - Clear stale CMake generator instance cache (35ccfb5)
 - **repo:** Collapse four-repo layout into monorepo tree (f2e1b48)
+- rename: OpenVR-WK* repos -> WKOpenVR* scheme (4135339)
 
 ### Fixed
 - **inputhealth:** Make observation fail open (0.1.0.0) (a01318b)
