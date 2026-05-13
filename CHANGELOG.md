@@ -67,3 +67,4 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **overlay:** Elevate flag-toggle via EncodedCommand and -Path for New-Item (2026.5.12.13-3A37) (eb72415)
 - **build:** Resolve compile errors after phases 2-4 (friend decls, includes, namespace qualifications) (7e664fd)
 - **hooks:** Refresh stale version.txt stamp to today when prepare-commit-msg fires (b3e127a)
+- **calibration:** Suppress continuous-cal when a non-HMD anchor goes silent (528ab12)
