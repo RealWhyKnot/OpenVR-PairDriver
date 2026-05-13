@@ -34,7 +34,7 @@ namespace {
 // Telemetry sidecar helpers
 // -----------------------------------------------------------------------
 
-// %LocalAppDataLow%\WKOpenVR\facetracking\
+// %LocalAppDataLow%/WKOpenVR/facetracking/
 static std::wstring ResolveTelemetryDir()
 {
     PWSTR raw = nullptr;

@@ -5,6 +5,8 @@
 #include "ModuleSources.h"
 #include "UiHelpers.h"
 
+#include "picojson.h"
+
 #include <imgui/imgui.h>
 
 #define WIN32_LEAN_AND_MEAN
@@ -124,7 +126,7 @@ static void DrawActiveModuleSection(FacetrackingPlugin &plugin)
 {
     DrawSectionHeading("Active module");
 
-    const auto &hs = plugin.host_status_.Snapshot();
+    const auto &hs = plugin.HostStatus().Snapshot();
     const std::string *hostActiveUuid =
         hs.valid && hs.active_module.has_value() ? &hs.active_module->uuid : nullptr;
 
@@ -138,7 +140,7 @@ static void DrawActiveModuleSection(FacetrackingPlugin &plugin)
     static bool idx_synced = false;
     if (!idx_synced) {
         idx_synced = true;
-        const std::string &saved = plugin.profile_.current.active_module_uuid;
+        const std::string &saved = plugin.Profile().current.active_module_uuid;
         if (!saved.empty()) {
             for (size_t i = 0; i < g_state.installed.size(); ++i) {
                 if (g_state.installed[i].uuid == saved) {
@@ -259,7 +261,7 @@ static void DrawSourcesSection(FacetrackingPlugin &plugin)
     DrawSectionHeading("Module sources");
 
     // ---- poll sync runner (shared with plugin startup auto-updates) ----
-    auto result = plugin.sync_runner_.Poll();
+    auto result = plugin.SyncRunner().Poll();
     if (result.has_value()) {
         g_state.sync_status    = result->message;
         g_state.sync_status_ok = result->ok;
@@ -278,7 +280,7 @@ static void DrawSourcesSection(FacetrackingPlugin &plugin)
         else
             ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f),
                                "Sync error: %s", g_state.sync_status.c_str());
-    } else if (plugin.sync_runner_.IsRunning()) {
+    } else if (plugin.SyncRunner().IsRunning()) {
         ImGui::TextDisabled("Syncing...");
     }
 
@@ -342,7 +344,7 @@ static void DrawSourcesSection(FacetrackingPlugin &plugin)
                 ImGui::TextDisabled("Never synced");
 
             ImGui::TableSetColumnIndex(4);
-            bool syncing = plugin.sync_runner_.IsRunning();
+            bool syncing = plugin.SyncRunner().IsRunning();
 
             ImGui::BeginDisabled(syncing);
             if (ImGui::SmallButton(("Sync##" + src.id).c_str())) {
@@ -363,13 +365,13 @@ static void DrawSourcesSection(FacetrackingPlugin &plugin)
         if (needSave) SaveSourcesCatalogue(g_state.catalogue);
 
         // Trigger sync outside the table loop to avoid iterator invalidation.
-        if (!syncSourceId.empty() && !plugin.sync_runner_.IsRunning())
-            plugin.sync_runner_.StartUpdate(syncSourceId, syncSourceData);
+        if (!syncSourceId.empty() && !plugin.SyncRunner().IsRunning())
+            plugin.SyncRunner().StartUpdate(syncSourceId, syncSourceData);
 
         if (removeIdx >= 0) {
             const auto &src = g_state.catalogue.sources[static_cast<size_t>(removeIdx)];
             std::string id = src.id;
-            plugin.sync_runner_.StartRemove(id);
+            plugin.SyncRunner().StartRemove(id);
             g_state.catalogue.sources.erase(
                 g_state.catalogue.sources.begin() + removeIdx);
             SaveSourcesCatalogue(g_state.catalogue);
@@ -380,7 +382,7 @@ static void DrawSourcesSection(FacetrackingPlugin &plugin)
 
     // ---- add buttons ----
     ImGui::Spacing();
-    bool syncing = plugin.sync_runner_.IsRunning();
+    bool syncing = plugin.SyncRunner().IsRunning();
 
     ImGui::BeginDisabled(syncing);
     if (ImGui::Button("Add folder source...##ft_add_folder")) {
@@ -398,7 +400,7 @@ static void DrawSourcesSection(FacetrackingPlugin &plugin)
             std::string data = BuildSourceDataJson(src);
             g_state.catalogue.sources.push_back(src);
             SaveSourcesCatalogue(g_state.catalogue);
-            plugin.sync_runner_.StartAdd(SourceKind::Folder, data, src.id);
+            plugin.SyncRunner().StartAdd(SourceKind::Folder, data, src.id);
         }
     }
     TooltipForLastItem("Pick a local folder containing a packaged face-tracking module.");
@@ -430,7 +432,7 @@ static void DrawSourcesSection(FacetrackingPlugin &plugin)
                 std::string data = BuildSourceDataJson(src);
                 g_state.catalogue.sources.push_back(src);
                 SaveSourcesCatalogue(g_state.catalogue);
-                plugin.sync_runner_.StartAdd(SourceKind::GitHub, data, src.id);
+                plugin.SyncRunner().StartAdd(SourceKind::GitHub, data, src.id);
                 g_state.github_input[0] = '\0';
                 ImGui::CloseCurrentPopup();
             }

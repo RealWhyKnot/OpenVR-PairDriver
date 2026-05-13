@@ -10,6 +10,7 @@
 #include <bcrypt.h>
 #include <shlobj.h>
 #include <objbase.h>
+#include <wincrypt.h>
 
 #pragma comment(lib, "bcrypt.lib")
 

@@ -40,7 +40,7 @@ void FacetrackingPlugin::OnStart(openvr_pair::overlay::ShellContext &)
     profile_.Load();
 
     // Seed sources.json on first run; load the catalogue for Tick() to use.
-    sources_catalogue_ = EnsureSourcesCatalogue();
+    sources_catalogue_ = facetracking::EnsureSourcesCatalogue();
 
     // Enqueue auto-updates for GitHub sources not checked in the last 6 hours.
     {
@@ -48,7 +48,7 @@ void FacetrackingPlugin::OnStart(openvr_pair::overlay::ShellContext &)
         constexpr auto kAutoUpdateInterval = std::chrono::hours(6);
 
         for (auto &src : sources_catalogue_.sources) {
-            if (src.kind != SourceKind::GitHub || !src.auto_update)
+            if (src.kind != facetracking::SourceKind::GitHub || !src.auto_update)
                 continue;
 
             bool needsCheck = src.last_checked_at.empty();
@@ -135,7 +135,7 @@ void FacetrackingPlugin::Tick(openvr_pair::overlay::ShellContext &)
                 res->installed_uuid.c_str(), res->installed_version.c_str());
         }
         // Refresh catalogue and timestamp all github sources that were running.
-        sources_catalogue_ = EnsureSourcesCatalogue();
+        sources_catalogue_ = facetracking::EnsureSourcesCatalogue();
     }
 
     // Periodic auto-save (every 60 s).

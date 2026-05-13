@@ -51,6 +51,12 @@ public:
     // across SteamVR restarts. Not normally called directly from UI code.
     void MaintainDriverConnection();
 
+    // Accessors used by Modules-tab helper functions (static helpers in
+    // ModulesTab.cpp cannot be friends; these expose only what is needed).
+    facetracking::HostStatusPoller      &HostStatus()    { return host_status_; }
+    FacetrackingProfileStore            &Profile()       { return profile_; }
+    facetracking::ModuleSyncRunner      &SyncRunner()    { return sync_runner_; }
+
 private:
     friend void facetracking::ui::DrawSettingsTab(FacetrackingPlugin &plugin);
     friend void facetracking::ui::DrawCalibrationTab(FacetrackingPlugin &plugin);
