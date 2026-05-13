@@ -46,19 +46,26 @@ public sealed class ReflectingExtTrackingModuleAdapter : FaceTrackingModule
         }
 
         BridgeConfig cfg = ParseBridgeConfig(bridgePath);
+        Log($"loading: uuid={cfg.Uuid} name=\"{cfg.Name}\" version={cfg.Version} " +
+            $"upstream_assembly={cfg.UpstreamAssembly} upstream_type={cfg.UpstreamType}");
 
         Assembly upstreamAsm = LoadUpstreamAssembly(adapterDir, cfg.UpstreamAssembly);
+        Log($"loaded upstream assembly: {upstreamAsm.GetName().Name} v{upstreamAsm.GetName().Version}");
+
         Type upstreamType = upstreamAsm.GetType(cfg.UpstreamType, throwOnError: false)
             ?? throw new InvalidOperationException(
                 $"Upstream type '{cfg.UpstreamType}' not found in '{cfg.UpstreamAssembly}'.");
+        Log($"upstream type resolved: {upstreamType.FullName}");
 
         object upstreamInstance = TryConstruct(upstreamType, adapterDir)
             ?? throw new InvalidOperationException(
                 $"Could not construct upstream module '{cfg.UpstreamType}'. " +
                 "Expected a public parameterless constructor or a single-parameter " +
                 "constructor accepting Microsoft.Extensions.Logging.ILogger.");
+        Log($"upstream instance constructed via {upstreamInstance.GetType().GetConstructors().FirstOrDefault()?.GetParameters().Length switch { 0 => "parameterless ctor", 1 => "(ILogger) ctor", _ => "other ctor" }}");
 
         ReflectingLegacyBridge legacy = new(upstreamInstance);
+        Log("reflecting bridge ready; constructing inner ExtTrackingModuleAdapter");
 
         ModuleManifest manifest = new()
         {
@@ -76,11 +83,29 @@ public sealed class ReflectingExtTrackingModuleAdapter : FaceTrackingModule
     public override ModuleManifest Manifest => _inner.Manifest;
 
     public override (bool eye, bool expression) Initialize(bool eyeAvailable, bool expressionAvailable)
-        => _inner.Initialize(eyeAvailable, expressionAvailable);
+    {
+        Log($"Initialize(eyeAvailable={eyeAvailable}, expressionAvailable={expressionAvailable})");
+        var result = _inner.Initialize(eyeAvailable, expressionAvailable);
+        Log($"Initialize returned (eye={result.eye}, expression={result.expression})");
+        return result;
+    }
 
     public override void Update(in FrameContext ctx) => _inner.Update(in ctx);
 
-    public override void Teardown() => _inner.Teardown();
+    public override void Teardown()
+    {
+        Log("Teardown");
+        _inner.Teardown();
+    }
+
+    // Writes a single line to stderr so the driver-side HostSupervisor picks it
+    // up into facetracking_log.<ts>.txt. The C# host's HostLogger is not
+    // injected into VrcftCompat (the adapter is a leaf assembly with no host
+    // dependencies); stderr is the simplest single-direction back-channel.
+    private static void Log(string message)
+    {
+        Console.Error.WriteLine($"[ft/vrcft-bridge] {message}");
+    }
 
     private static BridgeConfig ParseBridgeConfig(string path)
     {

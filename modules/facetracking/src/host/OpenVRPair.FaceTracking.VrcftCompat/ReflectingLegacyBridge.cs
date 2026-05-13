@@ -94,7 +94,22 @@ internal sealed class ReflectingLegacyBridge : IExtTrackingModuleLegacy
                 Type dataType = _unifiedDataInstance.GetType();
                 _dataEyeProp    = dataType.GetProperty("Eye",    BindingFlags.Public | BindingFlags.Instance);
                 _dataShapesProp = dataType.GetProperty("Shapes", BindingFlags.Public | BindingFlags.Instance);
+                Console.Error.WriteLine(
+                    $"[ft/vrcft-bridge] singleton resolved: VRCFaceTracking.Core.Params.Data.UnifiedTracking.Data " +
+                    $"({dataType.FullName}); eye={_dataEyeProp != null} shapes={_dataShapesProp != null}");
             }
+            else
+            {
+                Console.Error.WriteLine(
+                    "[ft/vrcft-bridge] WARNING: UnifiedTracking.Data static property returned null. " +
+                    "Module Update calls will succeed but readback will be skipped.");
+            }
+        }
+        else
+        {
+            Console.Error.WriteLine(
+                "[ft/vrcft-bridge] WARNING: VRCFaceTracking.Core.Params.Data.UnifiedTracking type not found. " +
+                "Ensure VRCFaceTracking.Core.dll is in the assemblies/ payload.");
         }
     }
 
