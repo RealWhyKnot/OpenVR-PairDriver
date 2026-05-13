@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using OpenVRPair.FaceModuleHost.Logging;
 using OpenVRPair.FaceTracking.ModuleSdk;
 
@@ -15,6 +16,29 @@ public sealed class OscSender(string host, int port, HostLogger logger) : IDispo
     private UdpClient?  _udp;
     private IPEndPoint? _endpoint;
     private bool        _running;
+
+    // Stats exposed via the read-only properties below. Updated lock-free on the
+    // module-tick thread; readers (HostStatusWriter on the status-poll thread) see
+    // eventually-consistent snapshots, which is fine for a 1 Hz UI refresh.
+    private long _packetsSent;
+    private long _packetsErrored;
+    private long _lastErrorTicks;            // DateTime.UtcNow.Ticks at last error
+    private string? _lastErrorMessage;
+
+    public string  TargetHost      => host;
+    public int     TargetPort      => port;
+    public bool    IsRunning       => _running;
+    public long    PacketsSent     => Interlocked.Read(ref _packetsSent);
+    public long    PacketsErrored  => Interlocked.Read(ref _packetsErrored);
+    public string? LastErrorMessage => _lastErrorMessage;
+    public DateTime? LastErrorAt
+    {
+        get
+        {
+            long t = Interlocked.Read(ref _lastErrorTicks);
+            return t == 0 ? null : new DateTime(t, DateTimeKind.Utc);
+        }
+    }
 
     public async Task RunAsync(CancellationToken ct)
     {
@@ -95,7 +119,20 @@ public sealed class OscSender(string host, int port, HostLogger logger) : IDispo
     private void SendFloat(string address, float value)
     {
         byte[] packet = BuildOscFloatPacket(address, value);
-        _udp!.Send(packet, packet.Length, _endpoint);
+        try
+        {
+            _udp!.Send(packet, packet.Length, _endpoint);
+            Interlocked.Increment(ref _packetsSent);
+        }
+        catch (Exception ex)
+        {
+            Interlocked.Increment(ref _packetsErrored);
+            Interlocked.Exchange(ref _lastErrorTicks, DateTime.UtcNow.Ticks);
+            _lastErrorMessage = ex.Message;
+            // Don't log every send error or we flood the log at frame rate;
+            // SendFrame's surrounding catch logs once per outer call.
+            throw;
+        }
     }
 
     /// <summary>Builds a minimal OSC 1.0 float message packet.</summary>

@@ -11,6 +11,8 @@ add_library(openvr_pair_feature_facetracking_overlay STATIC
 	CalibrationTab.h
 	FacetrackingPlugin.cpp
 	FacetrackingPlugin.h
+	HostStatusPoller.cpp
+	HostStatusPoller.h
 	IPCClient.cpp
 	IPCClient.h
 	Logging.cpp

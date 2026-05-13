@@ -66,6 +66,11 @@ void FacetrackingPlugin::Tick(openvr_pair::overlay::ShellContext &)
         last_connection_check_ = now;
     }
 
+    // Pull the latest host_status.json snapshot. The poller throttles itself
+    // to a stat() every 500 ms and only re-reads on mtime change, so calling
+    // this every frame is cheap.
+    host_status_.Tick();
+
     // Periodic auto-save (every 60 s).
     if (now - last_save_ >= std::chrono::seconds(60)) {
         profile_.Save();

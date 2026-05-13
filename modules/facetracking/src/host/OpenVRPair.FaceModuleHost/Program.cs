@@ -20,6 +20,7 @@ var writer   = new FrameWriter(opts.ShmemName, logger);
 var pipe     = new HostControlPipeServer(opts.DriverHandshakePipe, loader, logger, cts);
 var osc      = new OscSender(opts.OscHost, opts.OscPort, logger);
 var calib    = new CalibrationCache();
+var status   = new HostStatusWriter(opts.StatusFilePath, loader, osc, logger, opts);
 
 logger.Info($"OpenVRPair.FaceModuleHost starting. shmem={opts.ShmemName} pipe={opts.DriverHandshakePipe}");
 
@@ -39,6 +40,7 @@ try
         osc.RunAsync(ct),
         RunRegistryPollAsync(registry, logger, ct),
         loader.RunActiveAsync(writer, osc, calib, ct),
+        status.RunAsync(ct),
     };
 
     logger.Info("All workers started. Waiting for shutdown signal.");

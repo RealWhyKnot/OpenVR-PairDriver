@@ -110,9 +110,29 @@ void DrawSettingsTab(FacetrackingPlugin &plugin)
         }
         TooltipForLastItem("UDP port for the OSC receiver (default 9000 for VRChat).");
 
-        // Status text for OSC -- placeholder; the host-side channel is not
-        // wired in V1 so we show a neutral status.
-        ImGui::TextDisabled("OSC status: n/a (host channel not wired in V1)");
+        // Status text for OSC -- driven by the host_status.json sidecar the
+        // C# host writes once per second.
+        const auto &host = plugin.host_status_.Snapshot();
+        if (!host.valid) {
+            ImGui::TextDisabled("OSC status: host not started yet.");
+        } else if (host.stale || host.host_shutting_down) {
+            ImGui::TextDisabled("OSC status: host stopped (last seen pid=%d).", host.host_pid);
+        } else if (!host.osc.enabled) {
+            ImGui::TextDisabled("OSC status: sender not running.");
+        } else if (!host.osc.last_error.empty()) {
+            ImGui::TextColored(ImVec4(0.95f, 0.5f, 0.25f, 1.0f),
+                "OSC error: %s", host.osc.last_error.c_str());
+            ImGui::Text("Sending to %s:%d -- %lld packet(s), %lld error(s)",
+                host.osc.target_host.c_str(), host.osc.target_port,
+                host.osc.packets_sent, host.osc.packets_errored);
+        } else {
+            ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f),
+                "OSC OK -> %s:%d @ %.0f pkt/s",
+                host.osc.target_host.c_str(), host.osc.target_port,
+                host.osc.packets_per_second);
+            ImGui::Text("Total sent: %lld   errored: %lld",
+                host.osc.packets_sent, host.osc.packets_errored);
+        }
     }
 
     if (CheckboxWithTooltip("Native (OpenXR eye-gaze)", &p.output_native_enabled,
@@ -123,7 +143,12 @@ void DrawSettingsTab(FacetrackingPlugin &plugin)
         plugin.PushConfigToDriver();
     }
 
-    ImGui::TextDisabled("Native status: n/a (driver telemetry not wired in V1)");
+    // Native eye gaze path: the host has no observable state for this beyond
+    // the toggle. VRChat doesn't consume native eye-gaze on OpenVR anyway,
+    // so this stays a stub until the pinned openvr SDK exposes
+    // Prop_HasEyeTracking_Bool / CreatePoseComponent (see project memo
+    // project_facetracking_v1_2026-05-12.md).
+    ImGui::TextDisabled("Native status: stub -- not consumed by VRChat on OpenVR.");
 }
 
 } // namespace facetracking::ui

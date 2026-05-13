@@ -25,6 +25,10 @@ public sealed class HostOptions
     public string ModulesInstallDir { get; set; } = Path.Combine(
         LocalAppDataLow(), "OpenVR-Pair", "facetracking", "modules");
 
+    /// <summary>Where the host writes its periodic status JSON for the overlay to poll.</summary>
+    public string StatusFilePath { get; set; } = Path.Combine(
+        LocalAppDataLow(), "OpenVR-Pair", "facetracking", "host_status.json");
+
     /// <summary>
     /// When true, modules without a signature file are loaded anyway.
     /// Intended for local development only; defaults false in production.

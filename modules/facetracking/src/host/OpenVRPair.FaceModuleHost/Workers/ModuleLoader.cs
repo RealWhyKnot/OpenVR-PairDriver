@@ -29,12 +29,33 @@ public sealed class LoadedModule(
 public sealed class ModuleLoadContext(string modulePath) : AssemblyLoadContext(
     name: Path.GetFileName(modulePath), isCollectible: true)
 {
+    public string AssembliesDir => modulePath;
+
     protected override Assembly? Load(AssemblyName assemblyName)
     {
         // Resolve the assembly from the module's own directory first, then fall
         // back to the default context so the SDK and BCL types are shared.
         string candidate = Path.Combine(modulePath, assemblyName.Name + ".dll");
         return File.Exists(candidate) ? LoadFromAssemblyPath(candidate) : null;
+    }
+
+    // Native libraries the upstream module pulls in via P/Invoke (SRanipal,
+    // openxr_loader, starvr_api, tobii_stream_engine, libHTC_License, nanomsg,
+    // etc.) live in the same assemblies/ folder as the managed DLLs. .NET's
+    // default native-library search doesn't probe an ALC's per-context
+    // directory; we point it there explicitly so a vendor's first P/Invoke
+    // doesn't throw DllNotFoundException with the file sitting right next to it.
+    protected override IntPtr LoadUnmanagedDll(string unmanagedDllName)
+    {
+        foreach (string name in new[] { unmanagedDllName, unmanagedDllName + ".dll" })
+        {
+            string candidate = Path.Combine(modulePath, name);
+            if (File.Exists(candidate))
+            {
+                return LoadUnmanagedDllFromPath(candidate);
+            }
+        }
+        return IntPtr.Zero; // fall back to the default resolver
     }
 }
 
@@ -51,6 +72,9 @@ public sealed class ModuleLoader(
     private LoadedModule? _active;
 
     public IReadOnlyList<LoadedModule> Loaded => _loaded;
+
+    /// <summary>The currently-active module, or null if no module is selected.</summary>
+    public LoadedModule? Active => _active;
 
     public async Task<IReadOnlyList<LoadedModule>> LoadAllAsync()
     {

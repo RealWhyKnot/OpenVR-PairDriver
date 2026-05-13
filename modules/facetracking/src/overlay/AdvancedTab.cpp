@@ -37,8 +37,34 @@ void DrawAdvancedTab(FacetrackingPlugin &plugin)
     // ---- Host process ----
     DrawSectionHeading("Host process");
 
-    // V1: driver-side telemetry for the host process state is not wired yet.
-    ImGui::TextDisabled("Host status: n/a (driver telemetry not wired in V1)");
+    // Pull live status from the host_status.json sidecar the C# host writes
+    // once per second. valid=false means the host hasn't started yet; stale
+    // means the host stopped refreshing the file (crashed or stopped).
+    const auto &hs = plugin.host_status_.Snapshot();
+    if (!hs.valid) {
+        ImGui::TextDisabled("Host status: not started.");
+    } else if (hs.host_shutting_down) {
+        ImGui::TextDisabled("Host status: shutting down (pid=%d).", hs.host_pid);
+    } else if (hs.stale) {
+        ImGui::TextColored(ImVec4(0.95f, 0.5f, 0.25f, 1.0f),
+            "Host status: stale (last pid=%d, no refresh in 10s+).", hs.host_pid);
+    } else {
+        int  s   = hs.host_uptime_seconds;
+        int  h   = s / 3600;
+        int  m   = (s % 3600) / 60;
+        int  sec = s % 60;
+        ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f),
+            "Host running: pid=%d uptime=%02d:%02d:%02d",
+            hs.host_pid, h, m, sec);
+        if (hs.active_module.has_value()) {
+            ImGui::Text("Active module: %s %s (%s)",
+                hs.active_module->name.c_str(),
+                hs.active_module->version.c_str(),
+                hs.active_module->vendor.c_str());
+        } else {
+            ImGui::TextDisabled("Active module: (none)");
+        }
+    }
 
     if (ImGui::Button("Restart host process")) {
         plugin.SendCalibrationCommand(protocol::FaceCalibSave); // flush calib first

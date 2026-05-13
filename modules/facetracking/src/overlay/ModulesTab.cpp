@@ -18,11 +18,54 @@ void DrawModulesTab(FacetrackingPlugin &plugin)
     // ---- Registry table ----
     DrawSectionHeading("Installed modules");
 
-    // V1: the registry list arrives from the C# host over a channel that is
-    // not wired yet. Show a clear placeholder instead of an empty table so
-    // the user is not confused by blank space.
-    DrawWaitingBanner("Modules list not yet wired (V1 placeholder).\n"
-                      "Use the UUID input below to select an installed module.");
+    // Read the host's periodic sidecar file. valid=false means the host
+    // hasn't started yet (no install scan has run). The list is what the
+    // host found under %LocalAppDataLow%\OpenVR-Pair\facetracking\modules\
+    // on its last scan.
+    const auto &hs = plugin.host_status_.Snapshot();
+    if (!hs.valid) {
+        DrawWaitingBanner("Waiting for the host process to start.\n"
+                          "Enable Face Tracking and launch SteamVR.");
+    } else if (hs.installed_modules.empty()) {
+        DrawWaitingBanner("No modules installed yet.\n"
+                          "Modules land in %LocalAppDataLow%\\OpenVR-Pair\\facetracking\\modules\\\n"
+                          "after the host fetches them from the registry.");
+    } else {
+        // Sortable table with the modules the host last saw on disk.
+        ImGuiTableFlags tableFlags = ImGuiTableFlags_Borders
+                                   | ImGuiTableFlags_RowBg
+                                   | ImGuiTableFlags_Resizable
+                                   | ImGuiTableFlags_SizingStretchProp;
+        if (ImGui::BeginTable("ft_installed_modules", 4, tableFlags)) {
+            ImGui::TableSetupColumn("Name");
+            ImGui::TableSetupColumn("Version", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+            ImGui::TableSetupColumn("Vendor", ImGuiTableColumnFlags_WidthFixed, 130.0f);
+            ImGui::TableSetupColumn("UUID");
+            ImGui::TableHeadersRow();
+
+            const std::string *activeUuid =
+                hs.active_module.has_value() ? &hs.active_module->uuid : nullptr;
+
+            for (const auto &mod : hs.installed_modules) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                bool isActive = activeUuid && *activeUuid == mod.uuid;
+                if (isActive) {
+                    ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f),
+                        "%s  [active]", mod.name.c_str());
+                } else {
+                    ImGui::TextUnformatted(mod.name.c_str());
+                }
+                ImGui::TableSetColumnIndex(1);
+                ImGui::TextUnformatted(mod.version.c_str());
+                ImGui::TableSetColumnIndex(2);
+                ImGui::TextUnformatted(mod.vendor.c_str());
+                ImGui::TableSetColumnIndex(3);
+                ImGui::TextDisabled("%s", mod.uuid.c_str());
+            }
+            ImGui::EndTable();
+        }
+    }
 
     // ---- Manual UUID override ----
     DrawSectionHeading("Select active module by UUID");
