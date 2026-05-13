@@ -65,3 +65,4 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **build:** Silence PowerShell 5.1 NativeCommandError noise + add -Wno-dev (9839a7b)
 - **overlay:** Set GLFW title-bar icon via WM_SETICON on Windows (9f55188)
 - **overlay:** Elevate flag-toggle via EncodedCommand and -Path for New-Item (2026.5.12.13-3A37) (eb72415)
+- **build:** Resolve compile errors after phases 2-4 (friend decls, includes, namespace qualifications) (7e664fd)
