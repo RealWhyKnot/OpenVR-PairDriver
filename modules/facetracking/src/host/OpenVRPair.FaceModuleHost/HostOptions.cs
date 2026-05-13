@@ -29,13 +29,6 @@ public sealed class HostOptions
     public string StatusFilePath { get; set; } = Path.Combine(
         LocalAppDataLow(), "OpenVR-Pair", "facetracking", "host_status.json");
 
-    /// <summary>
-    /// When true, modules without a signature file are loaded anyway.
-    /// Intended for local development only; defaults false in production.
-    /// Set via <c>--allow-unsigned</c> on the command line.
-    /// </summary>
-    public bool AllowUnsigned { get; set; } = false;
-
     public static HostOptions FromArgs(string[] args)
     {
         var opts = new HostOptions();
@@ -64,12 +57,6 @@ public sealed class HostOptions
                     break;
                 case "--modules-dir":           opts.ModulesInstallDir   = args[i + 1]; break;
             }
-        }
-
-        // Flag-style args (no following value).
-        foreach (string arg in args)
-        {
-            if (arg == "--allow-unsigned") opts.AllowUnsigned = true;
         }
 
         return opts;

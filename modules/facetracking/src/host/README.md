@@ -7,9 +7,14 @@ path and applies continuous calibration, eyelid sync, and vergence lock before p
 SteamVR inputs and the OSC sender.
 
 To add a hardware module, implement `FaceTrackingModule` (from `OpenVRPair.FaceTracking.ModuleSdk`),
-package it as a `.zip` with a `manifest.json` matching the whyknot.dev registry schema, sign the
-payload with an Ed25519 key trusted in `trust.json`, and install it under
+package it as a `.zip` with a `manifest.json` matching the v1 schema served at
+`legacy-registry.whyknot.dev`, and install it under
 `%LocalAppDataLow%\OpenVR-Pair\facetracking\modules\<uuid>\<version>\`. The host discovers and
 loads new modules on startup and responds to `SelectModule` messages over the driver control pipe.
-Existing upstream VRCFaceTracking `ExtTrackingModule` implementations can be ported via the thin
-shim in `OpenVRPair.FaceTracking.VrcftCompat`.
+Modules are integrity-checked at install time via the manifest's `payload_sha256`; there is no
+cryptographic signature, because both the curated legacy mirror and the future native registry are
+maintainer-controlled.
+
+Existing upstream VRCFaceTracking `ExtTrackingModule` implementations are wrapped at runtime by
+`OpenVRPair.FaceTracking.VrcftCompat.ReflectingExtTrackingModuleAdapter` -- no per-module C# is
+required.

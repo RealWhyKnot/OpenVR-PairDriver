@@ -4,12 +4,14 @@ using System.Text.Json;
 namespace OpenVRPair.FaceTracking.Registry;
 
 /// <summary>
-/// HTTP client for the whyknot.dev v1 module registry.
+/// HTTP client for the legacy-registry.whyknot.dev v1 module registry --
+/// the curated mirror of upstream VRCFaceTracking modules. A future native
+/// registry will live at a different subdomain and share the same v1 schema.
 /// All methods throw <see cref="HttpRequestException"/> on non-2xx responses.
 /// </summary>
 public sealed class RegistryClient(HttpClient http)
 {
-    public const string DefaultBaseUrl = "https://registry.whyknot.dev";
+    public const string DefaultBaseUrl = "https://legacy-registry.whyknot.dev";
 
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
@@ -64,13 +66,5 @@ public sealed class RegistryClient(HttpClient http)
     {
         string path = $"/v1/modules/{Uri.EscapeDataString(uuid)}/versions/{Uri.EscapeDataString(version)}/payload";
         return await http.GetStreamAsync(path, ct);
-    }
-
-    /// <summary>Downloads the raw 64-byte Ed25519 signature over the payload SHA-256.</summary>
-    public async Task<byte[]> GetSignatureAsync(
-        string uuid, string version, CancellationToken ct = default)
-    {
-        string path = $"/v1/modules/{Uri.EscapeDataString(uuid)}/versions/{Uri.EscapeDataString(version)}/signature";
-        return await http.GetByteArrayAsync(path, ct);
     }
 }

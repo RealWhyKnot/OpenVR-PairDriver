@@ -7,13 +7,4 @@
   <ItemGroup>
     <ProjectReference Include="..\OpenVRPair.FaceTracking.ModuleSdk\OpenVRPair.FaceTracking.ModuleSdk.csproj" />
   </ItemGroup>
-  <!-- NSec.Cryptography provides Ed25519 sign/verify on .NET runtimes that do not yet
-       expose System.Security.Cryptography.Ed25519 natively. .NET 10 added ECDsa with
-       Edwards curves but as of SDK 10.0.100 the convenient Ed25519-keyed API is not
-       yet on a stable public path; NSec wraps libsodium and is the safe choice until
-       the BCL surface stabilises. Remove this reference and update Ed25519Verifier when
-       System.Security.Cryptography.Ed25519 reaches a stable GA API in a future SDK. -->
-  <ItemGroup>
-    <PackageReference Include="NSec.Cryptography" Version="24.4.0" />
-  </ItemGroup>
 </Project>

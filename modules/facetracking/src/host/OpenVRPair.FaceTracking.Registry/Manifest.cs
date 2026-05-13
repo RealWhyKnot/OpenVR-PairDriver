@@ -4,7 +4,8 @@ namespace OpenVRPair.FaceTracking.Registry;
 
 /// <summary>
 /// Full module manifest as returned by GET /v1/modules/{uuid}/manifest.
-/// Field names match the JSON schema defined in the whyknot.dev registry contract.
+/// Field names match the v1 schema served by legacy-registry.whyknot.dev (and
+/// any future sibling registry that adopts the same schema).
 /// </summary>
 public sealed class Manifest
 {
@@ -25,5 +26,4 @@ public sealed class Manifest
     [JsonPropertyName("dependencies")] public string[] Dependencies { get; init; } = [];
     [JsonPropertyName("payload_sha256")] public required string PayloadSha256 { get; init; }
     [JsonPropertyName("payload_size")] public long PayloadSize { get; init; }
-    [JsonPropertyName("signed_by")]    public required string SignedBy { get; init; }
 }

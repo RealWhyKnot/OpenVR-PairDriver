@@ -85,10 +85,6 @@ public sealed class ModuleLoader(
             return _loaded;
         }
 
-        var trustStore = new TrustStore();
-        try   { trustStore.Load(); }
-        catch (Exception ex) { logger.Warn($"Trust store load failed: {ex.Message}"); }
-
         foreach (string uuidDir in Directory.EnumerateDirectories(opts.ModulesInstallDir))
         {
             // Each uuid directory may contain multiple version sub-directories.
@@ -98,7 +94,7 @@ public sealed class ModuleLoader(
                 .FirstOrDefault();
             if (versionDir is null) continue;
 
-            await TryLoadModuleAsync(versionDir, trustStore);
+            await TryLoadModuleAsync(versionDir);
         }
 
         return _loaded;
@@ -207,7 +203,7 @@ public sealed class ModuleLoader(
         return hash;
     }
 
-    private async Task TryLoadModuleAsync(string dir, TrustStore trustStore)
+    private async Task TryLoadModuleAsync(string dir)
     {
         string manifestPath = Path.Combine(dir, "manifest.json");
         if (!File.Exists(manifestPath))
@@ -229,36 +225,12 @@ public sealed class ModuleLoader(
             return;
         }
 
-        // Signature verification before assembly load.
-        string signaturePath = Path.Combine(dir, "signature.bin");
-        if (File.Exists(signaturePath))
-        {
-            byte[] sigBytes;
-            try   { sigBytes = await File.ReadAllBytesAsync(signaturePath); }
-            catch (Exception ex)
-            {
-                logger.Warn($"Failed to read signature for {manifest.Name}: {ex.Message}; skipping.");
-                return;
-            }
-
-            if (!Ed25519Verifier.VerifyPayloadHash(manifest, sigBytes, trustStore))
-            {
-                logger.Error($"Signature verification failed for {manifest.Name} ({manifest.Uuid}); skipping.");
-                return;
-            }
-
-            logger.Info($"Signature verified for {manifest.Name} ({manifest.Uuid}).");
-        }
-        else
-        {
-            // No signature file present.
-            if (!opts.AllowUnsigned)
-            {
-                logger.Warn($"No signature file for {manifest.Name} ({manifest.Uuid}) and --allow-unsigned not set; skipping.");
-                return;
-            }
-            logger.Warn($"No signature file for {manifest.Name} ({manifest.Uuid}); loading anyway (--allow-unsigned).");
-        }
+        // Integrity: the manifest's payload_sha256 was checked at install
+        // time against the downloaded zip. We don't re-hash on every load
+        // (the assemblies/ tree is already extracted and the user's own
+        // disk is trusted). No cryptographic signature is required --
+        // both registries (legacy mirror + the future native one) are
+        // curated by the maintainer, so trust is administrative.
 
         string assemblyPath = Path.Combine(dir, "assemblies", manifest.EntryAssembly);
         if (!File.Exists(assemblyPath))
