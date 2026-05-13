@@ -68,3 +68,4 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **build:** Resolve compile errors after phases 2-4 (friend decls, includes, namespace qualifications) (7e664fd)
 - **hooks:** Refresh stale version.txt stamp to today when prepare-commit-msg fires (b3e127a)
 - **calibration:** Suppress continuous-cal when a non-HMD anchor goes silent (528ab12)
+- **quick.ps1:** Copy openvr_api.dll alongside the umbrella exe (22e2ccb)
