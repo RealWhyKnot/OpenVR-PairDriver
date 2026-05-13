@@ -4,6 +4,12 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 
 ## Unreleased
 
+_No notable changes since the last release._
+
+---
+
+## [v2026.5.13.1](https://github.com/RealWhyKnot/WKOpenVR/releases/tag/v2026.5.13.1) — 2026-05-13
+
 ### Fixed
 - **overlay:** Face-tracking version, legacy registry, scroll, search dedup, update notice (a274cfa)
 
