@@ -488,30 +488,44 @@ void ModuleSyncRunner::LaunchNext()
     result_path_ = std::wstring(tmp);
 
     std::wstring script = ScriptPath();
-    // Escape backslashes + quotes in JSON for embedding in a PS string.
-    // We pass everything via -EncodedCommand so no quoting issues.
-    auto escapeJs = [](std::string s) -> std::wstring {
+
+    // Wrap argument values in PowerShell single-quoted strings. These are
+    // fully literal -- the only escape is '' for an embedded apostrophe.
+    // Backslashes, double quotes, braces, dollar signs, etc. all pass through
+    // untouched. This is the only quoting form that's safe for arbitrary
+    // JSON content. The earlier escapeJs used POSIX/CMD rules (\\\\, \\")
+    // which PowerShell does not honour -- PS would treat \" inside a
+    // double-quoted argument as a literal \ followed by a string-terminator,
+    // ending the SourceData arg prematurely and causing the rest of the JSON
+    // to be parsed as command tokens (observed 2026-05-13: PS errored on
+    // "curated" -- the word after the broken-out parenthesis in a label --
+    // and the script never ran, so the result file stayed empty and picojson
+    // reported "Result JSON parse error").
+    auto psSingleQuoteWide = [](const std::wstring& wide) -> std::wstring {
         std::wstring r;
-        for (unsigned char c : s) {
-            if (c == '\\') { r += L"\\\\"; }
-            else if (c == '"')  { r += L"\\\""; }
-            else { r += static_cast<wchar_t>(c); }
+        r.reserve(wide.size() + 2);
+        r += L'\'';
+        for (wchar_t c : wide) {
+            if (c == L'\'') r += L"''";
+            else            r += c;
         }
+        r += L'\'';
         return r;
     };
-
-    std::wstring resultPathW = result_path_;
+    auto psSingleQuote = [&](const std::string& utf8) -> std::wstring {
+        return psSingleQuoteWide(Utf8ToWide(utf8));
+    };
 
     // Build the PS command as a wstring, then base64 encode it.
     std::wstring psCmd = L"& '" + script + L"'";
-    psCmd += L" -Action " + Utf8ToWide(op.action);
+    psCmd += L" -Action " + psSingleQuote(op.action);
     if (!op.kind.empty())
-        psCmd += L" -Kind " + Utf8ToWide(op.kind);
+        psCmd += L" -Kind " + psSingleQuote(op.kind);
     if (!op.source_data.empty())
-        psCmd += L" -SourceData \"" + escapeJs(op.source_data) + L"\"";
+        psCmd += L" -SourceData " + psSingleQuote(op.source_data);
     if (!op.source_id.empty())
-        psCmd += L" -SourceId '" + Utf8ToWide(op.source_id) + L"'";
-    psCmd += L" -ResultPath '" + resultPathW + L"'";
+        psCmd += L" -SourceId " + psSingleQuote(op.source_id);
+    psCmd += L" -ResultPath " + psSingleQuoteWide(result_path_);
 
     std::string encoded = EncodeForPowerShell(psCmd);
 

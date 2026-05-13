@@ -36,7 +36,12 @@ function Write-Result([bool]$ok, [string]$msg, [string]$uuid = '', [string]$ver 
         installed_version = $ver
     }
     $json = $obj | ConvertTo-Json -Compress
-    [System.IO.File]::WriteAllText($ResultPath, $json, [System.Text.Encoding]::UTF8)
+    # UTF-8 without BOM. The static [System.Text.Encoding]::UTF8 has
+    # emitUTF8Identifier=true (writes a BOM), which prefixes the file with
+    # 0xEF 0xBB 0xBF -- the overlay's picojson parser rejects the BOM and
+    # reports "Result JSON parse error" even though the JSON itself is fine.
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($ResultPath, $json, $utf8NoBom)
 }
 
 function Get-FtModulesDir {
@@ -164,7 +169,7 @@ if ($srcKind -eq 'folder') {
     $info = @{
         source_id    = $srcId
         source_kind  = 'folder'
-        installed_at = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ' -AsUTC)
+        installed_at = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     Copy-ModuleFolder -srcDir $folderPath -uuid $uuid -version $ver -sourceInfo $info
     Write-Result $true "Installed from folder." $uuid $ver
@@ -220,8 +225,10 @@ if ($srcKind -eq 'github') {
     # Compute SHA-256 of downloaded zip.
     $downloadedSha = Get-Sha256 -filePath $tmpZip
 
-    # Look for SHA-256 in release body.
-    $releaseSha  = Find-Sha256InText -text ($release.body ?? '')
+    # Look for SHA-256 in release body. (PS 5.1 has no null-coalescing
+    # operator, so write the fallback longhand.)
+    $bodyText = if ($null -ne $release.body) { $release.body } else { '' }
+    $releaseSha  = Find-Sha256InText -text $bodyText
     $shaVerified = ($null -ne $releaseSha -and $releaseSha -eq $downloadedSha)
 
     # Extract to temp dir.
@@ -265,12 +272,181 @@ if ($srcKind -eq 'github') {
         release_tag      = $releaseTag
         release_sha256   = $releaseSha
         verified_sha256  = $shaVerified
-        installed_at     = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ' -AsUTC)
+        installed_at     = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     Copy-ModuleFolder -srcDir $moduleRoot -uuid $uuid -version $ver -sourceInfo $info
     Remove-Item -Recurse -Force -Path $tmpDir -ErrorAction SilentlyContinue
 
     Write-Result $true "Installed $ownerRepo $releaseTag (sha_verified=$shaVerified)." $uuid $ver
+    exit 0
+}
+
+# ---- action: add/update (registry) -----------------------------------------
+#
+# A registry source points at a curated index (the legacy registry lives at
+# https://legacy-registry.whyknot.dev). Endpoints:
+#   GET <url>/v1/index                                   -> { modules: [{uuid, version, ...}] }
+#   GET <url>/v1/modules/<uuid>/manifest                 -> full manifest incl. payload_sha256
+#   GET <url>/v1/modules/<uuid>/versions/<ver>/payload   -> module zip
+#
+# Sync semantics: install every module in the index; skip when the same uuid+
+# version is already on disk; replace when the version changed. Orphans (uuids
+# on disk that no longer appear in the index) are left in place for now --
+# removal is a separate decision we don't want to make implicitly during a
+# generic Sync click.
+
+if ($srcKind -eq 'registry') {
+    $base = if ($src.PSObject.Properties['url']) { $src.url } else { '' }
+    if ([string]::IsNullOrEmpty($base)) {
+        Write-Result $false 'Registry source has no url field.'
+        exit 1
+    }
+    $base = $base.TrimEnd('/')
+
+    $headers = @{ 'User-Agent' = 'WKOpenVR/1.0' }
+
+    try {
+        $index = Invoke-RestMethod -Uri "$base/v1/index" -UseBasicParsing -Headers $headers
+    } catch {
+        Write-Result $false "Registry index fetch failed: $_"
+        exit 1
+    }
+
+    if ($null -eq $index.modules) {
+        Write-Result $false 'Registry index has no "modules" array.'
+        exit 1
+    }
+
+    $modsDir = Get-FtModulesDir
+    $installed = 0
+    $updated   = 0
+    $skipped   = 0
+    $failed    = 0
+    $errors    = @()
+
+    foreach ($entry in $index.modules) {
+        $uuid = $entry.uuid
+        $ver  = $entry.version
+        if ([string]::IsNullOrEmpty($uuid) -or [string]::IsNullOrEmpty($ver)) {
+            $failed++
+            $errors += "index entry missing uuid or version: $($entry | ConvertTo-Json -Compress)"
+            continue
+        }
+
+        $destDir = Join-Path $modsDir "$uuid\$ver"
+        if (Test-Path (Join-Path $destDir 'manifest.json')) {
+            $skipped++
+            continue
+        }
+
+        # Fetch the manifest (gives us payload_sha256).
+        try {
+            $manifest = Invoke-RestMethod -Uri "$base/v1/modules/$uuid/manifest" -UseBasicParsing -Headers $headers
+        } catch {
+            $failed++
+            $errors += "manifest fetch failed for ${uuid}: $_"
+            continue
+        }
+        # Trust the manifest's own version over the index entry's, in case the
+        # index is mid-update (it's a generated artifact, not a live join).
+        $manifestVer = if ($manifest.PSObject.Properties['version']) { $manifest.version } else { $ver }
+        if ($manifestVer -ne $ver) {
+            $destDir = Join-Path $modsDir "$uuid\$manifestVer"
+            if (Test-Path (Join-Path $destDir 'manifest.json')) {
+                $skipped++
+                continue
+            }
+            $ver = $manifestVer
+        }
+
+        $expectedSha = if ($manifest.PSObject.Properties['payload_sha256']) {
+            ([string]$manifest.payload_sha256).ToLower()
+        } else { '' }
+
+        # Download the payload.
+        $tmpZip = [System.IO.Path]::GetTempFileName() + '.zip'
+        try {
+            Invoke-WebRequest -Uri "$base/v1/modules/$uuid/versions/$ver/payload" `
+                              -OutFile $tmpZip -UseBasicParsing -Headers $headers
+        } catch {
+            Remove-Item -Force -Path $tmpZip -ErrorAction SilentlyContinue
+            $failed++
+            $errors += "payload download failed for ${uuid} ${ver}: $_"
+            continue
+        }
+
+        $actualSha = Get-Sha256 -filePath $tmpZip
+        if (-not [string]::IsNullOrEmpty($expectedSha) -and $actualSha -ne $expectedSha) {
+            Remove-Item -Force -Path $tmpZip -ErrorAction SilentlyContinue
+            $failed++
+            $errors += "SHA-256 mismatch for ${uuid} ${ver}: expected $expectedSha got $actualSha"
+            continue
+        }
+
+        # Extract to a staging dir, then atomically swap into place. Going
+        # straight to the dest dir would leave a partial install behind on
+        # any failure mid-extract.
+        $tmpDir = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(),
+                                             [System.IO.Path]::GetRandomFileName())
+        New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+        try {
+            Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force
+        } catch {
+            Remove-Item -Force -Path $tmpZip -ErrorAction SilentlyContinue
+            Remove-Item -Recurse -Force -Path $tmpDir -ErrorAction SilentlyContinue
+            $failed++
+            $errors += "zip extract failed for ${uuid} ${ver}: $_"
+            continue
+        }
+        Remove-Item -Force -Path $tmpZip -ErrorAction SilentlyContinue
+
+        $alreadyHaveVersion = Test-Path $destDir
+        New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+        try {
+            Get-ChildItem -Path $tmpDir -Recurse | ForEach-Object {
+                $rel    = $_.FullName.Substring($tmpDir.Length).TrimStart('\','/')
+                $target = Join-Path $destDir $rel
+                if ($_.PSIsContainer) {
+                    if (-not (Test-Path $target)) {
+                        New-Item -ItemType Directory -Path $target -Force | Out-Null
+                    }
+                } else {
+                    Copy-Item -Path $_.FullName -Destination $target -Force
+                }
+            }
+        } catch {
+            Remove-Item -Recurse -Force -Path $tmpDir -ErrorAction SilentlyContinue
+            $failed++
+            $errors += "copy-into-dest failed for ${uuid} ${ver}: $_"
+            continue
+        }
+        Remove-Item -Recurse -Force -Path $tmpDir -ErrorAction SilentlyContinue
+
+        # Persist the manifest next to the extracted files so the host can
+        # read it without going back to the network, and stamp source.json
+        # so a future Sync knows where this module came from.
+        $manifestJson = $manifest | ConvertTo-Json -Depth 10 -Compress
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText((Join-Path $destDir 'manifest.json'),
+                                       $manifestJson, $utf8NoBom)
+        $info = @{
+            source_id    = $srcId
+            source_kind  = 'registry'
+            registry_url = $base
+            installed_at = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+        }
+        Write-SourceJson -destDir $destDir -data $info
+
+        if ($alreadyHaveVersion) { $updated++ } else { $installed++ }
+    }
+
+    $summary = "Registry sync: installed=$installed updated=$updated skipped=$skipped failed=$failed (total=$($index.modules.Count))"
+    if ($failed -gt 0) {
+        $summary += " | errors: " + ($errors -join '; ')
+        Write-Result $false $summary
+        exit 1
+    }
+    Write-Result $true $summary
     exit 0
 }
 
