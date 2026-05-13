@@ -18,6 +18,9 @@
                              // from the rolling buffer of 30 cm relocalization events.
 #include "ReanchorChiSquareDetector.h" // spacecal::reanchor_chi::* -- sub-30 cm re-anchor
                              // sub-detector. Detection-only; freezes recs A/C on candidate.
+#include "TrackerLiveness.h" // spacecal::liveness::* -- detect non-HMD calibration anchor
+                             // going silent under SteamVR's "Running_OK + poseIsValid stays true
+                             // while pose hash is frozen" disconnect path.
 
 #include <string>
 #include <vector>
@@ -1308,6 +1311,39 @@ namespace {
 	};
 	RelocalizationDetectorState g_relocDetector;
 
+	// Tracker liveness state for the two non-HMD calibration anchors.
+	// One instance per (reference, target). The detector treats both
+	// symmetrically: either going silent triggers the same gate +
+	// recovery. The HMD has its own dedicated stall + relocalization
+	// handling and is never ticked through this path. State is reset on
+	// AssignTargets via StartContinuousCalibration so a fresh device
+	// assignment starts with a clean baseline.
+	spacecal::liveness::TrackerLivenessState g_refLiveness;
+	spacecal::liveness::TrackerLivenessState g_tgtLiveness;
+
+	// Was either anchor offline last tick? Used to detect the offline ->
+	// online edge in CalibrationTick so we can fire StartContinuousCalibration
+	// (clear buffer, re-anchor) after the device returns.
+	bool g_refWasOffline = false;
+	bool g_tgtWasOffline = false;
+
+	// Helpers shared by the two-state gate below.
+	inline bool IsHmdDevice(int32_t id) {
+		return id == (int32_t)vr::k_unTrackedDeviceIndex_Hmd;
+	}
+
+	inline uint64_t HashPositionLow64(const double v[3]) {
+		// Bitcast vecPosition[0..2] into a deterministic 64-bit hash. Folds
+		// the three doubles via XOR so any single-coordinate change perturbs
+		// the hash; the goal is detecting "no change at all" rather than a
+		// secure digest.
+		uint64_t h0 = 0, h1 = 0, h2 = 0;
+		std::memcpy(&h0, &v[0], sizeof h0);
+		std::memcpy(&h1, &v[1], sizeof h1);
+		std::memcpy(&h2, &v[2], sizeof h2);
+		return h0 ^ (h1 * 0x9E3779B97F4A7C15ull) ^ (h2 * 0xC2B2AE3D27D4EB4Full);
+	}
+
 	// Rest-locked yaw drift correction state. Per-target-tracker phase
 	// machine + locked world-frame orientation. Cleared on AssignTargets
 	// reseats, target ID change, or pose-validity loss. The ID-keyed map is
@@ -2561,6 +2597,14 @@ void StartContinuousCalibration() {
 	else {
 		CalCtx.Log("Collecting initial samples...");
 	}
+	// Liveness detector state is cleared whenever continuous-cal restarts so
+	// the post-restart freeze window starts from this moment, not from
+	// whatever stale stamp survived the previous run. Edge-tracking flags
+	// reset too -- the next tick is a fresh online observation.
+	spacecal::liveness::Reset(g_refLiveness);
+	spacecal::liveness::Reset(g_tgtLiveness);
+	g_refWasOffline = false;
+	g_tgtWasOffline = false;
 	Metrics::WriteLogAnnotation("StartContinuousCalibration");
 }
 
@@ -3007,6 +3051,95 @@ void CalibrationTick(double time)
 			CalCtx.Log("Aborting calibration!\n");
 		}
 		return;
+	}
+
+	// Tracker liveness gate (TrackerLiveness.h). Active only in continuous-
+	// calibration mode; one-shot states (Begin/Rotation/Translation) run the
+	// user through a deliberate motion sequence and have their own validity
+	// checks. The gate exists to catch the case where SteamVR reports
+	// `Running_OK + poseIsValid=true` for a silently-disconnected Vive
+	// tracker (or any non-HMD anchor) and CollectSample's existing pose-
+	// flag gate cannot tell the difference between a live tracker and a
+	// frozen-pose ghost. Returning early here implicitly suppresses
+	// CollectSample, ComputeIncremental, and SaveProfile for the same tick
+	// (control flow falls through to all three immediately below), which
+	// stops the on-disk profile from drifting during the offline window.
+	if (ctx.state == CalibrationState::Continuous) {
+		const auto& hmdRaw = ctx.devicePoses[vr::k_unTrackedDeviceIndex_Hmd];
+		const double hmdSpeedMps = std::sqrt(
+			hmdRaw.vecVelocity[0] * hmdRaw.vecVelocity[0] +
+			hmdRaw.vecVelocity[1] * hmdRaw.vecVelocity[1] +
+			hmdRaw.vecVelocity[2] * hmdRaw.vecVelocity[2]);
+
+		auto tickOne = [&](int32_t id,
+		                   const char* whichLabel,
+		                   spacecal::liveness::TrackerLivenessState& state,
+		                   bool& wasOffline)
+		{
+			if (id < 0 || IsHmdDevice(id)) {
+				wasOffline = spacecal::liveness::IsOffline(state);
+				return;  // HMD handled by separate stall + relocalization detectors
+			}
+			const auto& dp = ctx.devicePoses[id];
+			spacecal::liveness::TrackerLivenessInputs in{};
+			in.posHash           = HashPositionLow64(dp.vecPosition);
+			in.deviceIsConnected = dp.deviceIsConnected;
+			in.hmdSpeedMps       = hmdSpeedMps;
+			in.lastEmaUpdateSec  = ctx.timeLastLatencyEstimate;
+			in.now               = time;
+
+			const bool wentOffline = spacecal::liveness::TickTrackerLiveness(state, in);
+			if (wentOffline) {
+				char buf[256];
+				const double frozenForSec = state.poseHashSinceSec >= 0.0
+					? (time - state.poseHashSinceSec) : 0.0;
+				const double emaGapSec = ctx.timeLastLatencyEstimate > 0.0
+					? (time - ctx.timeLastLatencyEstimate) : 0.0;
+				snprintf(buf, sizeof buf,
+					"tracker_offline_detected: which=%s id=%d frozenForSec=%.1f "
+					"deviceIsConnected=%d emaGapSec=%.1f",
+					whichLabel, (int)id, frozenForSec,
+					(int)dp.deviceIsConnected, emaGapSec);
+				Metrics::WriteLogAnnotation(buf);
+				CalCtx.Log("Calibration anchor offline -- waiting to reconnect\n");
+			}
+			wasOffline = spacecal::liveness::IsOffline(state);
+		};
+
+		bool refOfflineNow = false;
+		bool tgtOfflineNow = false;
+		tickOne(ctx.referenceID, "reference", g_refLiveness, refOfflineNow);
+		tickOne(ctx.targetID,    "target",    g_tgtLiveness, tgtOfflineNow);
+
+		// Online -> offline edge fires above. Detect the reverse edge here
+		// (was offline last tick, online this tick) so we can fire a clean
+		// StartContinuousCalibration to discard any contaminated samples
+		// and re-anchor from live poses. Per-anchor edge tracking so a
+		// reference recovery while target is still offline correctly waits
+		// for the target before firing.
+		const bool refReturned = g_refWasOffline && !refOfflineNow;
+		const bool tgtReturned = g_tgtWasOffline && !tgtOfflineNow;
+		g_refWasOffline = refOfflineNow;
+		g_tgtWasOffline = tgtOfflineNow;
+
+		if (refOfflineNow || tgtOfflineNow) {
+			ctx.wantedUpdateInterval = 0.5;
+			return;  // skip CollectSample + ComputeIncremental + SaveProfile
+		}
+
+		if (refReturned || tgtReturned) {
+			char buf[160];
+			snprintf(buf, sizeof buf,
+				"tracker_reconnected: which=%s%s StartContinuousCalibration",
+				refReturned ? "reference" : "",
+				tgtReturned ? (refReturned ? "+target" : "target") : "");
+			Metrics::WriteLogAnnotation(buf);
+			// StartContinuousCalibration internally Resets both liveness
+			// states + the edge-tracking flags, so the next tick starts
+			// from a clean baseline.
+			StartContinuousCalibration();
+			return;
+		}
 	}
 
 	if (!CollectSample(ctx))
