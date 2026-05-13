@@ -6,3 +6,4 @@
 - **Calibration feature**: <https://github.com/RealWhyKnot/WKOpenVR-SpaceCalibrator>
 - **Smoothing feature**: <https://github.com/RealWhyKnot/WKOpenVR-Smoothing>
 - **Input health feature**: <https://github.com/RealWhyKnot/WKOpenVR-InputHealth>
+- **Face tracking feature**: <https://github.com/RealWhyKnot/WKOpenVR-VRCFT>
