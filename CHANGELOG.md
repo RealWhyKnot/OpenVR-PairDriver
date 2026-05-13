@@ -6,6 +6,12 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 
 ## Unreleased
 
+_No notable changes since the last release._
+
+---
+
+## [v2026.5.13.0](https://github.com/RealWhyKnot/WKOpenVR/releases/tag/v2026.5.13.0) — 2026-05-13
+
 ### Added
 - **inputhealth:** Publish scalar observed range (0.1.0.0) (3f6f42e)
 - **driver:** InputHealth Stage 1E reset wiring and Stage 1F shmem publisher (0.1.0.0) (96a2829)
