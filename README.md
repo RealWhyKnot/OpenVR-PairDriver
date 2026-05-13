@@ -51,6 +51,28 @@ Wire format is defined in [core/src/common/Protocol.h](core/src/common/Protocol.
 
 See the [wiki](https://github.com/RealWhyKnot/WKOpenVR/wiki) for architecture overview, per-module deep-dives, protocol reference, build environment notes, and the release pipeline.
 
+## Upstreams and credits
+
+Two of the four feature modules build on existing open-source projects. The other two were written from scratch inside this repository.
+
+**Calibration** is descended from [pushrax/OpenVR-SpaceCalibrator](https://github.com/pushrax/OpenVR-SpaceCalibrator) by Justin Li (MIT). The fork chain that reached this repository was:
+
+- [pushrax/OpenVR-SpaceCalibrator](https://github.com/pushrax/OpenVR-SpaceCalibrator) -- original (Justin Li)
+- [bdunderscore/OpenVR-SpaceCalibrator](https://github.com/bdunderscore/OpenVR-SpaceCalibrator) -- intermediate fork
+- [ArcticFox8515/OpenVR-SpaceCalibrator](https://github.com/ArcticFox8515/OpenVR-SpaceCalibrator) -- intermediate fork
+- [hyblocker/OpenVR-SpaceCalibrator](https://github.com/hyblocker/OpenVR-SpaceCalibrator) by Hyblocker -- the fork this repository was directly seeded from
+- this repository's `modules/calibration/`
+
+Calibration code that traces back to any of those forks remains available under MIT terms from each origin repo; the combined work in this repository is GPL-3.0.
+
+**Face tracking** is descended from [benaclejames/VRCFaceTracking](https://github.com/benaclejames/VRCFaceTracking) by Benjamin Clarke and contributors (Apache-2.0). The C# host sidecar, reflection bridge for upstream VRCFT modules, and the legacy module registry are derived from that project. The driver-side integration, shmem ring protocol, and overlay UI are new in this repository.
+
+**Smoothing** and **input health** have no upstream -- both modules were authored in this repository.
+
+The sibling mirror repos ([WKOpenVR-SpaceCalibrator](https://github.com/RealWhyKnot/WKOpenVR-SpaceCalibrator), [WKOpenVR-Smoothing](https://github.com/RealWhyKnot/WKOpenVR-Smoothing), [WKOpenVR-InputHealth](https://github.com/RealWhyKnot/WKOpenVR-InputHealth), [WKOpenVR-VRCFT](https://github.com/RealWhyKnot/WKOpenVR-VRCFT)) carry per-feature release zips and installers. Their `archive-source` branches hold either the original upstream source (for SpaceCalibrator and VRCFT) or the pre-monorepo state of the WK fork (for Smoothing and InputHealth). The release mirror workflow lives in [.github/workflows/release.yml](.github/workflows/release.yml).
+
+Third-party libraries linked into the binary (OpenVR SDK, MinHook, ImGui, ImPlot, GLFW, Eigen, picojson, stb_image, gl3w) carry their own licenses; the full texts are reproduced in [NOTICE](NOTICE).
+
 ## License
 
-GNU General Public License v3.0; see [LICENSE](LICENSE). Project copyright lines and third-party attributions in [NOTICE](NOTICE). Earlier contributions from Justin Li and Hyblocker were originally MIT-licensed and remain available under MIT terms from their origin repos; the combined work in this repository is GPL-3.0 going forward.
+GNU General Public License v3.0; see [LICENSE](LICENSE). Project copyright lines and the full third-party license texts are in [NOTICE](NOTICE).
