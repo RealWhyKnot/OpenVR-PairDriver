@@ -5,6 +5,7 @@
 #include "IPCClient.h"
 #include "Logging.h"
 #include "LogsSection.h"
+#include "ModuleSources.h"
 #include "ModulesTab.h"
 #include "Profiles.h"
 #include "SettingsTab.h"
@@ -14,8 +15,11 @@
 
 #include <imgui/imgui.h>
 
+#include "picojson.h"
+
 #include <chrono>
 #include <cstring>
+#include <ctime>
 #include <exception>
 #include <memory>
 #include <string>
@@ -34,6 +38,56 @@ void FacetrackingPlugin::OnStart(openvr_pair::overlay::ShellContext &)
         FACETRACKING_BUILD_STAMP, FACETRACKING_BUILD_CHANNEL);
 
     profile_.Load();
+
+    // Seed sources.json on first run; load the catalogue for Tick() to use.
+    sources_catalogue_ = EnsureSourcesCatalogue();
+
+    // Enqueue auto-updates for GitHub sources not checked in the last 6 hours.
+    {
+        const auto now = std::chrono::system_clock::now();
+        constexpr auto kAutoUpdateInterval = std::chrono::hours(6);
+
+        for (auto &src : sources_catalogue_.sources) {
+            if (src.kind != SourceKind::GitHub || !src.auto_update)
+                continue;
+
+            bool needsCheck = src.last_checked_at.empty();
+            if (!needsCheck) {
+                // Parse "YYYY-MM-DDTHH:MM:SSZ".
+                struct tm t{};
+                if (sscanf(src.last_checked_at.c_str(),
+                           "%d-%d-%dT%d:%d:%dZ",
+                           &t.tm_year, &t.tm_mon, &t.tm_mday,
+                           &t.tm_hour, &t.tm_min, &t.tm_sec) == 6) {
+                    t.tm_year -= 1900;
+                    t.tm_mon  -= 1;
+                    time_t last = _mkgmtime(&t);
+                    if (last != (time_t)-1) {
+                        auto lastTp = std::chrono::system_clock::from_time_t(last);
+                        needsCheck = (now - lastTp) >= kAutoUpdateInterval;
+                    } else {
+                        needsCheck = true;
+                    }
+                } else {
+                    needsCheck = true;
+                }
+            }
+
+            if (needsCheck) {
+                FT_LOG_OVL("[modules] queuing auto-update for github source '%s'",
+                            src.label.c_str());
+                picojson::object o;
+                o["id"]               = picojson::value(src.id);
+                o["kind"]             = picojson::value(std::string("github"));
+                o["owner_repo"]       = picojson::value(src.owner_repo);
+                o["label"]            = picojson::value(src.label);
+                o["auto_update"]      = picojson::value(src.auto_update);
+                o["last_release_tag"] = picojson::value(src.last_release_tag);
+                std::string data = picojson::value(o).serialize();
+                sync_runner_.StartUpdate(src.id, data);
+            }
+        }
+    }
 
     try {
         ipc_.Connect();
@@ -73,6 +127,16 @@ void FacetrackingPlugin::Tick(openvr_pair::overlay::ShellContext &)
 
     // Pull the latest driver_telemetry.json snapshot (same cadence).
     driver_telemetry_.Tick();
+
+    // Reap any completed background sync.  On success, stamp last_checked_at.
+    if (auto res = sync_runner_.Poll()) {
+        if (res->ok && !res->installed_uuid.empty()) {
+            FT_LOG_OVL("[modules] background sync completed: uuid='%s' ver='%s'",
+                res->installed_uuid.c_str(), res->installed_version.c_str());
+        }
+        // Refresh catalogue and timestamp all github sources that were running.
+        sources_catalogue_ = EnsureSourcesCatalogue();
+    }
 
     // Periodic auto-save (every 60 s).
     if (now - last_save_ >= std::chrono::seconds(60)) {

@@ -21,6 +21,8 @@ add_library(openvr_pair_feature_facetracking_overlay STATIC
 	Logging.h
 	LogsSection.cpp
 	LogsSection.h
+	ModuleSources.cpp
+	ModuleSources.h
 	ModulesTab.cpp
 	ModulesTab.h
 	Profiles.cpp
@@ -37,6 +39,10 @@ target_include_directories(openvr_pair_feature_facetracking_overlay PRIVATE
 	${CMAKE_SOURCE_DIR}/lib/implot
 	${CMAKE_SOURCE_DIR}/lib/openvr/headers
 	${CMAKE_SOURCE_DIR}/lib/picojson)
+
+target_link_libraries(openvr_pair_feature_facetracking_overlay PRIVATE
+	bcrypt
+	crypt32)
 
 target_compile_definitions(openvr_pair_feature_facetracking_overlay PRIVATE
 	NOMINMAX

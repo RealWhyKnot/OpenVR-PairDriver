@@ -101,3 +101,12 @@ add_custom_command(TARGET OpenVRPairOverlay POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different
 		"${CMAKE_CURRENT_LIST_DIR}/dashboard_icon.png"
 		"$<TARGET_FILE_DIR:OpenVRPairOverlay>/dashboard_icon.png")
+
+# Stage the face-module sync script into resources/ next to the exe.
+# ModuleSyncRunner looks for it at <exe_dir>/resources/face-module-sync.ps1.
+add_custom_command(TARGET OpenVRPairOverlay POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E make_directory
+		"$<TARGET_FILE_DIR:OpenVRPairOverlay>/resources"
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		"${CMAKE_CURRENT_LIST_DIR}/face-module-sync.ps1"
+		"$<TARGET_FILE_DIR:OpenVRPairOverlay>/resources/face-module-sync.ps1")
