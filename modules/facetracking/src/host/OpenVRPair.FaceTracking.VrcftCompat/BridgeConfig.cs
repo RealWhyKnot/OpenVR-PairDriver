@@ -1,5 +1,5 @@
 // Configuration record loaded from bridge.json alongside the adapter DLL.
-// The upstream-import packager (vrcft-registry/scripts/import-upstream.py)
+// The upstream-import packager (wkvrcft-legacy-registry/scripts/import-upstream.py)
 // emits one of these per packaged module so the reflection bridge knows
 // which upstream type to instantiate and how to label the resulting
 // FaceTrackingModule. Per-module C# code is not required at registration

@@ -40,7 +40,7 @@ public sealed class ReflectingExtTrackingModuleAdapter : FaceTrackingModule
         if (!File.Exists(bridgePath))
         {
             throw new FileNotFoundException(
-                $"bridge.json not found at {bridgePath}. The vrcft-registry import script must " +
+                $"bridge.json not found at {bridgePath}. The wkvrcft-legacy-registry import script must " +
                 "emit this file alongside OpenVRPair.FaceTracking.VrcftCompat.dll.",
                 bridgePath);
         }
