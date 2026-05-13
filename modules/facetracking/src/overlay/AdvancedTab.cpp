@@ -48,14 +48,15 @@ void DrawAdvancedTab(FacetrackingPlugin &plugin)
     } else if (hs.host_shutting_down) {
         ImGui::TextDisabled("Host status: shutting down (pid=%d).", hs.host_pid);
     } else if (hs.stale) {
-        ImGui::TextColored(ImVec4(0.95f, 0.5f, 0.25f, 1.0f),
+        ImGui::TextColored(openvr_pair::overlay::ui::GetPalette().statusWarn,
             "Host status: stale (last pid=%d, no refresh in 10s+).", hs.host_pid);
     } else {
+        const auto &pal = openvr_pair::overlay::ui::GetPalette();
         int  s   = hs.host_uptime_seconds;
         int  h   = s / 3600;
         int  m   = (s % 3600) / 60;
         int  sec = s % 60;
-        ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f),
+        ImGui::TextColored(pal.statusOk,
             "Host running: pid=%d uptime=%02d:%02d:%02d",
             hs.host_pid, h, m, sec);
         if (hs.active_module.has_value()) {

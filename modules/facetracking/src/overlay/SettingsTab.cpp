@@ -110,13 +110,14 @@ void DrawSettingsTab(FacetrackingPlugin &plugin)
         } else if (!host.osc.enabled) {
             ImGui::TextDisabled("OSC status: sender not running.");
         } else if (!host.osc.last_error.empty()) {
-            ImGui::TextColored(ImVec4(0.95f, 0.5f, 0.25f, 1.0f),
+            const auto &pal = openvr_pair::overlay::ui::GetPalette();
+            ImGui::TextColored(pal.statusError,
                 "OSC error: %s", host.osc.last_error.c_str());
             ImGui::Text("Sending to %s:%d -- %lld packet(s), %lld error(s)",
                 host.osc.target_host.c_str(), host.osc.target_port,
                 host.osc.packets_sent, host.osc.packets_errored);
         } else {
-            ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f),
+            ImGui::TextColored(openvr_pair::overlay::ui::GetPalette().statusOk,
                 "OSC OK -> %s:%d @ %.0f pkt/s",
                 host.osc.target_host.c_str(), host.osc.target_port,
                 host.osc.packets_per_second);

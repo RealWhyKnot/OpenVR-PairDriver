@@ -1,11 +1,15 @@
 #pragma once
 
+#include "Theme.h"
+
 #include <imgui.h>
 #include <string>
 
 // Shared UI helpers for all overlay feature modules.
 // Keeps control styling and interaction patterns consistent across Input Health,
-// Smoothing, and the shell module table.
+// Smoothing, the calibration overlay, the face-tracking overlay, and the
+// shell. Helpers that name a color route through GetPalette() so the active
+// theme drives the actual hue.
 namespace openvr_pair::overlay::ui {
 
 inline void ApplyOverlayStyle()
@@ -28,6 +32,14 @@ inline void TooltipForLastItem(const char *tooltip)
 	if (tooltip && tooltip[0] != '\0' && ImGui::IsItemHovered()) {
 		ImGui::SetTooltip("%s", tooltip);
 	}
+}
+
+// Same as TooltipForLastItem but reads better at call sites where the
+// "last item" was a plain text element (TextUnformatted, TextWrapped) and
+// the caller wants the tooltip to appear on hover of that text.
+inline void TooltipOnHover(const char *tooltip)
+{
+	TooltipForLastItem(tooltip);
 }
 
 inline bool CheckboxWithTooltip(const char *label, bool *value, const char *tooltip)
@@ -62,6 +74,141 @@ inline void DrawTextWrapped(const std::string &text)
 {
 	DrawTextWrapped(text.c_str());
 }
+
+// Routes through ImGui::TextColored for now; existing as a stable call site
+// so future passes can swap in semantic-palette routing without touching
+// every feature module.
+inline void DrawColoredText(const char *text, ImVec4 color)
+{
+	if (!text) return;
+	ImGui::TextColored(color, "%s", text);
+}
+
+// Small filled circle aligned with the current text baseline. Reserves a
+// Dummy(2r+4, lineH) so the next SameLine() call lines up with the dot.
+// Promoted from ShellFooter.cpp so calibration's footer + future status
+// rows can share the same dot dimensions.
+inline void DrawStatusDot(ImU32 color)
+{
+	ImDrawList *dl = ImGui::GetWindowDrawList();
+	const float h = ImGui::GetTextLineHeight();
+	const float r = h * 0.32f;
+	const ImVec2 cursor = ImGui::GetCursorScreenPos();
+	const ImVec2 center(cursor.x + r + 2.0f, cursor.y + h * 0.5f);
+	dl->AddCircleFilled(center, r, color);
+	ImGui::Dummy(ImVec2(r * 2.0f + 4.0f, h));
+	ImGui::SameLine();
+}
+
+// Right-aligns `text` inside the current content region. Used by table
+// cells that want a status word hugging the right edge regardless of the
+// column's stretch width. If colored == false, falls back to
+// TextDisabled to match the muted "Disabled" idiom main.cpp's Modules
+// table used to hand-roll.
+inline void RightAlignText(const char *text, ImVec4 color, bool colored = true)
+{
+	if (!text) return;
+	const float colW = ImGui::GetContentRegionAvail().x;
+	const float textW = ImGui::CalcTextSize(text).x;
+	const float pad = (colW > textW) ? (colW - textW) : 0.0f;
+	ImGui::Dummy(ImVec2(pad, 0));
+	ImGui::SameLine(0, 0);
+	if (colored) {
+		ImGui::TextColored(color, "%s", text);
+	} else {
+		ImGui::TextDisabled("%s", text);
+	}
+}
+
+// One-button "[Copy]" that writes `text` to the clipboard. `id` distinguishes
+// multiple copy buttons on the same line (ImGui needs unique button ids).
+inline bool CopyToClipboardButton(const char *id, const char *text)
+{
+	if (!id || !text) return false;
+	ImGui::PushID(id);
+	const bool clicked = ImGui::SmallButton("Copy");
+	ImGui::PopID();
+	if (clicked) {
+		ImGui::SetClipboardText(text);
+	}
+	TooltipForLastItem("Copy this path to the clipboard");
+	return clicked;
+}
+
+// Renders a file path that fits the current content region width, falling
+// back to a middle-truncated form ("C:\Program Files\...\file.txt") when
+// the full path is too long. Hovering the path shows the untruncated text
+// in a tooltip so the user can still read it.
+inline void DrawFilePath(const char *path)
+{
+	if (!path || !path[0]) return;
+	const float avail = ImGui::GetContentRegionAvail().x;
+	const float full = ImGui::CalcTextSize(path).x;
+	if (avail <= 1.0f || full <= avail) {
+		ImGui::TextUnformatted(path);
+		TooltipOnHover(path);
+		return;
+	}
+	// Middle-truncate: keep the leading drive/prefix and the trailing
+	// filename so both are recognisable.
+	std::string s(path);
+	const std::string ellipsis = "...";
+	while (s.size() > ellipsis.size() + 4) {
+		const size_t mid = s.size() / 2;
+		s.erase(mid - 1, 2);
+		std::string candidate = s.substr(0, s.size() / 2) + ellipsis + s.substr(s.size() / 2);
+		if (ImGui::CalcTextSize(candidate.c_str()).x <= avail) {
+			ImGui::TextUnformatted(candidate.c_str());
+			TooltipOnHover(path);
+			return;
+		}
+	}
+	ImGui::TextUnformatted(path);
+	TooltipOnHover(path);
+}
+
+// RAII for a single push/pop pair. Replaces the 12+ scattered
+// PushStyleColor/PopStyleColor pairs in calibration's tabs. Construct a
+// local; the destructor pops on scope exit (including early return paths).
+struct ScopedStyleColor
+{
+	ScopedStyleColor(ImGuiCol idx, ImVec4 color)
+	{
+		ImGui::PushStyleColor(idx, color);
+	}
+	~ScopedStyleColor() { ImGui::PopStyleColor(); }
+	ScopedStyleColor(const ScopedStyleColor &) = delete;
+	ScopedStyleColor &operator=(const ScopedStyleColor &) = delete;
+};
+
+// RAII for BeginDisabled/EndDisabled. When `whyTooltip` is non-null the
+// tooltip is attached on hover of widgets drawn inside the disabled
+// region, giving the user a reason instead of just an unresponsive
+// control. Pass disabled=false to act as a no-op (still legal -- ImGui
+// permits empty Begin/End pairs).
+struct DisabledSection
+{
+	bool active;
+	const char *why;
+	DisabledSection(bool disabled, const char *whyTooltip = nullptr)
+		: active(disabled), why(whyTooltip)
+	{
+		if (active) ImGui::BeginDisabled();
+	}
+	~DisabledSection()
+	{
+		if (active) ImGui::EndDisabled();
+	}
+	// Call after a widget inside the section to attach the "why" tooltip.
+	void AttachReasonTooltip() const
+	{
+		if (active && why && why[0] && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+			ImGui::SetTooltip("%s", why);
+		}
+	}
+	DisabledSection(const DisabledSection &) = delete;
+	DisabledSection &operator=(const DisabledSection &) = delete;
+};
 
 inline void DrawBanner(
 	const char *title,
@@ -112,22 +259,14 @@ inline void DrawBanner(
 
 inline void DrawErrorBanner(const char *title, const char *detail)
 {
-	DrawBanner(
-		title,
-		detail,
-		ImVec4(0.42f, 0.06f, 0.06f, 1.0f),
-		ImVec4(1.0f, 0.88f, 0.88f, 1.0f),
-		ImVec4(1.0f, 0.96f, 0.96f, 1.0f));
+	const SemanticPalette &pal = GetPalette();
+	DrawBanner(title, detail, pal.bannerErrorBg, pal.bannerErrorTitle, pal.bannerErrorDetail);
 }
 
 inline void DrawWaitingBanner(const char *message)
 {
-	DrawBanner(
-		"Waiting",
-		message,
-		ImVec4(0.45f, 0.33f, 0.08f, 1.0f),
-		ImVec4(1.0f, 0.92f, 0.72f, 1.0f),
-		ImVec4(1.0f, 0.96f, 0.86f, 1.0f));
+	const SemanticPalette &pal = GetPalette();
+	DrawBanner("Waiting", message, pal.bannerWarnBg, pal.bannerWarnTitle, pal.bannerWarnDetail);
 }
 
 // Section heading: spacing + SeparatorText. Lets feature tabs stop hand-rolling

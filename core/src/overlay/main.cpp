@@ -2,6 +2,7 @@
 #include "ManifestRegistration.h"
 #include "Migration.h"
 #include "ShellContext.h"
+#include "Theme.h"
 #include "UiHelpers.h"
 #include "VrOverlayHost.h"
 
@@ -172,6 +173,8 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 			// into the checkbox.
 			ImGui::TableNextColumn();
 			ImGui::AlignTextToFramePadding();
+			const openvr_pair::overlay::ui::SemanticPalette &pal =
+				openvr_pair::overlay::ui::GetPalette();
 			const char *statusText = nullptr;
 			ImVec4 statusColor{};
 			bool statusColored = false;
@@ -179,31 +182,26 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 				statusText = (it != wanted.end() && it->second)
 					? "Enabling -- takes effect on next SteamVR launch"
 					: "Disabling -- takes effect on next SteamVR launch";
-				statusColor = ImVec4(0.95f, 0.7f, 0.4f, 1.0f);
+				statusColor = pal.statusPending;
 				statusColored = true;
 			} else if (installed) {
 				statusText = "Enabled";
-				statusColor = ImVec4(0.45f, 0.85f, 0.45f, 1.0f);
+				statusColor = pal.statusOk;
 				statusColored = true;
 			} else {
 				statusText = "Disabled";
 			}
-			// Right-align by padding from the right edge: avail width - text width.
-			const float colW = ImGui::GetContentRegionAvail().x;
-			const float textW = ImGui::CalcTextSize(statusText).x;
-			const float pad = (colW > textW) ? (colW - textW) : 0.0f;
-			ImGui::Dummy(ImVec2(pad, 0));
-			ImGui::SameLine(0, 0);
-			if (statusColored) {
-				ImGui::TextColored(statusColor, "%s", statusText);
-			} else {
-				ImGui::TextDisabled("%s", statusText);
-			}
+			openvr_pair::overlay::ui::RightAlignText(statusText, statusColor, statusColored);
 
-			// Column 2: enabled checkbox, far right.
+			// Column 2: enabled checkbox, far right. When a UAC toggle is
+			// in flight, disable the checkbox and surface the reason on
+			// hover so the user is not staring at an unresponsive control.
 			ImGui::TableNextColumn();
 			ImGui::PushID(key.c_str());
-			ImGui::BeginDisabled(isPending);
+			const std::string pendingReason =
+				"Waiting for the elevated helper to finish. Reopens after SteamVR picks up the change.";
+			openvr_pair::overlay::ui::DisabledSection disabled(
+				isPending, isPending ? pendingReason.c_str() : nullptr);
 			bool checkbox = displayState;
 			const std::string tooltip = std::string("Enable or disable ") + plugin->Name() +
 			                            " for this profile. Takes effect next SteamVR launch.";
@@ -212,10 +210,31 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 				wanted[key] = checkbox;
 				context.SetFlagPresent(plugin->FlagFileName(), checkbox);
 			}
-			ImGui::EndDisabled();
+			disabled.AttachReasonTooltip();
 			ImGui::PopID();
 		}
 		ImGui::EndTable();
+	}
+}
+
+void DrawThemes(openvr_pair::overlay::ShellContext & /*context*/)
+{
+	using namespace openvr_pair::overlay::ui;
+
+	DrawTextWrapped("Choose a color theme. Changes apply immediately and persist across launches.");
+	ImGui::Spacing();
+
+	const ThemeId current = GetCurrentThemeId();
+	for (int i = 0; i < (int)ThemeId::Count_; ++i) {
+		const ThemeId id = (ThemeId)i;
+		const bool selected = (id == current);
+		ImGui::PushID(i);
+		if (ImGui::RadioButton(ThemeName(id), selected)) {
+			SetTheme(id);
+		}
+		ImGui::SameLine();
+		ImGui::TextDisabled("%s", ThemeCaption(id));
+		ImGui::PopID();
 	}
 }
 
@@ -269,6 +288,12 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	// Floor the window size so the Modules table's fixed Status/Enabled
+	// columns always have room and the tab strip remains usable. The
+	// dashboard overlay continues to render at a fixed 1200x780 regardless
+	// of the desktop window size, so this only affects monitor-side use.
+	glfwSetWindowSizeLimits(window, 640, 480, GLFW_DONT_CARE, GLFW_DONT_CARE);
+
 #ifdef _WIN32
 	// Windows shell (taskbar, Start menu, alt-tab) picks the ICON resource
 	// off the .exe directly, but the GLFW window's title-bar icon comes
@@ -299,42 +324,73 @@ int main(int argc, char **argv)
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImPlot::CreateContext();
-	ImGui::StyleColorsDark();
+	// Theme colors are applied by InitThemeFromDisk further down; no
+	// StyleColorsDark() call needed here. ApplyOverlayStyle still owns
+	// padding/spacing/rounding (theme-independent).
 	ImGui::GetIO().IniFilename = nullptr;
 
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
 	ImGui_ImplOpenGL3_Init("#version 130");
 
-	// Offscreen FBO + RGBA8 texture. Every frame ImGui renders into
-	// this texture, which then gets blitted to the desktop window
-	// (for monitor display) AND submitted to the SteamVR dashboard
-	// overlay (for in-VR display). Fixed 1200x780 to match the
-	// default GLFW window size; the desktop window blit stretches
-	// if the user resizes.
-	constexpr int kFboWidth = 1200;
-	constexpr int kFboHeight = 780;
-	GLuint fboTexture = 0;
-	GLuint fbo = 0;
-	glGenTextures(1, &fboTexture);
-	glBindTexture(GL_TEXTURE_2D, fboTexture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, kFboWidth, kFboHeight, 0,
-		GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-	glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, fboTexture, 0);
-	GLenum drawBuffers[1] = { GL_COLOR_ATTACHMENT0 };
-	glDrawBuffers(1, drawBuffers);
-	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-		fprintf(stderr, "[WKOpenVR] offscreen framebuffer incomplete\n");
-	}
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	// Two render targets, one chosen per frame:
+	//
+	//  - vrFbo (fixed 1200x780): submitted to the SteamVR dashboard. The
+	//    fixed size keeps the in-VR overlay's apparent resolution and the
+	//    SetOverlayMouseScale mapping stable across desktop-window resizes.
+	//
+	//  - winFbo (matches the GLFW framebuffer, reallocated on resize):
+	//    used when the dashboard is not visible so the desktop window
+	//    blits 1:1, no stretching, and ImGui lays out at the actual
+	//    window size.
+	constexpr int kVrFboWidth = 1200;
+	constexpr int kVrFboHeight = 780;
+
+	auto allocFboTexture = [](GLuint &fbo, GLuint &tex, int w, int h) {
+		glGenTextures(1, &tex);
+		glBindTexture(GL_TEXTURE_2D, tex);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0,
+			GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glGenFramebuffers(1, &fbo);
+		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+		glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, tex, 0);
+		GLenum drawBuffers[1] = { GL_COLOR_ATTACHMENT0 };
+		glDrawBuffers(1, drawBuffers);
+		if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+			fprintf(stderr, "[WKOpenVR] framebuffer incomplete (%dx%d)\n", w, h);
+		}
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	};
+
+	GLuint vrFbo = 0, vrTexture = 0;
+	allocFboTexture(vrFbo, vrTexture, kVrFboWidth, kVrFboHeight);
+
+	int initialFbw = 0, initialFbh = 0;
+	glfwGetFramebufferSize(window, &initialFbw, &initialFbh);
+	if (initialFbw <= 0) initialFbw = kVrFboWidth;
+	if (initialFbh <= 0) initialFbh = kVrFboHeight;
+	GLuint winFbo = 0, winTexture = 0;
+	allocFboTexture(winFbo, winTexture, initialFbw, initialFbh);
+	int curWinFbW = initialFbw;
+	int curWinFbH = initialFbh;
+
+	auto reallocWinFbo = [&](int w, int h) {
+		// Only the texture storage needs to change; the FBO handle and
+		// the texture attachment stay valid because the binding tracks
+		// the texture name, not its dimensions.
+		glBindTexture(GL_TEXTURE_2D, winTexture);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0,
+			GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		curWinFbW = w;
+		curWinFbH = h;
+	};
 
 	ShellContext context = CreateShellContext();
 	openvr_pair::overlay::ui::ApplyOverlayStyle();
+	openvr_pair::overlay::ui::InitThemeFromDisk(context);
 	auto plugins = CreatePlugins();
 	for (auto &plugin : plugins) {
 		plugin->OnStart(context);
@@ -361,12 +417,19 @@ int main(int argc, char **argv)
 		const bool dashboardVisible = vrOverlay->TickFrame();
 
 		ImGuiIO &io = ImGui::GetIO();
-		io.DisplaySize = ImVec2(static_cast<float>(kFboWidth),
-			static_cast<float>(kFboHeight));
-		io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
 		if (dashboardVisible) {
+			// VR render target is fixed-resolution; override what GLFW
+			// reported so ImGui lays out at the FBO size and the VR mouse
+			// coords (which are in submitted-texture pixel space) map back
+			// onto ImGui widgets correctly.
+			io.DisplaySize = ImVec2(static_cast<float>(kVrFboWidth),
+				static_cast<float>(kVrFboHeight));
+			io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
 			io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
 		} else {
+			// Let ImGui_ImplGlfw_NewFrame's DisplaySize / FramebufferScale
+			// stand. They reflect the live GLFW window so layout reflows
+			// at the actual size instead of stretching a fixed FBO blit.
 			io.ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
 		}
 
@@ -397,6 +460,10 @@ int main(int argc, char **argv)
 				DrawModules(context, plugins);
 				ImGui::EndTabItem();
 			}
+			if (ImGui::BeginTabItem("Themes")) {
+				DrawThemes(context);
+				ImGui::EndTabItem();
+			}
 			ImGui::EndTabBar();
 		}
 
@@ -405,32 +472,61 @@ int main(int argc, char **argv)
 		ImGui::End();
 		ImGui::Render();
 
-		// Render into the FBO.
-		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-		glViewport(0, 0, kFboWidth, kFboHeight);
-		glClearColor(0.07f, 0.07f, 0.08f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		// Two render paths share one ImGui::GetDrawData() call: the
+		// content laid out above is rasterised into whichever FBO the
+		// current frame targets. The clear color tracks the theme's
+		// WindowBg so a Light theme does not leave a dark gutter around
+		// the ImGui rectangle.
+		const ImVec4 clearCol = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
 
-		// Blit FBO to the desktop window so monitor users still see
-		// the same UI.
 		int fbw = 0;
 		int fbh = 0;
 		glfwGetFramebufferSize(window, &fbw, &fbh);
-		if (fbw > 0 && fbh > 0) {
-			glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+
+		if (dashboardVisible) {
+			// VR path: render into the fixed-size FBO and submit. The
+			// desktop blit stretches because monitor users behind a VR
+			// session are not the primary audience here.
+			glBindFramebuffer(GL_FRAMEBUFFER, vrFbo);
+			glViewport(0, 0, kVrFboWidth, kVrFboHeight);
+			glClearColor(clearCol.x, clearCol.y, clearCol.z, clearCol.w);
+			glClear(GL_COLOR_BUFFER_BIT);
+			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+			if (fbw > 0 && fbh > 0) {
+				glBindFramebuffer(GL_READ_FRAMEBUFFER, vrFbo);
+				glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+				glBlitFramebuffer(0, 0, kVrFboWidth, kVrFboHeight,
+					0, 0, fbw, fbh,
+					GL_COLOR_BUFFER_BIT, GL_LINEAR);
+				glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+				glfwSwapBuffers(window);
+			}
+
+			vrOverlay->SubmitTexture(vrTexture, kVrFboWidth, kVrFboHeight);
+		} else if (fbw > 0 && fbh > 0) {
+			// Desktop path: keep the window FBO sized to the actual
+			// framebuffer so the 1:1 blit below preserves pixel sharpness
+			// and ImGui's layout (already taken at GLFW's DisplaySize)
+			// covers the visible area exactly.
+			if (fbw != curWinFbW || fbh != curWinFbH) {
+				reallocWinFbo(fbw, fbh);
+			}
+
+			glBindFramebuffer(GL_FRAMEBUFFER, winFbo);
+			glViewport(0, 0, fbw, fbh);
+			glClearColor(clearCol.x, clearCol.y, clearCol.z, clearCol.w);
+			glClear(GL_COLOR_BUFFER_BIT);
+			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, winFbo);
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-			glBlitFramebuffer(0, 0, kFboWidth, kFboHeight, 0, 0, fbw, fbh,
-				GL_COLOR_BUFFER_BIT, GL_LINEAR);
+			glBlitFramebuffer(0, 0, fbw, fbh, 0, 0, fbw, fbh,
+				GL_COLOR_BUFFER_BIT, GL_NEAREST);
 			glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 			glfwSwapBuffers(window);
-		}
-
-		// Submit the same texture to the dashboard overlay when it's
-		// visible inside the headset.
-		if (dashboardVisible) {
-			vrOverlay->SubmitTexture(fboTexture, kFboWidth, kFboHeight);
 		}
 
 		// Wait for input or a frame interval. Tighter cadence when
@@ -451,8 +547,10 @@ int main(int argc, char **argv)
 		(*it)->OnShutdown(context);
 	}
 
-	glDeleteFramebuffers(1, &fbo);
-	glDeleteTextures(1, &fboTexture);
+	glDeleteFramebuffers(1, &vrFbo);
+	glDeleteTextures(1, &vrTexture);
+	glDeleteFramebuffers(1, &winFbo);
+	glDeleteTextures(1, &winTexture);
 
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();

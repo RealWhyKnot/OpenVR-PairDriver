@@ -76,6 +76,8 @@ void DrawRangeCell(const protocol::InputHealthSnapshotBody &b)
 
 void DrawHintCell(const protocol::InputHealthSnapshotBody &b)
 {
+	const auto &pal = openvr_pair::overlay::ui::GetPalette();
+
 	if (b.is_boolean) {
 		if (b.press_count == 0) ImGui::TextDisabled("no presses");
 		else                   ImGui::Text("seen");
@@ -88,16 +90,16 @@ void DrawHintCell(const protocol::InputHealthSnapshotBody &b)
 	}
 
 	if (b.ph_triggered) {
-		ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.4f, 1.0f),
+		ImGui::TextColored(pal.statusWarn,
 			"drift %s", b.ph_triggered_positive ? "+" : "-");
 		return;
 	}
 
 	if (diag::LooksLikeTriggerValue(b)) {
 		if (b.welford_count >= 20 && b.observed_min > 0.08f) {
-			ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.4f, 1.0f), "rest high?");
+			ImGui::TextColored(pal.statusWarn, "rest high?");
 		} else if (b.welford_count >= 20 && b.observed_max < 0.85f) {
-			ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.4f, 1.0f), "max low?");
+			ImGui::TextColored(pal.statusWarn, "max low?");
 		} else {
 			ImGui::TextDisabled("range");
 		}
@@ -109,7 +111,7 @@ void DrawHintCell(const protocol::InputHealthSnapshotBody &b)
 		if (!p.enough_coverage) {
 			ImGui::TextDisabled("sweep %.0f%% H%.2f", p.coverage * 100.0, p.entropy);
 		} else if (p.weak_bins > 0) {
-			ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.4f, 1.0f),
+			ImGui::TextColored(pal.statusWarn,
 				"weak arc? %d", p.weak_bins);
 		} else {
 			ImGui::TextDisabled("coverage ok");
@@ -122,12 +124,13 @@ void DrawHintCell(const protocol::InputHealthSnapshotBody &b)
 
 void DrawLearningCell(const LearningPathView &view)
 {
+	const auto &pal = openvr_pair::overlay::ui::GetPalette();
 	if (!view.corrections_enabled) {
 		ImGui::TextDisabled("off");
 	} else if (view.drift_shift_pending) {
-		ImGui::TextColored(ImVec4(0.95f, 0.65f, 0.30f, 1.0f), "drift-shift");
+		ImGui::TextColored(pal.statusWarn, "drift-shift");
 	} else if (view.ready) {
-		ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "ready");
+		ImGui::TextColored(pal.statusOk, "ready");
 	} else {
 		ImGui::Text("%llu/%llu",
 			(unsigned long long)view.sample_count,

@@ -117,8 +117,9 @@ void DrawUpdateBanner() {
 
 	// Background panel. Slightly different shade than the rest of the window so
 	// it draws the eye without being alarming.
-	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.18f, 0.30f, 0.45f, 1.0f));
-	ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.40f, 0.65f, 0.95f, 1.0f));
+	const auto &pal = openvr_pair::overlay::ui::GetPalette();
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, pal.bannerInfoBg);
+	ImGui::PushStyleColor(ImGuiCol_Border, pal.bannerInfoBorder);
 	ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0f, 8.0f));
 
@@ -128,7 +129,7 @@ void DrawUpdateBanner() {
 			ImGuiChildFlags_Border)) {
 
 		if (progress.state == DownloadState::Done) {
-			ImGui::TextColored(ImVec4(0.80f, 0.95f, 0.80f, 1.0f),
+			ImGui::TextColored(pal.statusOk,
 				"Installer launched. Closing Space Calibrator...");
 			// Closing the program lets the installer replace the EXE without
 			// fighting Windows' file locks. Fire-and-forget; one tick is plenty
@@ -158,7 +159,7 @@ void DrawUpdateBanner() {
 				ImGui::ProgressBar(1.0f, ImVec2(-1.0f, 0.0f), "...");
 			}
 		} else if (failed) {
-			ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.55f, 1.0f),
+			ImGui::TextColored(pal.statusError,
 				"Update failed: %s", progress.errorMessage.c_str());
 
 			if (ImGui::Button("Retry")) {
@@ -204,7 +205,7 @@ void DrawUpdateBanner() {
 
 			if (info.installerSha256.empty()) {
 				ImGui::SameLine();
-				ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.40f, 1.0f),
+				ImGui::TextColored(pal.statusWarn,
 					"  (no SHA published -- verify manually)");
 			}
 		}
@@ -227,8 +228,9 @@ void DrawChaperoneLoadFailedBanner() {
 	// Once the user copies fresh bounds the problem is resolved in-session.
 	if (CalCtx.chaperone.valid) return;
 
-	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.40f, 0.10f, 0.10f, 1.0f));
-	ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.90f, 0.35f, 0.35f, 1.0f));
+	const auto &palChap = openvr_pair::overlay::ui::GetPalette();
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, palChap.bannerErrorBg);
+	ImGui::PushStyleColor(ImGuiCol_Border, palChap.bannerErrorTitle);
 	ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0f, 6.0f));
 
@@ -236,9 +238,9 @@ void DrawChaperoneLoadFailedBanner() {
 	if (ImGui::BeginChild("ChaperoneFailBanner",
 			ImVec2(ImGui::GetContentRegionAvail().x, bannerHeight),
 			ImGuiChildFlags_Border)) {
-		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.75f, 1.0f),
+		ImGui::TextColored(palChap.bannerErrorTitle,
 			"Saved chaperone could not be loaded (corrupted size). Auto-apply is disabled.");
-		ImGui::TextColored(ImVec4(0.90f, 0.70f, 0.70f, 1.0f),
+		ImGui::TextColored(palChap.bannerErrorDetail,
 			"Press \"Copy chaperone bounds to profile\" to save a new one and restore auto-apply.");
 	}
 	ImGui::EndChild();

@@ -7,6 +7,7 @@
 #include "CalibrationCalc.h"
 #include "CalibrationMetrics.h"
 #include "UserInterface.h"
+#include "UiHelpers.h"
 // ImPlotPoint (*ImPlotGetter)(int idx, void* user_data);
 namespace {
 	double refTime;
@@ -285,6 +286,7 @@ namespace {
 			axisVarianceColormap = ImPlot::AddColormap("AxisVarianceColormap", colors, sizeof(colors) / sizeof(colors[0]));
 		}
 
+		const auto &pal = openvr_pair::overlay::ui::GetPalette();
 		if (ImPlot::BeginPlot("##Axis variance", ImVec2(-1, 0), ImPlotFlags_NoLegend)) {
 			ImPlot::SetupAxes(nullptr, nullptr, 0, 0);
 			SetupXAxis();
@@ -294,7 +296,7 @@ namespace {
 
 			ImPlot::PushColormap(axisVarianceColormap);
 			ImPlot::PushStyleVar(ImPlotStyleVar_FillAlpha, 0.5f);
-			ImPlot::SetNextLineStyle(ImVec4(1, 0, 0, 1));
+			ImPlot::SetNextLineStyle(pal.plotAxisLow);
 			PlotShadedG("##VarianceLow",
 				[&](int index) {
 					auto p = Metrics::axisIndependence[index];
@@ -308,7 +310,7 @@ namespace {
 				Metrics::axisIndependence.size()
 			);
 
-			ImPlot::SetNextLineStyle(ImVec4(0, 1, 0, 1));
+			ImPlot::SetNextLineStyle(pal.plotAxisHigh);
 
 			PlotShadedG("##VarianceHigh",
 				[&](int index) {
@@ -346,7 +348,7 @@ namespace {
 			AddApplyTicks();
 
 			// Reference line at the rejection threshold.
-			ImPlot::SetNextLineStyle(ImVec4(1, 0.4f, 0.4f, 1));
+			ImPlot::SetNextLineStyle(openvr_pair::overlay::ui::GetPalette().plotThresholdLine);
 			double thresholdY[2] = { kRotationConditionMin, kRotationConditionMin };
 			ImPlot::PlotInfLines("##RotConditionThreshold", &thresholdY[0], 1, ImPlotInfLinesFlags_Horizontal);
 
@@ -365,7 +367,7 @@ namespace {
 			AddApplyTicks();
 
 			// Reference line at the watchdog trigger count.
-			ImPlot::SetNextLineStyle(ImVec4(1, 0.4f, 0.4f, 1));
+			ImPlot::SetNextLineStyle(openvr_pair::overlay::ui::GetPalette().plotThresholdLine);
 			double watchdogY = kMaxConsecutiveRejections;
 			ImPlot::PlotInfLines("##WatchdogThreshold", &watchdogY, 1, ImPlotInfLinesFlags_Horizontal);
 

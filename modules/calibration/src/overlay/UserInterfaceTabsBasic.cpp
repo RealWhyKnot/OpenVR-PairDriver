@@ -3,6 +3,7 @@
 #include "Configuration.h"
 #include "VRState.h"
 #include "CalibrationMetrics.h"
+#include "UiHelpers.h"
 
 #include <string>
 #include <openvr.h>
@@ -37,7 +38,8 @@ static bool DrawProfileMismatchBanner() {
 			actualSystem = GetPrettyTrackingSystemName(buffer);
 		}
 	}
-	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.55f, 0.45f, 1.0f));
+	const auto &pal = openvr_pair::overlay::ui::GetPalette();
+	ImGui::PushStyleColor(ImGuiCol_Text, pal.statusWarn);
 	if (!actualSystem.empty()) {
 		ImGui::TextWrapped(
 			"Profile expects %s HMD but current HMD is on %s. Calibration not applied.",

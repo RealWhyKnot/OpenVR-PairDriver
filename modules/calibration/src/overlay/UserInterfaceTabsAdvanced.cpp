@@ -4,6 +4,7 @@
 #include "CalibrationMetrics.h"
 #include "VRState.h"
 #include "Wizard.h"
+#include "UiHelpers.h"
 
 #include <string>
 #include <imgui/imgui.h>
@@ -55,6 +56,7 @@ static void AddResetContextMenu(const char* popupId, Fn resetFn) {
 // something a casual user needs to see while running.
 static void DrawDiagnosticsPanel(ImVec2 panelSize) {
 	ImGui::BeginGroupPanel("Diagnostics", panelSize);
+	const auto &pal = openvr_pair::overlay::ui::GetPalette();
 
 	// Watchdog reset tracking. We reflect whether the count has changed
 	// recently (within ~15 s) by colouring the line amber, matching the
@@ -89,7 +91,7 @@ static void DrawDiagnosticsPanel(ImVec2 panelSize) {
 
 	const bool wdRecent = wdResets > 0 && (now - s_lastWatchdogResetTime) < 15.0 && s_lastWatchdogResetTime > 0.0;
 	if (wdRecent) {
-		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.78f, 0.30f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_Text, pal.statusPending);
 		ImGui::Text("Watchdog reset %.0fs ago - recollecting samples (count: %d)",
 			now - s_lastWatchdogResetTime, wdResets);
 		ImGui::PopStyleColor();
@@ -109,7 +111,7 @@ static void DrawDiagnosticsPanel(ImVec2 panelSize) {
 
 	const bool stallRecent = s_stallPurgeCount > 0 && (now - s_lastStallPurgeTime) < 15.0;
 	if (stallRecent) {
-		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.78f, 0.30f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_Text, pal.statusPending);
 		ImGui::Text("HMD long-stall %.0fs ago (count: %d)",
 			now - s_lastStallPurgeTime, s_stallPurgeCount);
 		ImGui::PopStyleColor();

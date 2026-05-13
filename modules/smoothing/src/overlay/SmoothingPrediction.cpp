@@ -4,6 +4,7 @@
 #include "SmoothingPlugin.h"
 
 #include "Protocol.h"
+#include "UiHelpers.h"
 
 #include <imgui.h>
 
@@ -121,29 +122,19 @@ void SmoothingPlugin::DrawPredictionTab()
 		const char *tool = externalSmoothingToolName_.empty()
 			? "an external smoothing tool"
 			: externalSmoothingToolName_.c_str();
-		char statusBuf[256];
-		const char *statusText;
-		ImVec4 bgColor;
+		const auto &pal = openvr_pair::overlay::ui::GetPalette();
 		if (externalSmoothingDetected_) {
+			// Warning-toned banner: the user needs to act (close the
+			// external tool) before sliders below mean anything.
+			char statusBuf[256];
 			snprintf(statusBuf, sizeof statusBuf, "DETECTED: %s is running.", tool);
-			statusText = statusBuf;
-			bgColor = ImVec4(0.55f, 0.40f, 0.10f, 1.0f);
+			openvr_pair::overlay::ui::DrawBanner(statusBuf, nullptr,
+				pal.bannerWarnBg, pal.bannerWarnTitle, pal.bannerWarnDetail);
 		} else {
-			statusText = "No external smoothing tool detected.";
-			bgColor = ImVec4(0.20f, 0.40f, 0.25f, 1.0f);
+			// Plain coloured text for the OK state -- distinct from the
+			// banner so the two states do not blur together at a glance.
+			ImGui::TextColored(pal.statusOk, "No external smoothing tool detected.");
 		}
-
-		const ImVec2 textSize = ImGui::CalcTextSize(statusText);
-		const ImVec2 padding(10.0f, 6.0f);
-		ImVec2 cursor = ImGui::GetCursorScreenPos();
-		ImVec2 rectMin = cursor;
-		ImVec2 rectMax(cursor.x + ImGui::GetContentRegionAvail().x,
-		               cursor.y + textSize.y + padding.y * 2.0f);
-		ImDrawList *dl = ImGui::GetWindowDrawList();
-		dl->AddRectFilled(rectMin, rectMax, ImGui::GetColorU32(bgColor), 6.0f);
-		dl->AddText(ImVec2(rectMin.x + padding.x, rectMin.y + padding.y),
-		            ImGui::GetColorU32(ImVec4(0.95f, 0.95f, 0.95f, 1.0f)), statusText);
-		ImGui::Dummy(ImVec2(0, textSize.y + padding.y * 2.0f));
 	}
 
 	if (externalSmoothingDetected_) {
@@ -151,7 +142,7 @@ void SmoothingPlugin::DrawPredictionTab()
 		const char *tool = externalSmoothingToolName_.empty()
 			? "An external smoothing tool"
 			: externalSmoothingToolName_.c_str();
-		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f, 0.85f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_Text, openvr_pair::overlay::ui::GetPalette().statusError);
 		ImGui::TextWrapped(
 			"%s is running. Working alongside it is unsupported -- the two smoothing "
 			"layers fight and the result is unpredictable. Close it and use the per-tracker "
@@ -206,7 +197,7 @@ void SmoothingPlugin::DrawPredictionTab()
 			sys.empty() ? "?" : sys.c_str(),
 			serial.c_str());
 		if (isHmd) {
-			ImGui::TextColored(ImVec4(0.85f, 0.85f, 0.55f, 1.0f), "[HMD, locked]");
+			ImGui::TextColored(openvr_pair::overlay::ui::GetPalette().statusInfo, "[HMD, locked]");
 		}
 
 		ImGui::BeginDisabled(isHmd);

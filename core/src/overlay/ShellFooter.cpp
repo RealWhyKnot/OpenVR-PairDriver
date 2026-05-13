@@ -1,5 +1,8 @@
 #include "ShellFooter.h"
 
+#include "Theme.h"
+#include "UiHelpers.h"
+
 #include <imgui.h>
 
 #ifndef OPENVR_PAIR_VERSION_STRING
@@ -7,25 +10,6 @@
 #endif
 
 namespace openvr_pair::overlay {
-namespace {
-
-// Small filled circle aligned with the current text baseline. Lifted from
-// SC's DrawStatusDot so the shared footer reads the same way SC's own
-// version line does. Reserves a Dummy of the dot's width so SameLine()
-// after it lines up with the text.
-void DrawStatusDot(ImU32 color)
-{
-	ImDrawList *dl = ImGui::GetWindowDrawList();
-	const float h = ImGui::GetTextLineHeight();
-	const float r = h * 0.32f;
-	ImVec2 cursor = ImGui::GetCursorScreenPos();
-	ImVec2 center(cursor.x + r + 2.0f, cursor.y + h * 0.5f);
-	dl->AddCircleFilled(center, r, color);
-	ImGui::Dummy(ImVec2(r * 2.0f + 4.0f, h));
-	ImGui::SameLine();
-}
-
-} // namespace
 
 void DrawShellFooter(const ShellFooterStatus &status)
 {
@@ -43,12 +27,12 @@ void DrawShellFooter(const ShellFooterStatus &status)
 	const char *label = status.driverLabel ? status.driverLabel : "Driver";
 	const char *stamp = status.buildStamp ? status.buildStamp : OPENVR_PAIR_VERSION_STRING;
 
-	const ImU32  dotColor  = status.driverConnected ? IM_COL32(80, 200, 120, 255) : IM_COL32(220, 170, 60, 255);
-	const ImVec4 textColor = status.driverConnected ? ImVec4(0.5f, 0.85f, 0.55f, 1.0f)
-	                                                : ImVec4(0.95f, 0.80f, 0.40f, 1.0f);
-	const char  *state     = status.driverConnected ? "connected" : "waiting";
+	const ui::SemanticPalette &pal = ui::GetPalette();
+	const ImU32  dotColor  = status.driverConnected ? pal.dotOk      : pal.dotPending;
+	const ImVec4 textColor = status.driverConnected ? pal.statusOk   : pal.statusPending;
+	const char  *state     = status.driverConnected ? "connected"    : "waiting";
 
-	DrawStatusDot(dotColor);
+	ui::DrawStatusDot(dotColor);
 	ImGui::PushStyleColor(ImGuiCol_Text, textColor);
 	// TextWrapped wraps at the right edge of the current content region, so
 	// the "Driver: connected  |  WKOpenVR <stamp>" line reflows instead of

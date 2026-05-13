@@ -144,9 +144,8 @@ void DrawCalibrationTab(FacetrackingPlugin &plugin)
             ? kShapeNames[i]
             : (i == 63 ? "EyeOpen_L" : "EyeOpen_R");
 
-        ImVec4 col = warm
-            ? ImVec4(0.2f, 0.8f, 0.25f, 1.0f)   // green
-            : ImVec4(0.35f, 0.35f, 0.35f, 1.0f); // grey
+        const auto &pal = openvr_pair::overlay::ui::GetPalette();
+        ImVec4 col = warm ? pal.statusOk : pal.statusIdle;
 
         ImGui::PushStyleColor(ImGuiCol_Button, col);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, col);

@@ -215,9 +215,10 @@ static void DrawInstalledModulesSection(FacetrackingPlugin &plugin)
         // Column 1: Name. Tint green when the host confirms this row is the
         // currently running module.
         ImGui::TableSetColumnIndex(1);
+        const auto &pal = GetPalette();
         const bool isHostActive = hostActiveUuid && *hostActiveUuid == m.uuid;
         if (isHostActive)
-            ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f), "%s", m.name.c_str());
+            ImGui::TextColored(pal.statusOk, "%s", m.name.c_str());
         else
             ImGui::TextUnformatted(m.name.c_str());
         if (isHostActive)
@@ -237,13 +238,13 @@ static void DrawInstalledModulesSection(FacetrackingPlugin &plugin)
         ImGui::TableSetColumnIndex(4);
         const std::string srcLabel = ResolveSourceLabel(m, g_state.catalogue);
         if (m.source_kind_str == "github" && !m.sha_verified) {
-            ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+            ImGui::TextColored(pal.statusError,
                                "%s (unverified)", srcLabel.c_str());
             TooltipForLastItem("This module was installed without SHA-256 verification.\n"
                                "The release notes did not contain a recognisable SHA-256 hash.\n"
                                "Confirm the developer publishes verifiable hashes before trusting this source.");
         } else if (m.source_kind_str == "folder") {
-            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.35f, 1.0f),
+            ImGui::TextColored(pal.statusWarn,
                                "%s", srcLabel.c_str());
             TooltipForLastItem("This module was installed from a local folder.\n"
                                "Local modules are not signature-verified.");
@@ -278,11 +279,12 @@ static void DrawSourcesSection(FacetrackingPlugin &plugin)
 
     // ---- status line ----
     if (!g_state.sync_status.empty()) {
+        const auto &palSync = GetPalette();
         if (g_state.sync_status_ok)
-            ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f),
+            ImGui::TextColored(palSync.statusOk,
                                "Sync: %s", g_state.sync_status.c_str());
         else
-            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f),
+            ImGui::TextColored(palSync.statusError,
                                "Sync error: %s", g_state.sync_status.c_str());
     } else if (plugin.SyncRunner().IsRunning()) {
         ImGui::TextDisabled("Syncing...");
@@ -340,7 +342,7 @@ static void DrawSourcesSection(FacetrackingPlugin &plugin)
 
             ImGui::TableSetColumnIndex(3);
             if (!src.last_sync_error.empty())
-                ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f),
+                ImGui::TextColored(GetPalette().statusError,
                                    "%s", src.last_sync_error.c_str());
             else if (!src.last_checked_at.empty())
                 ImGui::TextDisabled("%s", src.last_checked_at.c_str());

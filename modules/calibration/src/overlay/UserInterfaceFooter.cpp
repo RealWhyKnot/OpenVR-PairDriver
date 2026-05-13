@@ -7,6 +7,7 @@
 #include "Protocol.h"
 #include "BuildStamp.h"
 #include "VRState.h"
+#include "UiHelpers.h"
 
 extern SCIPCClient Driver;
 extern bool runningInOverlay;
@@ -74,18 +75,19 @@ void ShowVersionLine() {
 	//   red    - established connection has dropped (IPC pipe broke after
 	//            initial handshake). This is the case where reinstalling the
 	//            driver is genuinely the right advice.
+	const auto &pal = openvr_pair::overlay::ui::GetPalette();
 	const bool driverConnected = Driver.IsConnected();
 	if (driverConnected) {
-		DrawStatusDot(IM_COL32(80, 200, 120, 255));
-		ImGui::TextColored(ImVec4(0.5f, 0.85f, 0.55f, 1.0f),
+		DrawStatusDot(pal.dotOk);
+		ImGui::TextColored(pal.statusOk,
 			"Driver: connected (v%u)", (unsigned)protocol::Version);
 	} else if (!IsVRReady()) {
-		DrawStatusDot(IM_COL32(220, 170, 60, 255));
-		ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.40f, 1.0f),
+		DrawStatusDot(pal.dotPending);
+		ImGui::TextColored(pal.statusPending,
 			"Driver: waiting for SteamVR");
 	} else {
-		DrawStatusDot(IM_COL32(220, 80, 80, 255));
-		ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.45f, 1.0f),
+		DrawStatusDot(pal.dotError);
+		ImGui::TextColored(pal.statusError,
 			"Driver: disconnected -- reinstall the SteamVR driver");
 	}
 
