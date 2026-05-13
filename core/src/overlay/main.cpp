@@ -438,10 +438,16 @@ int main(int argc, char **argv)
 		const ImGuiViewport *vp = ImGui::GetMainViewport();
 		ImGui::SetNextWindowPos(vp->WorkPos);
 		ImGui::SetNextWindowSize(vp->WorkSize);
+		// NoScrollbar/NoScrollWithMouse: every feature tab that needs to
+		// scroll already owns an inner child for it (e.g. SC's
+		// "SCTabBody" reserves footer space and scrolls the rest). If
+		// the outer shell window also offered its own scrollbar, those
+		// tabs would render two vertical scrollbars side by side.
 		ImGuiWindowFlags flags =
 			ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
 			ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-			ImGuiWindowFlags_NoBringToFrontOnFocus;
+			ImGuiWindowFlags_NoBringToFrontOnFocus |
+			ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 		ImGui::Begin("WKOpenVR", nullptr, flags);
 
 		if (ImGui::BeginTabBar("tabs")) {

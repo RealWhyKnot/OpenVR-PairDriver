@@ -253,7 +253,7 @@ struct ThemeDef
 };
 
 const ThemeDef kThemes[] = {
-	{ ThemeId::Legacy,       "Legacy",        "Original WKOpenVR look. Warm dark palette.",         &LegacyPalette,       &ApplyLegacyImGuiColors       },
+	{ ThemeId::Legacy,       "Legacy",        "Original Space Calibrator look. Warm dark palette.", &LegacyPalette,       &ApplyLegacyImGuiColors       },
 	{ ThemeId::Dark,         "Dark",          "Cooler neutral grays. Higher panel contrast.",       &DarkPalette,         &ApplyDarkImGuiColors         },
 	{ ThemeId::Light,        "Light",         "Light backgrounds. For bright rooms or screenshots.",&LightPalette,        &ApplyLightImGuiColors        },
 	{ ThemeId::HighContrast, "High Contrast", "Pure black, white text and borders. Accessibility.", &HighContrastPalette, &ApplyHighContrastImGuiColors },
