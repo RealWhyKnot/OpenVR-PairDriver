@@ -6,7 +6,8 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 
 ## Unreleased
 
-_No notable changes since the last release._
+### Fixed
+- **overlay:** Face-tracking version, legacy registry, scroll, search dedup, update notice (a274cfa)
 
 ---
 
