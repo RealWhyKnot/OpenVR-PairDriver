@@ -15,10 +15,17 @@
 // consumer overlay connects only to its own pipe. Wire format on all pipes
 // is the same protocol::Request/Response struct; the driver routes by
 // request type and rejects out-of-feature requests.
-#define OPENVR_PAIRDRIVER_CALIBRATION_PIPE_NAME  "\\\\.\\pipe\\OpenVR-Calibration"
+#define OPENVR_PAIRDRIVER_CALIBRATION_PIPE_NAME  "\\\\.\\pipe\\WKOpenVR-Calibration"
 #define OPENVR_PAIRDRIVER_SMOOTHING_PIPE_NAME    "\\\\.\\pipe\\WKOpenVR-Smoothing"
 #define OPENVR_PAIRDRIVER_INPUTHEALTH_PIPE_NAME  "\\\\.\\pipe\\WKOpenVR-InputHealth"
-#define OPENVR_PAIRDRIVER_FACETRACKING_PIPE_NAME "\\\\.\\pipe\\OpenVR-FaceTracking"
+#define OPENVR_PAIRDRIVER_FACETRACKING_PIPE_NAME "\\\\.\\pipe\\WKOpenVR-FaceTracking"
+// v16 (2026-05-13): OSC router module. Driver opens this pipe gated on
+// enable_oscrouter.flag. Accepts route subscribe/unsubscribe, config push,
+// and test-publish requests from the overlay.
+#define OPENVR_PAIRDRIVER_OSCROUTER_PIPE_NAME    "\\\\.\\pipe\\WKOpenVR-OscRouter"
+// Publish pipe: fire-and-forget from out-of-process sidecars. Wire format:
+// 32-byte source-id, 4-byte LE frame length, then `length` bytes of raw OSC.
+#define OPENVR_PAIRDRIVER_OSCROUTER_PUB_PIPE_NAME "\\\\.\\pipe\\WKOpenVR-OscRouterPub"
 
 // Pose telemetry shmem segment. Created by the driver only when the calibration
 // feature is enabled; the calibration overlay opens it to read driver-side
@@ -37,6 +44,9 @@
 // and applies calibration / eyelid-sync / vergence-lock before publishing to
 // SteamVR inputs. Single writer (host) / single reader (driver).
 #define OPENVR_PAIRDRIVER_FACETRACKING_SHMEM_NAME "OpenVRPairFaceTrackingFrameRingV1"
+// OSC router stats shmem. Created by the driver when oscrouter is enabled;
+// the overlay reads it at ~10 Hz to show per-route message rates.
+#define OPENVR_PAIRDRIVER_OSCROUTER_SHMEM_NAME "WKOpenVROscRouterStatsV1"
 
 #ifdef _OPENVR_API 
 
@@ -175,7 +185,18 @@ namespace protocol
 	// Wire layout for the existing request types is unchanged; the bump forces
 	// paired install so a version skew is rejected at handshake instead of
 	// landing as a silently-ignored RequestType.
-	const uint32_t Version = 15;
+	//
+	// v16 (2026-05-13): adds the OSC Router substrate. Driver opens a fifth
+	// pipe (\\.\pipe\WKOpenVR-OscRouter) gated on enable_oscrouter.flag,
+	// plus a fire-and-forget publish pipe (\\.\pipe\WKOpenVR-OscRouterPub)
+	// for out-of-process sidecars. New request types: RequestOscRouteSubscribe,
+	// RequestOscRouteUnsubscribe, RequestOscPublish, RequestOscGetStats.
+	// New shmem segment (WKOpenVROscRouterStatsV1) carries per-route counters
+	// at ~10 Hz for the overlay's Modules tab display. Also standardises the
+	// two legacy pipe-name prefixes from OpenVR-* to WKOpenVR-* for
+	// consistency; a full paired reinstall is required regardless due to the
+	// version bump.
+	const uint32_t Version = 16;
 
 	// Maximum length of a tracking-system-name string (e.g., "lighthouse", "oculus",
 	// "Pimax Crystal HMD"). 32 bytes is more than enough for known systems and keeps
@@ -226,6 +247,17 @@ namespace protocol
 		// v15 (2026-05-13): signal the driver to terminate and respawn the
 		// C# module host. Overlay flushes calibration first, then sends this.
 		RequestFaceHostRestart,
+		// v16 (2026-05-13): OSC router control. Driver routes these on the
+		// \\.\pipe\WKOpenVR-OscRouter pipe, gated on kFeatureOscRouter.
+		// Subscribe / Unsubscribe register overlay-side interest in an OSC
+		// address pattern and drive per-route counters in the stats shmem.
+		// Publish sends a single OSC datagram from the overlay (e.g. test msg).
+		// GetStats triggers an immediate stats snapshot response; the normal
+		// path is to read the shmem directly at ~10 Hz.
+		RequestOscRouteSubscribe,
+		RequestOscRouteUnsubscribe,
+		RequestOscPublish,
+		RequestOscGetStats,
 	};
 
 	enum ResponseType
@@ -233,6 +265,8 @@ namespace protocol
 		ResponseInvalid,
 		ResponseHandshake,
 		ResponseSuccess,
+		// v16: sent in reply to RequestOscGetStats. Payload is OscRouterStats.
+		ResponseOscRouterStats,
 	};
 
 	struct Protocol
@@ -582,6 +616,74 @@ namespace protocol
 		uint8_t  _reserved[8];
 	};
 
+	// =========================================================================
+	// v16: OSC Router protocol additions
+	// =========================================================================
+
+	// Opaque token assigned by the overlay subscriber; driver echoes it in
+	// per-route stats so the overlay can correlate routes to its own state.
+	using OscSubscriberId = uint32_t;
+
+	// Maximum OSC address length stored in the route table. OSC 1.0 allows
+	// arbitrary length; 64 bytes covers all known avatar parameter paths.
+	// The OOP publish pipe accepts addresses up to 128 bytes (larger buffer).
+	static const size_t OSC_ROUTE_ADDR_LEN = 64;
+
+	// POD payload for RequestOscRouteSubscribe. The overlay registers an
+	// interest pattern; the driver adds the route and begins counting matches.
+	// Pattern follows OSC 1.0 glob: ?, *, [abc], [a-z], {a,b}.
+	// Multiple subscribers may overlap on the same pattern -- each is
+	// independent with its own counter in the stats shmem slot.
+	struct OscRouteSubscribe
+	{
+		OscSubscriberId subscriber_id;   // assigned by caller; echoed in stats
+		uint8_t         enabled;         // 0 = disable (keep slot); 1 = active
+		uint8_t         _reserved[3];    // pad to 8-byte boundary; must be 0
+		char            pattern[OSC_ROUTE_ADDR_LEN]; // NUL-terminated OSC glob
+	};
+
+	// POD payload for RequestOscRouteUnsubscribe.
+	struct OscRouteUnsubscribe
+	{
+		OscSubscriberId subscriber_id;
+		uint8_t         _reserved[4];
+	};
+
+	// POD payload for RequestOscPublish. Overlay-originated publish (e.g. the
+	// "send test message" button in the Modules tab). The driver serialises
+	// the address + typetag + arg bytes into a raw OSC packet and sends it to
+	// the configured outbound endpoint (default 127.0.0.1:9000).
+	// Typetag follows OSC 1.0 (",f", ",i", ",s", ",ff", etc.).
+	// arg_bytes must be pre-encoded in OSC 1.0 wire format (big-endian,
+	// padded to 4-byte boundary) -- the driver forwards them verbatim after
+	// the address and typetag.
+	static const size_t OSC_PUBLISH_TYPETAG_LEN = 8;
+	// 32 bytes covers 8 floats or 1 int32 + 6 floats etc. Overlay test-publish
+	// only needs to send one float (the most common avatar parameter). Larger
+	// payloads (chatbox strings) go through the OOP publish pipe instead.
+	static const size_t OSC_PUBLISH_ARG_LEN     = 32;
+
+	struct OscPublish
+	{
+		char    address[OSC_ROUTE_ADDR_LEN];
+		char    typetag[OSC_PUBLISH_TYPETAG_LEN];
+		uint8_t arg_len;      // actual used bytes in arg_bytes
+		uint8_t _reserved[7]; // pad; must be 0
+		uint8_t arg_bytes[OSC_PUBLISH_ARG_LEN];
+	};
+
+	// POD payload for ResponseOscRouterStats. Carries global totals for the
+	// overlay's Modules tab; the per-route breakdown lives in the shmem segment
+	// and is read directly. This response is sent on RequestOscGetStats.
+	struct OscRouterStats
+	{
+		uint64_t packets_sent;    // total OSC datagrams sent since driver start
+		uint64_t bytes_sent;      // total bytes sent since driver start
+		uint64_t packets_dropped; // dropped due to full send queue
+		uint32_t active_routes;   // current number of active route table entries
+		uint32_t _reserved;
+	};
+
 	struct Request
 	{
 		RequestType type;
@@ -613,6 +715,11 @@ namespace protocol
 			FaceTrackingConfig     setFaceTrackingConfig;
 			FaceCalibrationCommand setFaceCalibrationCommand;
 			FaceModuleSelection    setFaceActiveModule;
+			// v16: OSC router control. All three are smaller than
+			// SetDeviceTransform so the union does not grow.
+			OscRouteSubscribe   oscRouteSubscribe;
+			OscRouteUnsubscribe oscRouteUnsubscribe;
+			OscPublish          oscPublish;
 		};
 
 		Request() : type(RequestInvalid), setAlignmentSpeedParams({}) { }
@@ -628,13 +735,20 @@ namespace protocol
 		"FaceCalibrationCommand must not grow Request");
 	static_assert(sizeof(FaceModuleSelection) <= sizeof(SetDeviceTransform),
 		"FaceModuleSelection must not grow Request");
+	static_assert(sizeof(OscRouteSubscribe) <= sizeof(SetDeviceTransform),
+		"OscRouteSubscribe must not grow Request");
+	static_assert(sizeof(OscRouteUnsubscribe) <= sizeof(SetDeviceTransform),
+		"OscRouteUnsubscribe must not grow Request");
+	static_assert(sizeof(OscPublish) <= sizeof(SetDeviceTransform),
+		"OscPublish must not grow Request");
 
 	struct Response
 	{
 		ResponseType type;
 
 		union {
-			Protocol protocol;
+			Protocol       protocol;
+			OscRouterStats oscRouterStats;  // v16: ResponseOscRouterStats
 		};
 
 		Response() : type(ResponseInvalid), protocol({}) {}
@@ -1544,4 +1658,214 @@ namespace protocol
 			pData->publish_index.store(next, std::memory_order_release);
 		}
 	};
+
+	// =========================================================================
+	// OSC Router stats shmem.
+	//
+	// Written by the OscRouter driver module at ~10 Hz. The overlay reads
+	// it directly to populate the Modules tab route list without a round-trip
+	// through the IPC pipe. Layout: header (magic + version), global counters,
+	// fixed-size route-slot table (32 entries).
+	//
+	// Writer: driver's OscRouterStatsShmem write side (one worker thread).
+	// Readers: overlay's OscRouterStatsReader (any thread via Open()).
+	// =========================================================================
+
+	// Max simultaneous route slots in the shmem table. 32 covers the typical
+	// use case: one wildcard for face-tracking, several per-feature patterns,
+	// and room for overlay test subscriptions.
+	static const uint32_t OSC_ROUTER_ROUTE_SLOTS = 32;
+
+	// Per-route stat slot. Written by the driver under a per-slot seqlock.
+	// address_pattern and subscriber_id are NUL-terminated, padded to fill.
+	struct OscRouterRouteSlot
+	{
+		std::atomic<uint64_t> generation; // seqlock: odd = mid-write
+		char                  address_pattern[OSC_ROUTE_ADDR_LEN];
+		char                  subscriber_id[32];
+		std::atomic<uint64_t> match_count;    // OSC messages matched by pattern
+		std::atomic<uint64_t> drop_count;     // matched but dropped (queue full)
+		std::atomic<uint64_t> last_match_tick; // QPC tick of most recent match
+		uint8_t               active;         // 1 = slot in use, 0 = empty
+		uint8_t               _reserved[7];
+	};
+
+	class OscRouterStatsShmem
+	{
+	public:
+		static const uint32_t SHMEM_MAGIC   = 0xC5C7057C;
+		static const uint32_t SHMEM_VERSION = 1;
+
+	private:
+		struct ShmemData
+		{
+			uint32_t magic;
+			uint32_t shmem_version;
+			// Global send counters. Relaxed stores by the send thread;
+			// relaxed loads by the overlay -- only deltas matter.
+			std::atomic<uint64_t> packets_sent;
+			std::atomic<uint64_t> bytes_sent;
+			std::atomic<uint64_t> packets_dropped; // send queue overflow
+			uint32_t _reserved[4];
+			OscRouterRouteSlot routes[OSC_ROUTER_ROUTE_SLOTS];
+		};
+
+		HANDLE     hMapFile = INVALID_HANDLE_VALUE;
+		ShmemData *pData    = nullptr;
+
+		std::string LastErrorString(DWORD lastError)
+		{
+			LPSTR buffer = nullptr;
+			DWORD size = FormatMessageA(
+				FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+				NULL, lastError, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&buffer, 0, NULL);
+			std::string msg(buffer ? buffer : "", size);
+			if (buffer) LocalFree(buffer);
+			return msg;
+		}
+
+	public:
+		OscRouterStatsShmem() = default;
+		~OscRouterStatsShmem() { Close(); }
+
+		OscRouterStatsShmem(const OscRouterStatsShmem &) = delete;
+		OscRouterStatsShmem &operator=(const OscRouterStatsShmem &) = delete;
+
+		operator bool() const { return pData != nullptr; }
+
+		void Close()
+		{
+			if (pData) { UnmapViewOfFile(pData); pData = nullptr; }
+			if (hMapFile && hMapFile != INVALID_HANDLE_VALUE) {
+				CloseHandle(hMapFile); hMapFile = INVALID_HANDLE_VALUE;
+			}
+		}
+
+		// Driver-side: create or re-open the segment and stamp the header.
+		bool Create(LPCSTR segment_name)
+		{
+			Close();
+			hMapFile = CreateFileMappingA(
+				INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
+				0, sizeof(ShmemData), segment_name);
+			if (!hMapFile) return false;
+			pData = reinterpret_cast<ShmemData*>(MapViewOfFile(
+				hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(ShmemData)));
+			if (!pData) return false;
+			pData->magic        = SHMEM_MAGIC;
+			pData->shmem_version = SHMEM_VERSION;
+			return true;
+		}
+
+		// Overlay-side: open an existing segment. Throws on missing or
+		// mismatched header so the overlay can surface a paired-install hint.
+		void Open(LPCSTR segment_name)
+		{
+			Close();
+			hMapFile = OpenFileMappingA(FILE_MAP_READ, FALSE, segment_name);
+			if (!hMapFile) {
+				throw std::runtime_error(
+					std::string("Failed to open OscRouter shmem: ") +
+					LastErrorString(GetLastError()));
+			}
+			pData = reinterpret_cast<ShmemData*>(MapViewOfFile(
+				hMapFile, FILE_MAP_READ, 0, 0, sizeof(ShmemData)));
+			if (!pData) {
+				DWORD err = GetLastError();
+				CloseHandle(hMapFile); hMapFile = INVALID_HANDLE_VALUE;
+				throw std::runtime_error(
+					std::string("Failed to map OscRouter shmem: ") +
+					LastErrorString(err));
+			}
+			if (pData->magic != SHMEM_MAGIC) {
+				char buf[160];
+				snprintf(buf, sizeof buf,
+					"OscRouter shmem magic mismatch: got 0x%08X, expected 0x%08X",
+					pData->magic, SHMEM_MAGIC);
+				Close();
+				throw std::runtime_error(buf);
+			}
+			if (pData->shmem_version != SHMEM_VERSION) {
+				char buf[160];
+				snprintf(buf, sizeof buf,
+					"OscRouter shmem version mismatch: got %u, expected %u",
+					pData->shmem_version, SHMEM_VERSION);
+				Close();
+				throw std::runtime_error(buf);
+			}
+		}
+
+		// Driver-side: increment global send counters from the send thread.
+		void AddSent(uint64_t bytes)
+		{
+			if (!pData) return;
+			pData->packets_sent.fetch_add(1, std::memory_order_relaxed);
+			pData->bytes_sent.fetch_add(bytes, std::memory_order_relaxed);
+		}
+
+		void AddDropped()
+		{
+			if (!pData) return;
+			pData->packets_dropped.fetch_add(1, std::memory_order_relaxed);
+		}
+
+		// Driver-side: write one route slot under its seqlock.
+		static void CopyStrField(char *dst, size_t dst_size, const char *src)
+		{
+			if (!src) { dst[0] = '\0'; return; }
+			size_t n = 0;
+			for (; n < dst_size - 1 && src[n]; ++n) dst[n] = src[n];
+			dst[n] = '\0';
+		}
+
+		void WriteRoute(uint32_t index,
+			const char *pattern, const char *subscriber_id,
+			uint64_t match_count, uint64_t drop_count,
+			uint64_t last_match_tick, bool active)
+		{
+			if (!pData || index >= OSC_ROUTER_ROUTE_SLOTS) return;
+			OscRouterRouteSlot &s = pData->routes[index];
+			const uint64_t prev = s.generation.load(std::memory_order_relaxed);
+			s.generation.store(prev + 1, std::memory_order_release);
+			CopyStrField(s.address_pattern, sizeof(s.address_pattern), pattern);
+			CopyStrField(s.subscriber_id,   sizeof(s.subscriber_id),   subscriber_id);
+			s.match_count.store(match_count, std::memory_order_relaxed);
+			s.drop_count.store(drop_count, std::memory_order_relaxed);
+			s.last_match_tick.store(last_match_tick, std::memory_order_relaxed);
+			s.active = active ? 1 : 0;
+			s.generation.store(prev + 2, std::memory_order_release);
+		}
+
+		// Overlay-side: read global totals into an OscRouterStats struct.
+		bool ReadGlobalStats(OscRouterStats &out) const
+		{
+			if (!pData) return false;
+			out.packets_sent    = pData->packets_sent.load(std::memory_order_relaxed);
+			out.bytes_sent      = pData->bytes_sent.load(std::memory_order_relaxed);
+			out.packets_dropped = pData->packets_dropped.load(std::memory_order_relaxed);
+			out.active_routes   = 0;
+			for (uint32_t i = 0; i < OSC_ROUTER_ROUTE_SLOTS; ++i)
+				if (pData->routes[i].active) ++out.active_routes;
+			out._reserved = 0;
+			return true;
+		}
+
+		// Overlay-side: try reading one route slot under its seqlock.
+		// Returns true on a clean read. Caller re-tries on false or skips.
+		bool TryReadRoute(uint32_t index, OscRouterRouteSlot &out, int max_retries = 8) const
+		{
+			if (!pData || index >= OSC_ROUTER_ROUTE_SLOTS) return false;
+			const OscRouterRouteSlot &s = pData->routes[index];
+			for (int attempt = 0; attempt < max_retries; ++attempt) {
+				const uint64_t g1 = s.generation.load(std::memory_order_acquire);
+				if ((g1 & 1ULL) != 0ULL) continue;
+				std::memcpy(&out, &s, sizeof(OscRouterRouteSlot));
+				std::atomic_thread_fence(std::memory_order_acquire);
+				const uint64_t g2 = s.generation.load(std::memory_order_acquire);
+				if (g1 == g2) return true;
+			}
+			return false;
+		}
+	};
 }
+

@@ -21,6 +21,9 @@
 #ifndef OPENVR_PAIR_HAS_FACETRACKING_DRIVER
 #define OPENVR_PAIR_HAS_FACETRACKING_DRIVER 0
 #endif
+#ifndef OPENVR_PAIR_HAS_OSCROUTER_DRIVER
+#define OPENVR_PAIR_HAS_OSCROUTER_DRIVER 0
+#endif
 
 namespace {
 
@@ -66,6 +69,10 @@ vr::EVRInitError ServerTrackedDeviceProvider::Init(vr::IVRDriverContext *pDriver
 		activeModules.push_back(std::move(module));
 	};
 
+	// OscRouter must be first: other modules may call PublishOsc during Init.
+#if OPENVR_PAIR_HAS_OSCROUTER_DRIVER
+	activateModule(oscrouter::CreateDriverModule());
+#endif
 #if OPENVR_PAIR_HAS_CALIBRATION_DRIVER
 	activateModule(calibration::CreateDriverModule());
 #endif
@@ -139,6 +146,14 @@ vr::EVRInitError ServerTrackedDeviceProvider::Init(vr::IVRDriverContext *pDriver
 		faceTrackingServer->Run();
 	}
 
+	if (featureFlags & pairdriver::kFeatureOscRouter) {
+		oscRouterServer = std::make_unique<IPCServer>(
+			this,
+			OPENVR_PAIRDRIVER_OSCROUTER_PIPE_NAME,
+			pairdriver::kFeatureOscRouter);
+		oscRouterServer->Run();
+	}
+
 	// Hook installation is gated inside the injector by the same feature
 	// flags so the GetGenericInterface detour skips registering the
 	// per-feature inner hooks for subsystems that aren't enabled.
@@ -188,6 +203,7 @@ void ServerTrackedDeviceProvider::Cleanup()
 		(*it)->Shutdown();
 	}
 	activeModules.clear();
+	if (oscRouterServer) oscRouterServer->Stop();
 	if (faceTrackingServer) faceTrackingServer->Stop();
 	if (inputHealthServer) inputHealthServer->Stop();
 	if (smoothingServer) smoothingServer->Stop();
