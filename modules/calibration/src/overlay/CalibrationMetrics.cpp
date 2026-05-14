@@ -1,7 +1,8 @@
 #include "stdafx.h"
 #include "CalibrationMetrics.h"
 #include "BuildStamp.h"
-#include <shlobj_core.h>
+#include "LogPaths.h"
+#include "Win32Text.h"
 #include <fstream>
 #include <openvr.h>
 #include <string>
@@ -257,35 +258,6 @@ namespace Metrics {
 	};
 	
 	
-	static void ClearOldLogs(const std::wstring& path) {
-		std::wstring search_path = path + L"\\spacecal_log.*.txt";
-		WIN32_FIND_DATA find_data;
-
-		SYSTEMTIME st_now;
-		FILETIME ft_now;
-		GetSystemTime(&st_now);
-		SystemTimeToFileTime(&st_now, &ft_now);
-
-		ULARGE_INTEGER ft_tmp;
-		ft_tmp.HighPart = ft_now.dwHighDateTime;
-		ft_tmp.LowPart = ft_now.dwLowDateTime;
-		// one day ago
-		uint64_t limit = ft_tmp.QuadPart - (uint64_t)(24LL * 3600LL * 10LL * 1000LL * 1000LL);
-
-		HANDLE find_handle = FindFirstFile(search_path.c_str(), &find_data);
-		if (find_handle != INVALID_HANDLE_VALUE) {
-			do {
-				ft_tmp.HighPart = find_data.ftLastWriteTime.dwHighDateTime;
-				ft_tmp.LowPart = find_data.ftLastWriteTime.dwLowDateTime;
-				if (ft_tmp.QuadPart < limit) {
-					std::wstring file_path = path + L"\\" + find_data.cFileName;
-					DeleteFile(file_path.c_str());
-				}
-			} while (FindNextFile(find_handle, &find_data));
-			FindClose(find_handle);
-		}
-	}
-
 	// =============================================================================
 	// Launch-context banner. Writes a block of `# key=value` lines describing
 	// EVERYTHING that could plausibly differ between a Start-menu launch and a
@@ -303,12 +275,7 @@ namespace Metrics {
 	// =============================================================================
 	static std::string WideToUtf8(const wchar_t* w)
 	{
-		if (!w) return std::string();
-		int len = WideCharToMultiByte(CP_UTF8, 0, w, -1, nullptr, 0, nullptr, nullptr);
-		if (len <= 0) return std::string();
-		std::string out(len - 1, '\0'); // -1 to drop the trailing NUL count
-		WideCharToMultiByte(CP_UTF8, 0, w, -1, &out[0], len, nullptr, nullptr);
-		return out;
+		return w ? openvr_pair::common::WideToUtf8(w) : std::string();
 	}
 
 	static void WriteLaunchContextBanner(std::ofstream& out)
@@ -527,50 +494,8 @@ namespace Metrics {
 
 	// %userprofile%\LocalLow\SpaceCalibrator\Logs
 	static bool OpenLogFile() {
-		PWSTR RootPath = nullptr;
-		if (S_OK != SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &RootPath)) {
-			CoTaskMemFree(RootPath);
-			return false;
-		}
-
-		std::wstring path(RootPath);
-		CoTaskMemFree(RootPath);
-
-		// Co-located with the umbrella's other overlay-side logs at
-		// %LocalAppDataLow%\WKOpenVR\Logs\. Was \SpaceCalibrator\Logs\
-		// pre-monorepo when SC ran as its own product; that path persisted
-		// after the umbrella consolidation and split logs between three
-		// different directories. Driver-side logs also land in
-		// \WKOpenVR\Logs\ (those are written by the driver DLL,
-		// not the overlay).
-		path += LR"(\WKOpenVR)";
-		if (CreateDirectoryW(path.c_str(), 0) == 0 && GetLastError() != ERROR_ALREADY_EXISTS) {
-			return false;
-		}
-
-		path += LR"(\Logs)";
-		if (CreateDirectoryW(path.c_str(), 0) == 0 && GetLastError() != ERROR_ALREADY_EXISTS) {
-			return false;
-		}
-
-		ClearOldLogs(path);
-
-		SYSTEMTIME now{};
-		GetSystemTime(&now);
-
-		size_t dateBufLen = GetDateFormatW(LOCALE_USER_DEFAULT, 0, &now, L"yyyy-MM-dd", nullptr, 0);
-		std::vector<WCHAR> dateBuf(dateBufLen);
-		if (!GetDateFormatEx(LOCALE_NAME_INVARIANT, 0, &now, L"yyyy-MM-dd", &dateBuf[0], static_cast<int>(dateBufLen), nullptr)) return false;
-		
-		size_t timeBufLen = GetTimeFormatW(LOCALE_USER_DEFAULT, 0, &now, L"HH-mm-ss", nullptr, 0);
-		std::vector<WCHAR> timeBuf(timeBufLen);
-		if (!GetTimeFormatEx(LOCALE_NAME_INVARIANT, 0, &now, L"HH-mm-ss", &timeBuf[0], static_cast<int>(timeBufLen))) return false;
-
-		path += LR"(\spacecal_log.)";
-		path += &dateBuf[0];
-		path += L"T";
-		path += &timeBuf[0];
-		path += L".txt";
+		std::wstring path = openvr_pair::common::TimestampedLogPath(L"spacecal_log");
+		if (path.empty()) return false;
 
 		logFile.open(path);
 		if (logFile.fail()) {

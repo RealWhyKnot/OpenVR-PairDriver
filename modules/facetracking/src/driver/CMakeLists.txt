@@ -28,6 +28,9 @@ target_include_directories(openvr_pair_feature_facetracking_driver PRIVATE
 	${FACETRACKING_PAIRDRIVER_ROOT}/lib/openvr/headers
 	${FACETRACKING_PAIRDRIVER_ROOT}/lib/picojson)
 
+target_link_libraries(openvr_pair_feature_facetracking_driver PRIVATE
+	openvr_pair_common)
+
 target_compile_definitions(openvr_pair_feature_facetracking_driver PRIVATE
 	NOMINMAX
 	UNICODE

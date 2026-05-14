@@ -4,15 +4,17 @@
 #include "FacetrackingPlugin.h"
 #include "Logging.h"
 #include "UiHelpers.h"
+#include "Win32Paths.h"
+#include "Win32Text.h"
 
 #include <imgui/imgui.h>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <shlobj.h>
-#include <objbase.h>
+#include <shellapi.h>
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace facetracking::ui {
@@ -23,14 +25,7 @@ namespace {
 
 std::wstring LogsDir()
 {
-    PWSTR raw = nullptr;
-    if (S_OK != SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &raw)) {
-        if (raw) CoTaskMemFree(raw);
-        return {};
-    }
-    std::wstring root(raw);
-    CoTaskMemFree(raw);
-    return root + L"\\WKOpenVR\\Logs";
+    return openvr_pair::common::WkOpenVrLogsPath(false);
 }
 
 void OpenInExplorer(const std::wstring &dir)
@@ -53,11 +48,7 @@ std::vector<LogEntry> EnumerateLogs(const std::wstring &dir)
     HANDLE h = FindFirstFileW(search.c_str(), &fd);
     if (h == INVALID_HANDLE_VALUE) return result;
     do {
-        int needed = WideCharToMultiByte(
-            CP_UTF8, 0, fd.cFileName, -1, nullptr, 0, nullptr, nullptr);
-        std::string name(needed > 0 ? needed - 1 : 0, '\0');
-        WideCharToMultiByte(
-            CP_UTF8, 0, fd.cFileName, -1, name.data(), needed, nullptr, nullptr);
+        std::string name = openvr_pair::common::WideToUtf8(fd.cFileName);
         result.push_back({ dir + L"\\" + fd.cFileName, std::move(name) });
     } while (FindNextFileW(h, &fd));
     FindClose(h);

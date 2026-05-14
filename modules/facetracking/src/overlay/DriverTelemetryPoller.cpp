@@ -1,14 +1,10 @@
 #define _CRT_SECURE_NO_DEPRECATE
 #include "DriverTelemetryPoller.h"
 
+#include "JsonUtil.h"
 #include "Logging.h"
-
-#include "picojson.h"
-
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <shlobj.h>
-#include <objbase.h>
+#include "Win32Paths.h"
+#include "Win32Text.h"
 
 #include <chrono>
 #include <fstream>
@@ -25,74 +21,10 @@ namespace {
 constexpr auto kStaleAfter   = std::chrono::seconds(5);
 constexpr auto kReadInterval = std::chrono::milliseconds(500);
 
-std::string Wide2Utf8(const std::wstring &w)
-{
-    if (w.empty()) return {};
-    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (n <= 0) return {};
-    std::string out(static_cast<size_t>(n - 1), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, out.data(), n, nullptr, nullptr);
-    return out;
-}
-
-std::wstring Utf8ToWide(const std::string &s)
-{
-    if (s.empty()) return {};
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
-    if (n <= 0) return {};
-    std::wstring out(static_cast<size_t>(n - 1), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, out.data(), n);
-    return out;
-}
-
 std::wstring ResolveTelemetryPath()
 {
-    PWSTR raw = nullptr;
-    if (S_OK != SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &raw)) {
-        if (raw) CoTaskMemFree(raw);
-        return {};
-    }
-    std::wstring root(raw);
-    CoTaskMemFree(raw);
-    return root + L"\\WKOpenVR\\facetracking\\driver_telemetry.json";
-}
-
-int64_t FileMtime(const std::wstring &path)
-{
-    WIN32_FILE_ATTRIBUTE_DATA data{};
-    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data)) return 0;
-    ULARGE_INTEGER u{};
-    u.LowPart  = data.ftLastWriteTime.dwLowDateTime;
-    u.HighPart = data.ftLastWriteTime.dwHighDateTime;
-    return static_cast<int64_t>(u.QuadPart);
-}
-
-// picojson helpers.
-double Num(const picojson::value &v, const char *key, double fallback = 0.0)
-{
-    if (!v.is<picojson::object>()) return fallback;
-    const auto &o = v.get<picojson::object>();
-    auto it = o.find(key);
-    if (it == o.end() || !it->second.is<double>()) return fallback;
-    return it->second.get<double>();
-}
-
-bool Bool(const picojson::value &v, const char *key, bool fallback = false)
-{
-    if (!v.is<picojson::object>()) return fallback;
-    const auto &o = v.get<picojson::object>();
-    auto it = o.find(key);
-    if (it == o.end() || !it->second.is<bool>()) return fallback;
-    return it->second.get<bool>();
-}
-
-const picojson::value *Obj(const picojson::value &v, const char *key)
-{
-    if (!v.is<picojson::object>()) return nullptr;
-    const auto &o = v.get<picojson::object>();
-    auto it = o.find(key);
-    if (it == o.end()) return nullptr;
-    return &it->second;
+    std::wstring dir = openvr_pair::common::WkOpenVrSubdirectoryPath(L"facetracking", false);
+    return dir.empty() ? std::wstring() : dir + L"\\driver_telemetry.json";
 }
 
 } // namespace
@@ -105,7 +37,7 @@ DriverTelemetryPoller::DriverTelemetryPoller()
 void DriverTelemetryPoller::ResolvePath()
 {
     std::wstring wpath = ResolveTelemetryPath();
-    path_utf8_ = Wide2Utf8(wpath);
+    path_utf8_ = openvr_pair::common::WideToUtf8(wpath);
 }
 
 void DriverTelemetryPoller::Tick()
@@ -122,8 +54,8 @@ void DriverTelemetryPoller::Tick()
 
     if (path_utf8_.empty()) return;
 
-    std::wstring wpath = Utf8ToWide(path_utf8_);
-    int64_t mtime = FileMtime(wpath);
+    std::wstring wpath = openvr_pair::common::Utf8ToWide(path_utf8_);
+    int64_t mtime = openvr_pair::common::FileLastWriteTime(wpath);
     if (mtime == 0) {
         // Driver not running yet.
         if (snapshot_.valid) {
@@ -147,7 +79,7 @@ void DriverTelemetryPoller::Tick()
 
 void DriverTelemetryPoller::ReadFile()
 {
-    std::ifstream is(Utf8ToWide(path_utf8_));
+    std::ifstream is(openvr_pair::common::Utf8ToWide(path_utf8_));
     if (!is) return;
 
     std::stringstream ss;
@@ -155,28 +87,26 @@ void DriverTelemetryPoller::ReadFile()
     std::string body = ss.str();
 
     picojson::value root;
-    std::string err = picojson::parse(root, body);
-    if (!err.empty() || !root.is<picojson::object>()) {
+    if (!openvr_pair::common::json::ParseObject(root, body)) {
         // Caught mid-write; next tick retries.
         return;
     }
 
     DriverTelemetrySnapshot s;
     s.valid             = true;
-    s.driver_pid        = static_cast<int>(Num(root, "driver_pid"));
-    s.frames_processed  = static_cast<uint64_t>(Num(root, "frames_processed"));
+    s.driver_pid        = openvr_pair::common::json::IntAt(root, "driver_pid");
+    s.frames_processed  = static_cast<uint64_t>(openvr_pair::common::json::NumberAt(root, "frames_processed"));
 
-    if (const auto *verg = Obj(root, "vergence"); verg && verg->is<picojson::object>()) {
-        s.vergence_enabled = Bool(*verg, "enabled");
-        s.focus_distance_m = static_cast<float>(Num(*verg, "focus_distance_m"));
-        s.ipd_m            = static_cast<float>(Num(*verg, "ipd_m"));
+    if (const auto *verg = openvr_pair::common::json::ValueAt(root, "vergence"); verg && verg->is<picojson::object>()) {
+        s.vergence_enabled = openvr_pair::common::json::BoolAt(*verg, "enabled");
+        s.focus_distance_m = static_cast<float>(openvr_pair::common::json::NumberAt(*verg, "focus_distance_m"));
+        s.ipd_m            = static_cast<float>(openvr_pair::common::json::NumberAt(*verg, "ipd_m"));
     }
 
-    if (const auto *sr = Obj(root, "shape_readiness"); sr && sr->is<picojson::array>()) {
-        const auto &arr = sr->get<picojson::array>();
-        const int n = static_cast<int>(arr.size());
+    if (const auto *sr = openvr_pair::common::json::ArrayAt(root, "shape_readiness")) {
+        const int n = static_cast<int>(sr->size());
         for (int i = 0; i < 65 && i < n; ++i) {
-            s.shape_warm[i] = arr[i].is<bool>() && arr[i].get<bool>();
+            s.shape_warm[i] = (*sr)[i].is<bool>() && (*sr)[i].get<bool>();
         }
     }
 

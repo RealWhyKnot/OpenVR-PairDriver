@@ -5,6 +5,7 @@
 
 #include "Protocol.h"
 #include "UiHelpers.h"
+#include "Win32Text.h"
 
 #include <imgui.h>
 
@@ -67,11 +68,7 @@ bool DetectExternalSmoothingTool(std::string &outName)
 			for (const auto &pat : kSubstringTools) {
 				if (lower.find(pat.requireA) != std::wstring::npos &&
 				    lower.find(pat.requireB) != std::wstring::npos) {
-					int n = WideCharToMultiByte(CP_UTF8, 0, pe.szExeFile, -1, nullptr, 0, nullptr, nullptr);
-					if (n > 0) {
-						outName.assign((size_t)(n - 1), '\0');
-						WideCharToMultiByte(CP_UTF8, 0, pe.szExeFile, -1, outName.data(), n, nullptr, nullptr);
-					}
+					outName = openvr_pair::common::WideToUtf8(pe.szExeFile);
 					found = true;
 					break;
 				}
