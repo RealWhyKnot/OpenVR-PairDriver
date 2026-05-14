@@ -19,6 +19,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **facetracking:** Host path walk, ALC type-identity, lenient version parse (68fd11d)
 - **overlay:** VR scroll wheel sensitivity (360*8 -> 2) (1482ab3)
 - **calibration:** Faster initial-cal, paired-motion validity, mode-aware defaults (e26d16f)
+- **translator,facetracking:** Host path walk + CBOR control-pipe wire (f8e7f9d)
 
 ---
 
