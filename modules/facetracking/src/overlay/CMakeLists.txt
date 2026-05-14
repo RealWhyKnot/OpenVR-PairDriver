@@ -41,6 +41,7 @@ target_include_directories(openvr_pair_feature_facetracking_overlay PRIVATE
 	${CMAKE_SOURCE_DIR}/lib/picojson)
 
 target_link_libraries(openvr_pair_feature_facetracking_overlay PRIVATE
+	openvr_pair_common
 	bcrypt
 	crypt32)
 

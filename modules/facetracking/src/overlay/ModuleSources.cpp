@@ -1,15 +1,14 @@
 #define _CRT_SECURE_NO_DEPRECATE
 #include "ModuleSources.h"
 
+#include "JsonUtil.h"
 #include "Logging.h"
-
-#include "picojson.h"
+#include "Win32Paths.h"
+#include "Win32Text.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <bcrypt.h>
-#include <shlobj.h>
-#include <objbase.h>
 #include <wincrypt.h>
 
 #pragma comment(lib, "bcrypt.lib")
@@ -21,86 +20,18 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace facetracking {
 
 namespace fs = std::filesystem;
 
-// ---- string helpers -----------------------------------------------------
-
-static std::string Wide2Utf8(const std::wstring &w)
-{
-    if (w.empty()) return {};
-    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (n <= 0) return {};
-    std::string out(static_cast<size_t>(n - 1), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, out.data(), n, nullptr, nullptr);
-    return out;
-}
-
-static std::wstring Utf8ToWide(const std::string &s)
-{
-    if (s.empty()) return {};
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
-    if (n <= 0) return {};
-    std::wstring out(static_cast<size_t>(n - 1), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, out.data(), n);
-    return out;
-}
-
-// Strip a UTF-8 BOM (EF BB BF) from the start of `s` if present. picojson does
-// not skip a leading BOM and reports it as a parse error -- which silently
-// drops fields like source_id from JSON files written by the static .NET
-// `Encoding.UTF8` instance (it emits a BOM by default). Applied at every
-// JSON-from-disk read site below.
-static void StripUtf8Bom(std::string &s)
-{
-    if (s.size() >= 3
-     && static_cast<unsigned char>(s[0]) == 0xEF
-     && static_cast<unsigned char>(s[1]) == 0xBB
-     && static_cast<unsigned char>(s[2]) == 0xBF) {
-        s.erase(0, 3);
-    }
-}
-
-// ---- picojson helpers ---------------------------------------------------
-
-static std::string PjStr(const picojson::value &v, const char *key,
-                          std::string fallback = {})
-{
-    if (!v.is<picojson::object>()) return fallback;
-    const auto &o = v.get<picojson::object>();
-    auto it = o.find(key);
-    if (it == o.end() || !it->second.is<std::string>()) return fallback;
-    return it->second.get<std::string>();
-}
-
-static bool PjBool(const picojson::value &v, const char *key, bool fallback = false)
-{
-    if (!v.is<picojson::object>()) return fallback;
-    const auto &o = v.get<picojson::object>();
-    auto it = o.find(key);
-    if (it == o.end() || !it->second.is<bool>()) return fallback;
-    return it->second.get<bool>();
-}
-
 // ---- public utilities ---------------------------------------------------
 
 std::wstring FtDataDir()
 {
-    PWSTR raw = nullptr;
-    if (S_OK != SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &raw)) {
-        if (raw) CoTaskMemFree(raw);
-        return {};
-    }
-    std::wstring root(raw);
-    CoTaskMemFree(raw);
-
-    std::wstring base = root + L"\\WKOpenVR\\facetracking";
-    CreateDirectoryW((root + L"\\WKOpenVR").c_str(), nullptr);
-    CreateDirectoryW(base.c_str(), nullptr);
-    return base;
+    return openvr_pair::common::WkOpenVrSubdirectoryPath(L"facetracking", true);
 }
 
 std::string GenerateSourceId()
@@ -156,38 +87,25 @@ SourcesCatalogue LoadSourcesCatalogue()
     std::stringstream ss;
     ss << in.rdbuf();
     std::string txt = ss.str();
-    StripUtf8Bom(txt);
     picojson::value root;
-    std::string err = picojson::parse(root, txt);
-    if (!err.empty() || !root.is<picojson::object>()) return {};
+    if (!openvr_pair::common::json::ParseObject(root, txt)) return {};
 
     SourcesCatalogue cat;
-    const auto &obj = root.get<picojson::object>();
-    {
-        auto it = obj.find("schema_version");
-        if (it != obj.end() && it->second.is<double>())
-            cat.schema_version = static_cast<int>(it->second.get<double>());
-    }
+    cat.schema_version = openvr_pair::common::json::IntAt(root, "schema_version", cat.schema_version);
 
-    const auto *arr = [&]() -> const picojson::array * {
-        auto it = obj.find("sources");
-        if (it == obj.end() || !it->second.is<picojson::array>()) return nullptr;
-        return &it->second.get<picojson::array>();
-    }();
-
-    if (arr) {
+    if (const auto *arr = openvr_pair::common::json::ArrayAt(root, "sources")) {
         for (const auto &el : *arr) {
             ModuleSource src;
-            src.id               = PjStr(el, "id");
-            src.kind             = KindFromString(PjStr(el, "kind"));
-            src.url              = PjStr(el, "url");
-            src.path             = PjStr(el, "path");
-            src.owner_repo       = PjStr(el, "owner_repo");
-            src.label            = PjStr(el, "label");
-            src.auto_update      = PjBool(el, "auto_update");
-            src.added_at         = PjStr(el, "added_at");
-            src.last_checked_at  = PjStr(el, "last_checked_at");
-            src.last_release_tag = PjStr(el, "last_release_tag");
+            src.id               = openvr_pair::common::json::StringAt(el, "id");
+            src.kind             = KindFromString(openvr_pair::common::json::StringAt(el, "kind"));
+            src.url              = openvr_pair::common::json::StringAt(el, "url");
+            src.path             = openvr_pair::common::json::StringAt(el, "path");
+            src.owner_repo       = openvr_pair::common::json::StringAt(el, "owner_repo");
+            src.label            = openvr_pair::common::json::StringAt(el, "label");
+            src.auto_update      = openvr_pair::common::json::BoolAt(el, "auto_update");
+            src.added_at         = openvr_pair::common::json::StringAt(el, "added_at");
+            src.last_checked_at  = openvr_pair::common::json::StringAt(el, "last_checked_at");
+            src.last_release_tag = openvr_pair::common::json::StringAt(el, "last_release_tag");
             if (!src.id.empty())
                 cat.sources.push_back(std::move(src));
         }
@@ -296,11 +214,11 @@ std::vector<InstalledModule> ScanInstalledModules()
     std::error_code ec;
     for (const auto &uuidEntry : fs::directory_iterator(modsDir, ec)) {
         if (!uuidEntry.is_directory()) continue;
-        std::string uuid = Wide2Utf8(uuidEntry.path().filename().wstring());
+        std::string uuid = openvr_pair::common::WideToUtf8(uuidEntry.path().filename().wstring());
 
         for (const auto &verEntry : fs::directory_iterator(uuidEntry.path(), ec)) {
             if (!verEntry.is_directory()) continue;
-            std::string version = Wide2Utf8(verEntry.path().filename().wstring());
+            std::string version = openvr_pair::common::WideToUtf8(verEntry.path().filename().wstring());
 
             fs::path manifestPath = verEntry.path() / L"manifest.json";
             if (!fs::exists(manifestPath, ec)) continue;
@@ -308,7 +226,7 @@ std::vector<InstalledModule> ScanInstalledModules()
             InstalledModule mod;
             mod.uuid     = uuid;
             mod.version  = version;
-            mod.manifest_path = Wide2Utf8(manifestPath.wstring());
+            mod.manifest_path = openvr_pair::common::WideToUtf8(manifestPath.wstring());
 
             // Read manifest.json for name + vendor.
             {
@@ -317,11 +235,10 @@ std::vector<InstalledModule> ScanInstalledModules()
                     std::stringstream ss;
                     ss << mf.rdbuf();
                     std::string txt = ss.str();
-                    StripUtf8Bom(txt);
                     picojson::value root;
-                    if (picojson::parse(root, txt).empty()) {
-                        mod.name   = PjStr(root, "name");
-                        mod.vendor = PjStr(root, "vendor");
+                    if (openvr_pair::common::json::Parse(root, txt)) {
+                        mod.name   = openvr_pair::common::json::StringAt(root, "name");
+                        mod.vendor = openvr_pair::common::json::StringAt(root, "vendor");
                     }
                 }
             }
@@ -336,13 +253,12 @@ std::vector<InstalledModule> ScanInstalledModules()
                     std::stringstream ss;
                     ss << sf.rdbuf();
                     std::string txt = ss.str();
-                    StripUtf8Bom(txt);
                     picojson::value root;
-                    if (picojson::parse(root, txt).empty()) {
-                        mod.source_id       = PjStr(root, "source_id");
-                        mod.source_kind_str = PjStr(root, "source_kind");
-                        mod.sha_verified    = PjBool(root, "verified_sha256");
-                        mod.release_tag     = PjStr(root, "release_tag");
+                    if (openvr_pair::common::json::Parse(root, txt)) {
+                        mod.source_id       = openvr_pair::common::json::StringAt(root, "source_id");
+                        mod.source_kind_str = openvr_pair::common::json::StringAt(root, "source_kind");
+                        mod.sha_verified    = openvr_pair::common::json::BoolAt(root, "verified_sha256");
+                        mod.release_tag     = openvr_pair::common::json::StringAt(root, "release_tag");
                     }
                 }
             }
@@ -451,13 +367,12 @@ std::optional<SyncResult> ModuleSyncRunner::Poll()
             std::stringstream ss;
             ss << rf.rdbuf();
             std::string txt = ss.str();
-            StripUtf8Bom(txt);
             picojson::value root;
-            if (picojson::parse(root, txt).empty()) {
-                result.ok               = PjBool(root, "ok");
-                result.message          = PjStr(root, "message");
-                result.installed_uuid   = PjStr(root, "installed_uuid");
-                result.installed_version = PjStr(root, "installed_version");
+            if (openvr_pair::common::json::Parse(root, txt)) {
+                result.ok                = openvr_pair::common::json::BoolAt(root, "ok");
+                result.message           = openvr_pair::common::json::StringAt(root, "message");
+                result.installed_uuid    = openvr_pair::common::json::StringAt(root, "installed_uuid");
+                result.installed_version = openvr_pair::common::json::StringAt(root, "installed_version");
             } else {
                 result.ok      = false;
                 result.message = "Result JSON parse error.";
@@ -536,7 +451,7 @@ void ModuleSyncRunner::LaunchNext()
         return r;
     };
     auto psSingleQuote = [&](const std::string& utf8) -> std::wstring {
-        return psSingleQuoteWide(Utf8ToWide(utf8));
+        return psSingleQuoteWide(openvr_pair::common::Utf8ToWide(utf8));
     };
 
     // Build the PS command as a wstring, then base64 encode it.
@@ -553,7 +468,7 @@ void ModuleSyncRunner::LaunchNext()
     std::string encoded = EncodeForPowerShell(psCmd);
 
     std::wstring cmdLine = L"powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ";
-    cmdLine += Utf8ToWide(encoded);
+    cmdLine += openvr_pair::common::Utf8ToWide(encoded);
 
     STARTUPINFOW si{};
     si.cb          = sizeof(si);

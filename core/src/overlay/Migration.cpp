@@ -1,9 +1,9 @@
 #include "Migration.h"
 
+#include "Win32Paths.h"
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <shlobj.h>
-#include <objbase.h>
 
 #include <cstdio>
 #include <filesystem>
@@ -13,24 +13,11 @@ namespace openvr_pair::overlay {
 
 namespace {
 
-// Returns %LocalAppDataLow% as a wide string, or empty on failure.
-static std::wstring GetLocalAppDataLow()
-{
-    PWSTR raw = nullptr;
-    if (S_OK != SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &raw)) {
-        if (raw) CoTaskMemFree(raw);
-        return {};
-    }
-    std::wstring result(raw);
-    CoTaskMemFree(raw);
-    return result;
-}
-
 // Step 1: copy %LocalAppDataLow%\OpenVR-Pair\ -> %LocalAppDataLow%\WKOpenVR\
 // if the new dir does not exist.
 static void MigrateAppData()
 {
-    std::wstring root = GetLocalAppDataLow();
+    std::wstring root = openvr_pair::common::LocalAppDataLowPath();
     if (root.empty()) {
         fprintf(stderr, "[Migration] Could not resolve %%LocalAppDataLow%%; skipping AppData migration\n");
         return;

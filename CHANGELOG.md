@@ -6,7 +6,8 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 
 ## Unreleased
 
-_No notable changes since the last release._
+### Changed
+- **common:** Share Win32 and IPC helpers (4f3b435)
 
 ---
 

@@ -22,6 +22,9 @@ target_include_directories(openvr_pair_feature_smoothing_overlay PRIVATE
 	${CMAKE_SOURCE_DIR}/lib/imgui
 	${CMAKE_SOURCE_DIR}/lib/openvr/headers)
 
+target_link_libraries(openvr_pair_feature_smoothing_overlay PRIVATE
+	openvr_pair_common)
+
 target_compile_definitions(openvr_pair_feature_smoothing_overlay PRIVATE
 	NOMINMAX
 	UNICODE

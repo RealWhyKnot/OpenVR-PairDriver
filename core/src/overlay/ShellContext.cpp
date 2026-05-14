@@ -1,14 +1,13 @@
 #include "ShellContext.h"
 
+#include "Win32Paths.h"
+#include "Win32Text.h"
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <shlobj.h>
 #include <shellapi.h>
 
-#include <objbase.h>
-
 #include <cstdint>
-#include <cstdio>
 #include <fstream>
 #include <utility>
 #include <string>
@@ -26,34 +25,6 @@ struct PendingToggle
 };
 
 std::vector<PendingToggle> g_pendingToggles;
-
-std::wstring LocalAppDataLow()
-{
-	PWSTR root = nullptr;
-	if (S_OK != SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &root)) {
-		if (root) CoTaskMemFree(root);
-		return {};
-	}
-	std::wstring value(root);
-	CoTaskMemFree(root);
-	return value;
-}
-
-void EnsureDir(const std::wstring &path)
-{
-	if (path.empty()) return;
-	if (!CreateDirectoryW(path.c_str(), nullptr)) {
-		DWORD err = GetLastError();
-		if (err != ERROR_ALREADY_EXISTS) {
-			// Log to stderr -- subsequent file writes into this directory will
-			// fail with opaque errors; surfacing the root cause here makes
-			// diagnosis much faster.
-			fprintf(stderr,
-				"[openvr-pair] EnsureDir: CreateDirectoryW failed (error %lu) for path that may be needed for profile/log writes\n",
-				(unsigned long)err);
-		}
-	}
-}
 
 // Returns the directory containing the running exe, without a trailing slash.
 // Falls back to an empty string on failure.
@@ -160,11 +131,8 @@ std::wstring FindSteamVRRootFromVDF(const std::wstring &steamPath)
 				unescaped += raw[i];
 			}
 		}
-		// Widen to wstring for the filesystem check
-		int needed = MultiByteToWideChar(CP_UTF8, 0, unescaped.c_str(), -1, nullptr, 0);
-		if (needed <= 1) continue;
-		std::wstring candidate(needed - 1, L'\0');
-		MultiByteToWideChar(CP_UTF8, 0, unescaped.c_str(), -1, candidate.data(), needed);
+		std::wstring candidate = openvr_pair::common::Utf8ToWide(unescaped);
+		if (candidate.empty()) continue;
 		if (IsSteamVRRoot(candidate)) return candidate;
 	}
 	return {};
@@ -235,11 +203,7 @@ std::wstring EncodePowerShellCommand(const std::wstring &script)
 
 std::string Narrow(const std::wstring &value)
 {
-	if (value.empty()) return {};
-	int needed = WideCharToMultiByte(CP_UTF8, 0, value.data(), (int)value.size(), nullptr, 0, nullptr, nullptr);
-	std::string out(needed, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, value.data(), (int)value.size(), out.data(), needed, nullptr, nullptr);
-	return out;
+	return openvr_pair::common::WideToUtf8(value);
 }
 
 ShellContext CreateShellContext()
@@ -252,15 +216,8 @@ ShellContext CreateShellContext()
 		? L"C:\\Program Files\\WKOpenVR"
 		: exeDir;
 
-	const std::wstring root = LocalAppDataLow();
-	if (!root.empty()) {
-		std::wstring pairRoot = root + L"\\WKOpenVR";
-		EnsureDir(pairRoot);
-		ctx.profileRoot = pairRoot + L"\\profiles";
-		ctx.logRoot = pairRoot + L"\\Logs";
-		EnsureDir(ctx.profileRoot);
-		EnsureDir(ctx.logRoot);
-	}
+	ctx.profileRoot = openvr_pair::common::WkOpenVrSubdirectoryPath(L"profiles", true);
+	ctx.logRoot = openvr_pair::common::WkOpenVrLogsPath(true);
 
 	// --- Driver resources dir: discover SteamVR via registry + libraryfolders.vdf.
 	// Fall back to the hard-coded path if any step fails so that known-good
@@ -282,10 +239,8 @@ ShellContext CreateShellContext()
 std::wstring ShellContext::FlagPath(const char *flagFileName) const
 {
 	if (driverResourceDirs.empty() || !flagFileName) return {};
-	int needed = MultiByteToWideChar(CP_UTF8, 0, flagFileName, -1, nullptr, 0);
-	if (needed <= 0) return {};
-	std::wstring flag((size_t)needed - 1, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, flagFileName, -1, flag.data(), needed);
+	std::wstring flag = openvr_pair::common::Utf8ToWide(flagFileName);
+	if (flag.empty()) return {};
 	return driverResourceDirs.front() + L"\\" + flag;
 }
 
@@ -293,10 +248,8 @@ bool ShellContext::IsFlagPresent(const char *flagFileName) const
 {
 	for (const auto &dir : driverResourceDirs) {
 		std::wstring path = dir + L"\\";
-		int needed = MultiByteToWideChar(CP_UTF8, 0, flagFileName, -1, nullptr, 0);
-		if (needed <= 0) continue;
-		std::wstring flag((size_t)needed - 1, L'\0');
-		MultiByteToWideChar(CP_UTF8, 0, flagFileName, -1, flag.data(), needed);
+		std::wstring flag = openvr_pair::common::Utf8ToWide(flagFileName);
+		if (flag.empty()) continue;
 		path += flag;
 		DWORD attr = GetFileAttributesW(path.c_str());
 		if (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY)) return true;

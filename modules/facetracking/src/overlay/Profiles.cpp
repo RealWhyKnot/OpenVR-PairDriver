@@ -1,14 +1,10 @@
 #define _CRT_SECURE_NO_DEPRECATE
 #include "Profiles.h"
 
+#include "JsonUtil.h"
 #include "Logging.h"
-
-#include "picojson.h"
-
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <shlobj.h>
-#include <objbase.h>
+#include "Win32Paths.h"
+#include "Win32Text.h"
 
 #include <cstdio>
 #include <fstream>
@@ -20,28 +16,8 @@ namespace {
 // %LocalAppDataLow%\WKOpenVR\profiles\facetracking.json
 std::wstring ProfilePath()
 {
-    PWSTR raw = nullptr;
-    if (S_OK != SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &raw)) {
-        if (raw) CoTaskMemFree(raw);
-        return {};
-    }
-    std::wstring root(raw);
-    CoTaskMemFree(raw);
-
-    std::wstring dir = root + L"\\WKOpenVR";
-    CreateDirectoryW(dir.c_str(), nullptr);
-    dir += L"\\profiles";
-    CreateDirectoryW(dir.c_str(), nullptr);
-    return dir + L"\\facetracking.json";
-}
-
-std::string Wide2Utf8(const std::wstring &w)
-{
-    if (w.empty()) return {};
-    int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-    std::string s(n, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), s.data(), n, nullptr, nullptr);
-    return s;
+    std::wstring dir = openvr_pair::common::WkOpenVrSubdirectoryPath(L"profiles", true);
+    return dir.empty() ? std::wstring() : dir + L"\\facetracking.json";
 }
 
 FacetrackingProfile Decode(const picojson::value &v)
@@ -138,10 +114,10 @@ bool FacetrackingProfileStore::Load()
     std::stringstream ss;
     ss << in.rdbuf();
     picojson::value v;
-    std::string err = picojson::parse(v, ss.str());
-    if (!err.empty()) {
+    std::string err;
+    if (!openvr_pair::common::json::Parse(v, ss.str(), &err)) {
         FT_LOG_OVL("[profiles] parse error in '%s': %s",
-            Wide2Utf8(path).c_str(), err.c_str());
+            openvr_pair::common::WideToUtf8(path).c_str(), err.c_str());
         return false;
     }
     current = Decode(v);

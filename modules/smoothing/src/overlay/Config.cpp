@@ -1,9 +1,6 @@
 #include "Config.h"
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <shlobj.h>
-#include <objbase.h>
+#include "Win32Paths.h"
 
 #include <cstdio>
 #include <string>
@@ -12,22 +9,7 @@ namespace
 {
     std::wstring ConfigDir()
     {
-        PWSTR root = nullptr;
-        if (S_OK != SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &root)) {
-            if (root) CoTaskMemFree(root);
-            return {};
-        }
-        std::wstring dir(root);
-        CoTaskMemFree(root);
-        dir += L"\\WKOpenVR";
-        if (!CreateDirectoryW(dir.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
-            return {};
-        }
-        dir += L"\\profiles";
-        if (!CreateDirectoryW(dir.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
-            return {};
-        }
-        return dir;
+        return openvr_pair::common::WkOpenVrSubdirectoryPath(L"profiles", true);
     }
 
     std::wstring ConfigPath()
