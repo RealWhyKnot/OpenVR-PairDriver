@@ -4,7 +4,8 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 
 ## Unreleased
 
-_No notable changes since the last release._
+### Added
+- **diagnostics:** Add OSC + translator + host-supervisor instrumentation (b0fa13d)
 
 ---
 

@@ -6,7 +6,8 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 
 ## Unreleased
 
-_No notable changes since the last release._
+### Added
+- **diagnostics:** Add OSC + translator + host-supervisor instrumentation (b0fa13d)
 
 ---
 
