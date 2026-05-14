@@ -3,5 +3,5 @@
 // the umbrella top header reports.
 #pragma once
 
-#define FACETRACKING_BUILD_STAMP "2026.5.13.4-DCB4"
+#define FACETRACKING_BUILD_STAMP "2026.5.14.0-9719"
 #define FACETRACKING_BUILD_CHANNEL "dev"

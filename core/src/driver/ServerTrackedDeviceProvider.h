@@ -121,6 +121,7 @@ private:
 	{
 		bool enabled = false;
 		bool quash = false;
+		bool prevQuash = false;
 		IsoTransform transform, targetTransform;
 		double scale = 1.0;
 		LARGE_INTEGER lastPoll{};

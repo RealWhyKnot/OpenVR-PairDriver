@@ -724,11 +724,30 @@ bool ServerTrackedDeviceProvider::HandleDevicePoseUpdated(uint32_t openVRID, vr:
 
 	shmem.SetPose(openVRID, pose);
 
+	const bool quashTransition = tf.quash && !tf.prevQuash;
+	tf.prevQuash = tf.quash;
+
 	if (tf.quash) {
-		pose.vecPosition[0] = -pose.vecWorldFromDriverTranslation[0];
-		pose.vecPosition[1] = -pose.vecWorldFromDriverTranslation[1] + 9001; // put it 9001m above the origin
-		pose.vecPosition[2] = -pose.vecWorldFromDriverTranslation[2];
+		pose.poseIsValid = false;
+		pose.deviceIsConnected = false;
 		shmem.IncrementTelemetry(protocol::DriverPoseShmem::TELEMETRY_QUASH_APPLY);
+
+		if (quashTransition) {
+			lock.unlock();
+			char serial[256] = {};
+			if (auto* helpers = vr::VRProperties()) {
+				auto handle = helpers->TrackedDeviceToPropertyContainer(openVRID);
+				if (handle != vr::k_ulInvalidPropertyContainer) {
+					vr::ETrackedPropertyError err = vr::TrackedProp_Success;
+					std::string s = helpers->GetStringProperty(handle, vr::Prop_SerialNumber_String, &err);
+					if (err == vr::TrackedProp_Success && !s.empty())
+						snprintf(serial, sizeof serial, "%s", s.c_str());
+				}
+			}
+			LOG("[calibration] hide-tracker active for %s; suppressing pose publish",
+				serial[0] ? serial : "(unknown)");
+			lock.lock();
+		}
 	} else if (tf.enabled)
 	{
 		// Scale is applied to driver-local position before the calibration
