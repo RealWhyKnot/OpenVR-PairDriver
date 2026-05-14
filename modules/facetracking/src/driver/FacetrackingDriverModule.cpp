@@ -54,18 +54,44 @@ static inline void OscPublishFloat(const char *address, float value)
 
 // Send all eye-gaze OSC messages for one frame. Called when eye data is valid
 // and the user's output_osc_enabled toggle is set.
+//
+// Each parameter is published twice:
+//   1. The legacy bare-name path: /avatar/parameters/<Name>. Matches the
+//      pre-v2 VRCFT convention some avatars and the original SC fork shipped
+//      with. Names like LeftEyeLid / EyesDilation map onto VRCFT's legacy
+//      EyeTrackingParams string set.
+//   2. The modern v2 path: /avatar/parameters/v2/<Name>. Matches upstream
+//      VRCFaceTracking's UnifiedExpressionsParameters / UnifiedHeadParameters
+//      "v2/" + shape.ToString() convention -- the path every recent VRCFT
+//      template (Adjerry91 and others) is built around. Without this prefix,
+//      a stock VRCFT avatar receives our packets and ignores them because no
+//      animator parameter matches the address.
+//
+// Doubling the traffic is cheap (UDP loopback, small packets) and the router
+// queue is sized for it.
 static void OscPublishEye(const protocol::FaceTrackingFrameBody &frame)
 {
-    // Left/right gaze direction components mapped to the expected avatar params.
-    // DirHmd convention: gaze in HMD space; X = horizontal, Y = vertical.
+    const float pupil = (frame.pupil_dilation_l + frame.pupil_dilation_r) * 0.5f;
+
+    // Legacy bare-name paths.
     OscPublishFloat("/avatar/parameters/LeftEyeX",     frame.eye_gaze_l[0]);
     OscPublishFloat("/avatar/parameters/LeftEyeY",     frame.eye_gaze_l[1]);
     OscPublishFloat("/avatar/parameters/RightEyeX",    frame.eye_gaze_r[0]);
     OscPublishFloat("/avatar/parameters/RightEyeY",    frame.eye_gaze_r[1]);
     OscPublishFloat("/avatar/parameters/LeftEyeLid",   frame.eye_openness_l);
     OscPublishFloat("/avatar/parameters/RightEyeLid",  frame.eye_openness_r);
-    OscPublishFloat("/avatar/parameters/EyesDilation",
-        (frame.pupil_dilation_l + frame.pupil_dilation_r) * 0.5f);
+    OscPublishFloat("/avatar/parameters/EyesDilation", pupil);
+
+    // VRCFT v2 paths. EyeLeft/EyeRight + EyeOpenLeft/EyeOpenRight + PupilDilation
+    // are the upstream canonical names; EyeOpen* is 0=closed, 1=open, matching
+    // our eye_openness_* sign so no inversion is needed.
+    OscPublishFloat("/avatar/parameters/v2/EyeLeftX",      frame.eye_gaze_l[0]);
+    OscPublishFloat("/avatar/parameters/v2/EyeLeftY",      frame.eye_gaze_l[1]);
+    OscPublishFloat("/avatar/parameters/v2/EyeRightX",     frame.eye_gaze_r[0]);
+    OscPublishFloat("/avatar/parameters/v2/EyeRightY",     frame.eye_gaze_r[1]);
+    OscPublishFloat("/avatar/parameters/v2/EyeOpenLeft",   frame.eye_openness_l);
+    OscPublishFloat("/avatar/parameters/v2/EyeOpenRight",  frame.eye_openness_r);
+    OscPublishFloat("/avatar/parameters/v2/PupilDilation", pupil);
 }
 
 // Unified Expression parameter names in index order 0..62.
@@ -143,24 +169,37 @@ static_assert(
         protocol::FACETRACKING_EXPRESSION_COUNT,
     "kExprParamNames length must match FACETRACKING_EXPRESSION_COUNT");
 
-// Prefix used for all Unified Expression avatar parameters.
-static const char kAvatarParamPrefix[] = "/avatar/parameters/";
-static const size_t kAvatarParamPrefixLen =
-    sizeof(kAvatarParamPrefix) - 1; // excludes NUL
+// Prefixes used for all Unified Expression avatar parameters. We publish each
+// shape under both the legacy bare-name path and the modern VRCFT v2 path
+// (see OscPublishEye for the rationale).
+static const char kLegacyPrefix[] = "/avatar/parameters/";
+static const char kV2Prefix[]     = "/avatar/parameters/v2/";
+static const size_t kLegacyPrefixLen = sizeof(kLegacyPrefix) - 1; // excludes NUL
+static const size_t kV2PrefixLen     = sizeof(kV2Prefix) - 1;
 
 // Send all expression OSC messages for one frame. Called when expression data
-// is valid and the user's output_osc_enabled toggle is set.
+// is valid and the user's output_osc_enabled toggle is set. Each expression is
+// emitted twice: legacy bare-name and v2/. The kExprParamNames entries are the
+// upstream UnifiedExpressions enum names verbatim, so the v2 path is a
+// straight prefix swap (matching upstream's "v2/" + shape.ToString()).
 static void OscPublishExpressions(const protocol::FaceTrackingFrameBody &frame)
 {
-    char address[64]; // long enough for /avatar/parameters/ + longest name
+    char legacy[64]; // /avatar/parameters/<name> + NUL; longest name = 19 chars
+    char v2addr[64]; // /avatar/parameters/v2/<name> + NUL
     for (uint32_t i = 0; i < protocol::FACETRACKING_EXPRESSION_COUNT; ++i) {
         const char *name = kExprParamNames[i];
-        // Build "/avatar/parameters/<name>" in the stack buffer.
-        std::memcpy(address, kAvatarParamPrefix, kAvatarParamPrefixLen);
-        size_t nameLen = std::strlen(name);
-        if (kAvatarParamPrefixLen + nameLen + 1 > sizeof(address)) continue;
-        std::memcpy(address + kAvatarParamPrefixLen, name, nameLen + 1);
-        OscPublishFloat(address, frame.expressions[i]);
+        const size_t nameLen = std::strlen(name);
+        if (kLegacyPrefixLen + nameLen + 1 > sizeof(legacy)) continue;
+        if (kV2PrefixLen     + nameLen + 1 > sizeof(v2addr)) continue;
+
+        std::memcpy(legacy, kLegacyPrefix, kLegacyPrefixLen);
+        std::memcpy(legacy + kLegacyPrefixLen, name, nameLen + 1);
+        std::memcpy(v2addr, kV2Prefix, kV2PrefixLen);
+        std::memcpy(v2addr + kV2PrefixLen, name, nameLen + 1);
+
+        const float value = frame.expressions[i];
+        OscPublishFloat(legacy, value);
+        OscPublishFloat(v2addr, value);
     }
 }
 
