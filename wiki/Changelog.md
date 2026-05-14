@@ -9,6 +9,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **facetracking:** Migrate face-tracking OSC through router (a2dd55b)
 - **translator:** Real-time STT + translation module for VR (203a18c)
 - **overlay:** Expose OSC Router + Translator in Start Menu shortcut tables (ba74dfe)
+- **facetracking:** Emit OSC parameters on both legacy and v2 paths (164c476)
 
 ### Changed
 - **common:** Share Win32 and IPC helpers (4f3b435)
