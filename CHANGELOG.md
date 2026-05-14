@@ -9,6 +9,9 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 ### Added
 - **diagnostics:** Add OSC + translator + host-supervisor instrumentation (b0fa13d)
 
+### Fixed
+- **smoothing:** Lock out per-tracker prediction on the calibration anchor (e87f318)
+
 ---
 
 ## [v2026.5.14.0](https://github.com/RealWhyKnot/WKOpenVR/releases/tag/v2026.5.14.0) — 2026-05-14
