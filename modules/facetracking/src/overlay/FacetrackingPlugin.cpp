@@ -168,12 +168,12 @@ void FacetrackingPlugin::PushConfigToDriver()
         cfg.vergence_lock_strength     = static_cast<uint8_t>(p.vergence_lock_strength);
         cfg.gaze_smoothing             = static_cast<uint8_t>(p.gaze_smoothing);
         cfg.openness_smoothing         = static_cast<uint8_t>(p.openness_smoothing);
-        cfg.osc_port                   = static_cast<uint16_t>(p.osc_port);
-        cfg._reserved2                 = 0;
-
-        std::strncpy(cfg.osc_host, p.osc_host.c_str(),
-            sizeof(cfg.osc_host) - 1);
-        cfg.osc_host[sizeof(cfg.osc_host) - 1] = '\0';
+        // osc_port / osc_host are deprecated; the router owns the UDP socket.
+        // Leave them zeroed. The driver ignores them once output_osc_enabled
+        // routes through the in-process PublishOsc path.
+        cfg.osc_port   = 0;
+        cfg._reserved2 = 0;
+        cfg.osc_host[0] = '\0';
 
         // Active module = first enabled entry (backend is single-active for
         // now; once the host learns to run multiple, this entry should grow
@@ -194,7 +194,7 @@ void FacetrackingPlugin::PushConfigToDriver()
             return;
         }
         last_error_.clear();
-        FT_LOG_OVL("[ipc] config pushed: osc=%d eyelid=%d vergence=%d calib_mode=%d",
+        FT_LOG_OVL("[ipc] config pushed: osc_enabled=%d eyelid=%d vergence=%d calib_mode=%d",
             (int)cfg.output_osc_enabled, (int)cfg.eyelid_sync_enabled,
             (int)cfg.vergence_lock_enabled, (int)cfg.continuous_calib_mode);
     } catch (const std::exception &e) {

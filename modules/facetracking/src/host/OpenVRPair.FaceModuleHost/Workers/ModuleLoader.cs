@@ -3,7 +3,6 @@ using System.Runtime.Loader;
 using System.Text;
 using System.Text.Json;
 using OpenVRPair.FaceModuleHost.Logging;
-using OpenVRPair.FaceModuleHost.Output;
 using OpenVRPair.FaceTracking.ModuleSdk;
 using OpenVRPair.FaceTracking.Registry;
 
@@ -127,11 +126,10 @@ public sealed class ModuleLoader(
 
     /// <summary>
     /// Main per-frame loop. Calls the active module's Update and pushes the result
-    /// into the frame writer and OSC sender. Runs until cancellation.
+    /// into the frame writer. Runs until cancellation.
     /// </summary>
     public async Task RunActiveAsync(
         FrameWriter writer,
-        OscSender osc,
         CalibrationCache calib,
         CancellationToken ct)
     {
@@ -169,11 +167,6 @@ public sealed class ModuleLoader(
                         module.EyeSinkInternal,
                         module.ExpressionSinkInternal,
                         eye, expr, uuidHash, ct);
-
-                    osc.SendFrame(
-                        module.EyeSinkInternal,
-                        module.ExpressionSinkInternal,
-                        eye, expr);
 
                     // Yield so other tasks get CPU time; hardware ticks at ~120 Hz.
                     await Task.Yield();

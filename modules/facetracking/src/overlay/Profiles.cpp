@@ -48,8 +48,6 @@ FacetrackingProfile Decode(const picojson::value &v)
     getInt ("vergence_lock_strength",     p.vergence_lock_strength);
     getInt ("continuous_calib_mode",      p.continuous_calib_mode);
     getBool("output_osc_enabled",         p.output_osc_enabled);
-    getStr ("osc_host",                   p.osc_host);
-    getInt ("osc_port",                   p.osc_port);
     getInt ("gaze_smoothing",             p.gaze_smoothing);
     getInt ("openness_smoothing",         p.openness_smoothing);
     // enabled_module_uuids -- the multi-select list the Modules tab edits.
@@ -86,8 +84,6 @@ std::string Encode(const FacetrackingProfile &p)
     obj["vergence_lock_strength"]     = picojson::value((double)p.vergence_lock_strength);
     obj["continuous_calib_mode"]      = picojson::value((double)p.continuous_calib_mode);
     obj["output_osc_enabled"]         = picojson::value(p.output_osc_enabled);
-    obj["osc_host"]                   = picojson::value(p.osc_host);
-    obj["osc_port"]                   = picojson::value((double)p.osc_port);
     obj["gaze_smoothing"]             = picojson::value((double)p.gaze_smoothing);
     obj["openness_smoothing"]         = picojson::value((double)p.openness_smoothing);
     {

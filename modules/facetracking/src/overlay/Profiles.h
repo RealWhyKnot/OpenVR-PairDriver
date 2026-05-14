@@ -23,9 +23,10 @@ struct FacetrackingProfile
 
     int     continuous_calib_mode      = 1;    // 0=off 1=conservative 2=aggressive
 
+    // Drives output_osc_enabled in FaceTrackingConfig: gates the driver's per-frame
+    // OSC publish calls before they reach the router. To disable FT OSC output
+    // entirely, clear this toggle; individual route filtering lives on the router tab.
     bool    output_osc_enabled         = true;
-    std::string osc_host               = "127.0.0.1";
-    int     osc_port                   = 9000;
 
     int     gaze_smoothing             = 30;   // 0..100
     int     openness_smoothing         = 20;   // 0..100

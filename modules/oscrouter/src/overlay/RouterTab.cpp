@@ -1,14 +1,40 @@
 #include "RouterTab.h"
 #include "ShellContext.h"
 #include "UiHelpers.h"
+#include "JsonUtil.h"
+#include "Win32Paths.h"
+#include "Win32Text.h"
 
 #include <imgui.h>
 #include <cstring>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 
 // ShellContext is forward-declared in FeaturePlugin.h; include the header
 // so the definition is visible for field access.
 #include "ShellContext.h"
+
+// Read send_port from %LocalAppDataLow%\WKOpenVR\profiles\oscrouter.json.
+// Returns 9000 (the default) if the file is absent or the key is missing.
+static int ReadProfileSendPort()
+{
+    std::wstring profileDir = openvr_pair::common::WkOpenVrSubdirectoryPath(L"profiles", false);
+    if (profileDir.empty()) return 9000;
+    std::wstring path = profileDir + L"\\oscrouter.json";
+
+    std::ifstream in(path);
+    if (!in) return 9000;
+
+    std::stringstream ss;
+    ss << in.rdbuf();
+
+    picojson::value root;
+    if (!openvr_pair::common::json::ParseObject(root, ss.str())) return 9000;
+
+    int port = openvr_pair::common::json::IntAt(root, "send_port", 9000);
+    return (port > 0 && port <= 65535) ? port : 9000;
+}
 
 void RouterTab::EnsureIpc()
 {
@@ -39,9 +65,15 @@ void RouterTab::Draw(openvr_pair::overlay::ShellContext &ctx)
         return;
     }
 
-    ImGui::Text("Send target: 127.0.0.1:9000");
+    // Read the target port from the profile at draw time. The read is cheap
+    // (one ifstream + small JSON parse); the function short-circuits early if
+    // the file is absent.  A future RequestOscRouterSetConfig IPC call will
+    // allow editing this from the UI without a restart.
+    int profilePort = ReadProfileSendPort();
+    ImGui::Text("Send target: 127.0.0.1:%d", profilePort);
     openvr_pair::overlay::ui::TooltipOnHover(
-        "Default outbound OSC target. Configurable via RequestOscRouterSetConfig.");
+        "Outbound OSC target port. Set via the router profile (oscrouter.json).\n"
+        "Migrated from FaceTracking OSC port if non-default on first upgrade.");
     ImGui::Separator();
 
     ImGui::Text("Packets sent: %llu  Bytes: %llu  Dropped: %llu  Routes: %u",
