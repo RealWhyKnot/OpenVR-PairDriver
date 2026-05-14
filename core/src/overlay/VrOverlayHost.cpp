@@ -31,10 +31,22 @@ constexpr float kOverlayWidthMeters = 3.0f;
 // Retry the VR session probe at most once per second. Matches SC.
 constexpr double kInitRetrySeconds = 1.0;
 
-// Discrete-scroll quantization SC found readable on Index controllers.
-// xdelta / ydelta from VREvent_Scroll_t are in fraction-of-full-tick;
-// multiply by 360*8 to scale into ImGui's wheel-tick range.
-constexpr float kScrollScale = 360.0f * 8.0f;
+// Discrete-scroll scale factor for VREvent_ScrollDiscrete.
+//
+// xdelta/ydelta from VREvent_Scroll_t are in "ticks" -- one full
+// scroll-wheel notch reports 1.0. ImGui's MouseWheel input expects the
+// same units (1.0 = one notch -> ~5 lines of scroll). On Quest controllers
+// reaching the overlay through Virtual Desktop the input is already
+// 1.0-per-click, so any multiplier larger than ~1 makes a single thumbstick
+// nudge scroll the whole window. The previous value (360*8 = 2880) was a
+// holdover from a SteamVR-Input-driven config that delivered sub-tick
+// fractional deltas and needed amplification; the modern overlay-event
+// path doesn't.
+//
+// Leaving a small >1 amplification (2.0) so a single click moves ~10 lines
+// rather than 5 -- closer to desktop scroll-wheel feel without overshooting
+// the page.
+constexpr float kScrollScale = 2.0f;
 
 #ifdef _WIN32
 std::filesystem::path ExeDir()
