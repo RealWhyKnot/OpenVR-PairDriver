@@ -1,5 +1,6 @@
 #include "Migration.h"
 
+#include "JsonUtil.h"
 #include "Win32Paths.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -7,6 +8,8 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 
 namespace openvr_pair::overlay {
@@ -123,12 +126,151 @@ static void MigrateScRegistryKey()
     }
 }
 
+// Step 3: if the facetracking profile has a non-default osc_port, copy it
+// into the oscrouter profile as send_port.  Idempotent: once the sentinel
+// key "osc_migrated_to_router" is written into facetracking.json the step
+// is skipped entirely on every subsequent launch.
+//
+// The router driver hard-codes 127.0.0.1:9000 as the send endpoint; the
+// port written here is the value users saw before PR #3 (stored under
+// "osc_port" in facetracking.json).  If the router profile already has a
+// non-default send_port the user has already configured it -- skip.
+//
+// Note: writing oscrouter.json here only persists the preference.  The
+// router overlay reads this file on startup and displays it; a future
+// RequestOscRouterSetConfig IPC call will push the value into the running
+// driver (deferred, no protocol bump needed here).
+static void MigrateFtOscPort()
+{
+    std::wstring profileDir = openvr_pair::common::WkOpenVrSubdirectoryPath(L"profiles", false);
+    if (profileDir.empty()) return;
+
+    std::wstring ftPath    = profileDir + L"\\facetracking.json";
+    std::wstring orPath    = profileDir + L"\\oscrouter.json";
+
+    // 1. Check idempotency sentinel in facetracking.json.
+    {
+        std::ifstream ftIn(ftPath);
+        if (!ftIn) return; // no facetracking.json -- nothing to migrate
+        std::stringstream ss;
+        ss << ftIn.rdbuf();
+        picojson::value root;
+        if (!openvr_pair::common::json::ParseObject(root, ss.str())) return;
+        if (openvr_pair::common::json::BoolAt(root, "osc_migrated_to_router", false)) {
+            // Already migrated on a prior launch.
+            return;
+        }
+
+        // 2. Read the old osc_port value; if it is default (9000) or absent, skip.
+        int oldPort = openvr_pair::common::json::IntAt(root, "osc_port", 9000);
+        if (oldPort == 9000 || oldPort <= 0 || oldPort > 65535) {
+            // Nothing non-trivial to carry over; mark as done and return.
+            // Fall through to write the sentinel even for the default case so
+            // the check above short-circuits on the next launch.
+        } else {
+            // 3. Check the router profile -- if it already has a non-default port, skip.
+            {
+                std::ifstream orIn(orPath);
+                if (orIn) {
+                    std::stringstream orSs;
+                    orSs << orIn.rdbuf();
+                    picojson::value orRoot;
+                    if (openvr_pair::common::json::ParseObject(orRoot, orSs.str())) {
+                        int existingPort = openvr_pair::common::json::IntAt(orRoot, "send_port", 9000);
+                        if (existingPort != 9000 && existingPort > 0 && existingPort <= 65535) {
+                            // User already configured the router port; don't clobber.
+                            fprintf(stderr,
+                                "[Migration] oscrouter.json already has send_port=%d; skipping FT port migration\n",
+                                existingPort);
+                            // Still write the sentinel so we don't re-evaluate next launch.
+                            goto write_sentinel;
+                        }
+                    }
+                }
+            }
+
+            // 4. Write the FT port into the router profile.
+            {
+                picojson::object orObj;
+                // Preserve any existing keys if the file exists.
+                {
+                    std::ifstream orIn(orPath);
+                    if (orIn) {
+                        std::stringstream orSs;
+                        orSs << orIn.rdbuf();
+                        picojson::value orRoot;
+                        if (openvr_pair::common::json::ParseObject(orRoot, orSs.str())) {
+                            orObj = orRoot.get<picojson::object>();
+                        }
+                    }
+                }
+                orObj["send_port"] = picojson::value(static_cast<double>(oldPort));
+                std::string body = picojson::value(orObj).serialize(true);
+
+                std::wstring tmpPath = orPath + L".tmp";
+                HANDLE h = CreateFileW(tmpPath.c_str(), GENERIC_WRITE, 0, nullptr,
+                    CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                if (h == INVALID_HANDLE_VALUE) {
+                    fprintf(stderr, "[Migration] Failed to write oscrouter.json.tmp\n");
+                } else {
+                    DWORD written = 0;
+                    WriteFile(h, body.data(), static_cast<DWORD>(body.size()), &written, nullptr);
+                    CloseHandle(h);
+                    if (written == static_cast<DWORD>(body.size())) {
+                        MoveFileExW(tmpPath.c_str(), orPath.c_str(), MOVEFILE_REPLACE_EXISTING);
+                        fprintf(stderr,
+                            "[Migration] Migrated FT osc_port=%d into oscrouter.json send_port\n",
+                            oldPort);
+                    } else {
+                        DeleteFileW(tmpPath.c_str());
+                        fprintf(stderr, "[Migration] Partial write to oscrouter.json.tmp; not committed\n");
+                    }
+                }
+            }
+        }
+    }
+
+write_sentinel:
+    // 5. Write the idempotency sentinel into facetracking.json.
+    //    We re-read and re-encode to avoid clobbering other keys.
+    {
+        std::ifstream ftIn2(ftPath);
+        if (!ftIn2) return;
+        std::stringstream ss2;
+        ss2 << ftIn2.rdbuf();
+        picojson::value root2;
+        if (!openvr_pair::common::json::ParseObject(root2, ss2.str())) return;
+
+        picojson::object ftObj = root2.get<picojson::object>();
+        ftObj["osc_migrated_to_router"] = picojson::value(true);
+        std::string body = picojson::value(ftObj).serialize(true);
+
+        std::wstring tmpPath = ftPath + L".tmp";
+        HANDLE h = CreateFileW(tmpPath.c_str(), GENERIC_WRITE, 0, nullptr,
+            CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h == INVALID_HANDLE_VALUE) {
+            fprintf(stderr, "[Migration] Failed to write facetracking.json.tmp for sentinel\n");
+            return;
+        }
+        DWORD written = 0;
+        WriteFile(h, body.data(), static_cast<DWORD>(body.size()), &written, nullptr);
+        CloseHandle(h);
+        if (written == static_cast<DWORD>(body.size())) {
+            MoveFileExW(tmpPath.c_str(), ftPath.c_str(), MOVEFILE_REPLACE_EXISTING);
+            fprintf(stderr, "[Migration] FT OSC port migration sentinel written\n");
+        } else {
+            DeleteFileW(tmpPath.c_str());
+        }
+    }
+}
+
 } // namespace
 
 void RunFirstLaunchMigration()
 {
     MigrateAppData();
     MigrateScRegistryKey();
+    MigrateFtOscPort();
 }
 
 } // namespace openvr_pair::overlay
