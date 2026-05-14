@@ -75,6 +75,10 @@ add_subdirectory("${CMAKE_SOURCE_DIR}/modules/facetracking/src/driver" "${CMAKE_
 list(APPEND OPENVR_PAIR_FEATURE_LIBS openvr_pair_feature_facetracking_driver)
 list(APPEND OPENVR_PAIR_FEATURE_DEFINES OPENVR_PAIR_HAS_FACETRACKING_DRIVER=1)
 
+add_subdirectory("${CMAKE_SOURCE_DIR}/modules/oscrouter/src/driver" "${CMAKE_BINARY_DIR}/modules/oscrouter-driver")
+list(APPEND OPENVR_PAIR_FEATURE_LIBS openvr_pair_feature_oscrouter_driver)
+list(APPEND OPENVR_PAIR_FEATURE_DEFINES OPENVR_PAIR_HAS_OSCROUTER_DRIVER=1)
+
 file(GLOB_RECURSE SOURCES_DRIVER ${CMAKE_SOURCE_DIR}/core/src/driver "*.c" "*.h" "*.hpp" "*.cpp")
 file(GLOB_RECURSE SOURCES_COMMON ${CMAKE_SOURCE_DIR}/core/src/common "*.h" "*.hpp")
 
