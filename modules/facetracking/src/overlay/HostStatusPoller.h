@@ -1,10 +1,10 @@
 #pragma once
 
 // Polls the C# host's host_status.json sidecar so the overlay can display
-// live state (OSC counters, active module, installed modules) without
-// requiring a new IPC channel + Protocol.h version bump. The host writes
-// the file atomically (.tmp + rename) once per second; we re-read at the
-// same cadence on the overlay's tick thread.
+// live state (active module, installed modules) without requiring a new
+// IPC channel + Protocol.h version bump. The host writes the file
+// atomically (.tmp + rename) once per second; we re-read at the same
+// cadence on the overlay's tick thread.
 //
 // File location: %LocalAppDataLow%\WKOpenVR\facetracking\host_status.json
 //
@@ -19,17 +19,6 @@
 #include <vector>
 
 namespace facetracking {
-
-struct HostStatusOsc
-{
-    bool        enabled            = false;
-    std::string target_host;
-    int         target_port        = 0;
-    long long   packets_sent       = 0;
-    long long   packets_errored    = 0;
-    float       packets_per_second = 0.f;
-    std::string last_error;
-};
 
 struct HostStatusActiveModule
 {
@@ -57,7 +46,6 @@ struct HostStatusSnapshot
     bool                                    host_shutting_down   = false;
     std::optional<HostStatusActiveModule>   active_module;
     std::vector<HostStatusInstalledModule>  installed_modules;
-    HostStatusOsc                           osc;
 };
 
 class HostStatusPoller

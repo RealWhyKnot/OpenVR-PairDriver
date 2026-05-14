@@ -73,57 +73,10 @@ void DrawSettingsTab(FacetrackingPlugin &plugin)
     DrawSectionHeading("Output");
 
     if (CheckboxWithTooltip("OSC (VRChat)", &p.output_osc_enabled,
-            "Sends /avatar/parameters/* over UDP to the host and port\n"
-            "below. Default 127.0.0.1:9000 (VRChat on the same PC).")) {
+            "Sends /avatar/parameters/* to the OSC router, which forwards\n"
+            "them to VRChat. Target host and port are configured on the\n"
+            "OSC Router tab. Uncheck to stop all FT OSC output.")) {
         plugin.PushConfigToDriver();
-    }
-
-    if (p.output_osc_enabled) {
-        static char oscHostBuf[40] = {};
-        if (oscHostBuf[0] == '\0')
-            std::strncpy(oscHostBuf, p.osc_host.c_str(), sizeof(oscHostBuf) - 1);
-
-        ImGui::SetNextItemWidth(160.0f);
-        if (ImGui::InputText("OSC host##ft", oscHostBuf, sizeof(oscHostBuf))) {
-            p.osc_host = oscHostBuf;
-            plugin.PushConfigToDriver();
-        }
-        TooltipForLastItem("Dotted-quad IP or hostname of the OSC receiver.\n"
-                           "Restart required for host changes to take effect.");
-
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(80.0f);
-        if (ImGui::InputInt("Port##ftosc", &p.osc_port, 0, 0)) {
-            if (p.osc_port < 1)     p.osc_port = 1;
-            if (p.osc_port > 65535) p.osc_port = 65535;
-            plugin.PushConfigToDriver();
-        }
-        TooltipForLastItem("UDP port for the OSC receiver (default 9000 for VRChat).");
-
-        // Status text for OSC -- driven by the host_status.json sidecar the
-        // C# host writes once per second.
-        const auto &host = plugin.host_status_.Snapshot();
-        if (!host.valid) {
-            ImGui::TextDisabled("OSC status: host not started yet.");
-        } else if (host.stale || host.host_shutting_down) {
-            ImGui::TextDisabled("OSC status: host stopped (last seen pid=%d).", host.host_pid);
-        } else if (!host.osc.enabled) {
-            ImGui::TextDisabled("OSC status: sender not running.");
-        } else if (!host.osc.last_error.empty()) {
-            const auto &pal = openvr_pair::overlay::ui::GetPalette();
-            ImGui::TextColored(pal.statusError,
-                "OSC error: %s", host.osc.last_error.c_str());
-            ImGui::Text("Sending to %s:%d -- %lld packet(s), %lld error(s)",
-                host.osc.target_host.c_str(), host.osc.target_port,
-                host.osc.packets_sent, host.osc.packets_errored);
-        } else {
-            ImGui::TextColored(openvr_pair::overlay::ui::GetPalette().statusOk,
-                "OSC OK -> %s:%d @ %.0f pkt/s",
-                host.osc.target_host.c_str(), host.osc.target_port,
-                host.osc.packets_per_second);
-            ImGui::Text("Total sent: %lld   errored: %lld",
-                host.osc.packets_sent, host.osc.packets_errored);
-        }
     }
 
 }
