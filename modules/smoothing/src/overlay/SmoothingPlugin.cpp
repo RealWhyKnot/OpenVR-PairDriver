@@ -6,6 +6,7 @@
 
 #include "SmoothingPlugin.h"
 
+#include "CalibrationAnchor.h"
 #include "Logging.h"
 #include "Protocol.h"
 #include "ShellContext.h"
@@ -42,6 +43,7 @@ void SmoothingPlugin::Tick(openvr_pair::overlay::ShellContext &)
 {
 	if (!ipc_.IsConnected()) ConnectIfNeeded();
 	TickExternalToolDetection();
+	TickAnchorClear();
 }
 
 void SmoothingPlugin::ConnectIfNeeded()
@@ -117,15 +119,41 @@ void SmoothingPlugin::ReplayDevicePredictions()
 	auto *vrSystem = vr::VRSystem();
 	if (!vrSystem) return;
 
+	const std::string &anchor = openvr_pair::overlay::GetCalibrationAnchorSerial();
 	char buffer[vr::k_unMaxPropertyStringSize];
 	for (uint32_t id = 0; id < vr::k_unMaxTrackedDeviceCount; ++id) {
 		if (vrSystem->GetTrackedDeviceClass(id) == vr::TrackedDeviceClass_Invalid) continue;
 		vr::ETrackedPropertyError err = vr::TrackedProp_Success;
 		vrSystem->GetStringTrackedDeviceProperty(id, vr::Prop_SerialNumber_String, buffer, sizeof buffer, &err);
 		if (err != vr::TrackedProp_Success || buffer[0] == 0) continue;
+		if (!anchor.empty() && anchor == buffer) continue;
 		auto it = cfg_.trackerSmoothness.find(buffer);
 		if (it == cfg_.trackerSmoothness.end()) continue;
 		SendDevicePrediction(id, it->second);
+	}
+}
+
+void SmoothingPlugin::TickAnchorClear()
+{
+	const std::string &anchor = openvr_pair::overlay::GetCalibrationAnchorSerial();
+	if (anchor == lastKnownAnchorSerial_) return;
+	lastKnownAnchorSerial_ = anchor;
+
+	if (anchor.empty() || !ipc_.IsConnected()) return;
+
+	auto *vrSystem = vr::VRSystem();
+	if (!vrSystem) return;
+
+	char buffer[vr::k_unMaxPropertyStringSize];
+	for (uint32_t id = 0; id < vr::k_unMaxTrackedDeviceCount; ++id) {
+		if (vrSystem->GetTrackedDeviceClass(id) == vr::TrackedDeviceClass_Invalid) continue;
+		vr::ETrackedPropertyError err = vr::TrackedProp_Success;
+		vrSystem->GetStringTrackedDeviceProperty(id, vr::Prop_SerialNumber_String, buffer, sizeof buffer, &err);
+		if (err != vr::TrackedProp_Success || buffer[0] == 0) continue;
+		if (anchor != buffer) continue;
+		SM_LOG("[smoothing] tracker %s is calibration anchor; smoothing inert until anchor changes", anchor.c_str());
+		SendDevicePrediction(id, 0);
+		return;
 	}
 }
 

@@ -2,6 +2,7 @@
 #include "SpaceCalibratorUmbrellaRuntime.h"
 
 #include "Calibration.h"
+#include "CalibrationAnchor.h"
 #include "Configuration.h"
 #include "UserInterface.h"
 
@@ -79,6 +80,9 @@ void CCal_UmbrellaTick()
 
 	if (g_vrReady) {
 		CalibrationTick(SecondsSinceStart());
+		openvr_pair::overlay::SetCalibrationAnchorSerial(CalCtx.referenceStandby.serial);
+	} else {
+		openvr_pair::overlay::SetCalibrationAnchorSerial({});
 	}
 }
 

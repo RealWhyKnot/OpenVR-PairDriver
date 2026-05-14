@@ -43,6 +43,8 @@ else()
 endif()
 
 add_executable(OpenVRPairOverlay WIN32
+	CalibrationAnchor.cpp
+	CalibrationAnchor.h
 	FeaturePlugin.cpp
 	FeaturePlugin.h
 	IpcClientBase.cpp

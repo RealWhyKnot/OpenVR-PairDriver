@@ -3,6 +3,7 @@
 
 #include "SmoothingPlugin.h"
 
+#include "CalibrationAnchor.h"
 #include "Protocol.h"
 #include "UiHelpers.h"
 #include "Win32Text.h"
@@ -182,11 +183,14 @@ void SmoothingPlugin::DrawPredictionTab()
 		std::string sys = (err == vr::TrackedProp_Success) ? PrettyTrackingSystem(buffer) : "";
 
 		const bool isHmd = (deviceClass == vr::TrackedDeviceClass_HMD);
+		const bool isAnchor = !serial.empty() &&
+			serial == openvr_pair::overlay::GetCalibrationAnchorSerial();
+		const bool isLocked = isHmd || isAnchor;
 
 		int smoothness = 0;
 		auto it = cfg_.trackerSmoothness.find(serial);
 		if (it != cfg_.trackerSmoothness.end()) smoothness = it->second;
-		if (isHmd) smoothness = 0;
+		if (isLocked) smoothness = 0;
 
 		ImGui::PushID(("trk_" + serial).c_str());
 		ImGui::TextWrapped("%s  [%s]  %s",
@@ -195,9 +199,11 @@ void SmoothingPlugin::DrawPredictionTab()
 			serial.c_str());
 		if (isHmd) {
 			ImGui::TextColored(openvr_pair::overlay::ui::GetPalette().statusInfo, "[HMD, locked]");
+		} else if (isAnchor) {
+			ImGui::TextColored(openvr_pair::overlay::ui::GetPalette().statusInfo, "[calibration anchor, locked]");
 		}
 
-		ImGui::BeginDisabled(isHmd);
+		ImGui::BeginDisabled(isLocked);
 		if (ImGui::SliderInt("smoothness##slider", &smoothness, 0, 100, "%d%%")) {
 			if (smoothness <= 0) cfg_.trackerSmoothness.erase(serial);
 			else cfg_.trackerSmoothness[serial] = smoothness;
@@ -208,6 +214,10 @@ void SmoothingPlugin::DrawPredictionTab()
 		if (ImGui::IsItemHovered()) {
 			if (isHmd) {
 				ImGui::SetTooltip("Locked to 0. Suppressing HMD prediction would cause judder in your view.");
+			} else if (isAnchor) {
+				ImGui::SetTooltip(
+					"Locked to 0. This tracker is the calibration reference; smoothing it\n"
+					"would introduce lag into every other tracker's calibration solve.");
 			} else {
 				ImGui::SetTooltip(
 					"0 = raw motion (no suppression).\n"

@@ -31,11 +31,17 @@ private:
 	std::string externalSmoothingToolName_;
 	double lastExternalScanSeconds_ = 0.0;
 
+	// Most recent anchor serial seen by Tick(). When it changes, send
+	// smoothness=0 to the driver for the new anchor device so any stale
+	// value already in the driver slot is cleared.
+	std::string lastKnownAnchorSerial_;
+
 	void ConnectIfNeeded();
 	void SendConfig();                                        // finger smoothing config
 	void SendDevicePrediction(uint32_t openVRID, int smoothness); // per-device prediction
 	void ReplayDevicePredictions();                           // resend whole map on connect
 	void TickExternalToolDetection();
+	void TickAnchorClear();                                   // zero driver slot when anchor changes
 	void DrawSettingsTab();
 	void DrawAdvancedTab();
 	void DrawLogsTab();
