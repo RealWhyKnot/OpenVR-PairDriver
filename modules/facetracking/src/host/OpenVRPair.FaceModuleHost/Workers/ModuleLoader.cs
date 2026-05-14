@@ -43,6 +43,11 @@ public sealed class ModuleLoadContext(string modulePath) : AssemblyLoadContext(
     {
         "OpenVRPair.FaceTracking.ModuleSdk",
         "OpenVRPair.FaceTracking.VrcftCompat",
+        // Must resolve from the default ALC (where the host's own reference lives)
+        // so the bridge's reflection on VRCFaceTracking.UnifiedTracking.Data finds
+        // the same singleton that modules write to. If each module loads its own
+        // copy the writes and reads go to different objects and no data flows.
+        "VRCFaceTracking.Core",
     };
 
     protected override Assembly? Load(AssemblyName assemblyName)
