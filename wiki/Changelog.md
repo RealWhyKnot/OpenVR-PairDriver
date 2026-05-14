@@ -4,6 +4,12 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 
 ## Unreleased
 
+_No notable changes since the last release._
+
+---
+
+## [v2026.5.14.0](https://github.com/RealWhyKnot/WKOpenVR/releases/tag/v2026.5.14.0) — 2026-05-14
+
 ### Added
 - **oscrouter:** OSC router substrate (v16 protocol, UDP send, OOP publish pipe, stats shmem) (0cdd797)
 - **facetracking:** Migrate face-tracking OSC through router (a2dd55b)

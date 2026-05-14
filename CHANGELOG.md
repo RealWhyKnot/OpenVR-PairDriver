@@ -6,6 +6,12 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 
 ## Unreleased
 
+_No notable changes since the last release._
+
+---
+
+## [v2026.5.14.0](https://github.com/RealWhyKnot/WKOpenVR/releases/tag/v2026.5.14.0) — 2026-05-14
+
 ### Added
 - **oscrouter:** OSC router substrate (v16 protocol, UDP send, OOP publish pipe, stats shmem) (0cdd797)
 - **facetracking:** Migrate face-tracking OSC through router (a2dd55b)
