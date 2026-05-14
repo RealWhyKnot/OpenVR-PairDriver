@@ -12,6 +12,11 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 ### Changed
 - **common:** Share Win32 and IPC helpers (4f3b435)
 
+### Fixed
+- **facetracking:** Host path walk, ALC type-identity, lenient version parse (68fd11d)
+- **overlay:** VR scroll wheel sensitivity (360*8 -> 2) (1482ab3)
+- **calibration:** Faster initial-cal, paired-motion validity, mode-aware defaults (e26d16f)
+
 ---
 
 ## [v2026.5.13.1](https://github.com/RealWhyKnot/WKOpenVR/releases/tag/v2026.5.13.1) — 2026-05-13
