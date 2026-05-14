@@ -11,6 +11,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **smoothing:** Lock out per-tracker prediction on the calibration anchor (e87f318)
 - **installer:** Include translator host tree in setup-exe and release zip (ca55616)
 - **calibration:** Hide-tracker now flags pose as disconnected instead of punting out of bounds (2a0e8db)
+- **host,supervisor:** Hide console window, guard respawn race, add circuit breaker (95ec265)
 
 ---
 
