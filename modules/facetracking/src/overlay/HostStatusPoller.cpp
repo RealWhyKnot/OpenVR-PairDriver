@@ -141,20 +141,8 @@ void HostStatusPoller::ReadFile()
         }
     }
 
-    if (const auto *o = openvr_pair::common::json::ValueAt(root, "osc"); o && o->is<picojson::object>())
-    {
-        s.osc.enabled            = openvr_pair::common::json::BoolAt(*o, "enabled");
-        s.osc.target_host        = openvr_pair::common::json::StringAt(*o, "target_host");
-        s.osc.target_port        = openvr_pair::common::json::IntAt(*o, "target_port");
-        s.osc.packets_sent       = static_cast<long long>(openvr_pair::common::json::NumberAt(*o, "packets_sent"));
-        s.osc.packets_errored    = static_cast<long long>(openvr_pair::common::json::NumberAt(*o, "packets_errored"));
-        s.osc.packets_per_second = static_cast<float>(openvr_pair::common::json::NumberAt(*o, "packets_per_second"));
-        s.osc.last_error         = openvr_pair::common::json::StringAt(*o, "last_error");
-    }
-
-    FT_LOG_OVL("HostStatusPoller: refreshed (pid=%d uptime=%ds osc=%lld pkt %s)",
-        s.host_pid, s.host_uptime_seconds, s.osc.packets_sent,
-        s.osc.enabled ? "enabled" : "disabled");
+    FT_LOG_OVL("HostStatusPoller: refreshed (pid=%d uptime=%ds)",
+        s.host_pid, s.host_uptime_seconds);
 
     snapshot_ = std::move(s);
 }

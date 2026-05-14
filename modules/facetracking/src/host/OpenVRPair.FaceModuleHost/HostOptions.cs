@@ -15,12 +15,6 @@ public sealed class HostOptions
     public string ShmemName { get; set; } =
         "OpenVRPairFaceTrackingFrameRingV1";
 
-    /// <summary>Default OSC target host.</summary>
-    public string OscHost { get; set; } = "127.0.0.1";
-
-    /// <summary>Default OSC target port.</summary>
-    public int OscPort { get; set; } = 9000;
-
     /// <summary>Directory where installed hardware modules live, one uuid/version sub-tree each.</summary>
     public string ModulesInstallDir { get; set; } = Path.Combine(
         LocalAppDataLow(), "WKOpenVR", "facetracking", "modules");
@@ -38,11 +32,6 @@ public sealed class HostOptions
             opts.DriverHandshakePipe = envPipe;
         if (Environment.GetEnvironmentVariable("OPENVR_PAIR_FACE_SHMEM") is { } envShmem)
             opts.ShmemName = envShmem;
-        if (Environment.GetEnvironmentVariable("OPENVR_PAIR_OSC_HOST") is { } envOscHost)
-            opts.OscHost = envOscHost;
-        if (Environment.GetEnvironmentVariable("OPENVR_PAIR_OSC_PORT") is { } envOscPort
-            && int.TryParse(envOscPort, out int parsedPort))
-            opts.OscPort = parsedPort;
 
         // Command-line args override env vars.
         for (int i = 0; i < args.Length - 1; i++)
@@ -51,10 +40,6 @@ public sealed class HostOptions
             {
                 case "--driver-handshake-pipe": opts.DriverHandshakePipe = args[i + 1]; break;
                 case "--shmem-name":            opts.ShmemName           = args[i + 1]; break;
-                case "--osc-host":              opts.OscHost             = args[i + 1]; break;
-                case "--osc-port":
-                    if (int.TryParse(args[i + 1], out int p)) opts.OscPort = p;
-                    break;
                 case "--modules-dir":           opts.ModulesInstallDir   = args[i + 1]; break;
             }
         }

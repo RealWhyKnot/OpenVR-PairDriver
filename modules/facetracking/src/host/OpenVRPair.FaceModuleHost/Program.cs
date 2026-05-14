@@ -1,7 +1,6 @@
 using OpenVRPair.FaceModuleHost;
 using OpenVRPair.FaceModuleHost.Logging;
 using OpenVRPair.FaceModuleHost.Workers;
-using OpenVRPair.FaceModuleHost.Output;
 using OpenVRPair.FaceTracking.Registry;
 
 var opts = HostOptions.FromArgs(args);
@@ -18,9 +17,8 @@ var loader   = new ModuleLoader(opts, logger);
 var writer   = new FrameWriter(opts.ShmemName, logger);
 // Pass the same CTS so MsgShutdown cancels all workers.
 var pipe     = new HostControlPipeServer(opts.DriverHandshakePipe, loader, logger, cts);
-var osc      = new OscSender(opts.OscHost, opts.OscPort, logger);
 var calib    = new CalibrationCache();
-var status   = new HostStatusWriter(opts.StatusFilePath, loader, osc, logger, opts);
+var status   = new HostStatusWriter(opts.StatusFilePath, loader, logger, opts);
 
 logger.Info($"OpenVRPair.FaceModuleHost starting. shmem={opts.ShmemName} pipe={opts.DriverHandshakePipe}");
 
@@ -37,9 +35,8 @@ try
     var workers = new Task[]
     {
         pipe.RunAsync(ct),
-        osc.RunAsync(ct),
         RunRegistryPollAsync(registry, logger, ct),
-        loader.RunActiveAsync(writer, osc, calib, ct),
+        loader.RunActiveAsync(writer, calib, ct),
         status.RunAsync(ct),
     };
 
@@ -68,7 +65,6 @@ catch (Exception ex)
     logger.Error($"Fatal: {ex}");
     await loader.UnloadAllAsync();
     writer.Dispose();
-    osc.Dispose();
     logger.Info("Shutdown complete.");
     logger.Dispose();
     return 1;
@@ -77,7 +73,6 @@ finally
 {
     await loader.UnloadAllAsync();
     writer.Dispose();
-    osc.Dispose();
     logger.Info("Shutdown complete.");
     logger.Dispose();
 }
