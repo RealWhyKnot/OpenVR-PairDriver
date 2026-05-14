@@ -14,6 +14,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **host,supervisor:** Hide console window, guard respawn race, add circuit breaker (95ec265)
 - **facetracking-host:** Wire VRCFT singleton and map upstream expression enum (03e85f0)
 - **translator:** Surface circuit-breaker halt state with deps-missing guidance (6a318a0)
+- **facetracking-host:** Pin Microsoft.Extensions.Logging.Abstractions v7.0.0 via PackageReference (0e41705)
 
 ---
 
