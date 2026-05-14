@@ -1,26 +1,26 @@
 #pragma once
 
+#include "IpcClientBase.h"
 #include "Protocol.h"
 
-class SCIPCClient
+class SCIPCClient : public openvr_pair::overlay::IpcClientBase
 {
 public:
-	~SCIPCClient();
-
 	void Connect();
-	protocol::Response SendBlocking(const protocol::Request &request);
-
-	void Send(const protocol::Request &request);
-	protocol::Response Receive();
 
 	// True once Connect() has completed and the pipe handle is still alive.
 	// Goes back to false if a broken-pipe error closed the handle and the
 	// transparent reconnect attempt failed. The overlay UI uses this to
 	// show a connection-status dot in the version line -- when false, the
 	// user has likely uninstalled or disabled the SteamVR driver.
-	bool IsConnected() const { return pipe != INVALID_HANDLE_VALUE; }
+	using openvr_pair::overlay::IpcClientBase::IsConnected;
+	using openvr_pair::overlay::IpcClientBase::Receive;
+	using openvr_pair::overlay::IpcClientBase::Send;
+	using openvr_pair::overlay::IpcClientBase::SendBlocking;
 
-private:
-	HANDLE pipe = INVALID_HANDLE_VALUE;
-	bool inReconnect = false;
+protected:
+	void OnPipeOpenAttempt(HANDLE pipe, DWORD lastError) override;
+	void OnHandshakeResponse(const protocol::Response &response) override;
+	void OnBrokenPipe(DWORD error) override;
+	void OnReconnectSucceeded() override;
 };

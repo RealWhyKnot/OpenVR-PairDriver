@@ -4,6 +4,7 @@
 #include "Logging.h"
 #include "ModuleSources.h"
 #include "UiHelpers.h"
+#include "Win32Text.h"
 
 #include "picojson.h"
 
@@ -77,11 +78,7 @@ static std::string PickFolder()
         if (SUCCEEDED(pDlg->GetResult(&pItem))) {
             PWSTR path = nullptr;
             if (SUCCEEDED(pItem->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
-                int n = WideCharToMultiByte(CP_UTF8, 0, path, -1, nullptr, 0, nullptr, nullptr);
-                if (n > 1) {
-                    result.resize(static_cast<size_t>(n - 1));
-                    WideCharToMultiByte(CP_UTF8, 0, path, -1, result.data(), n, nullptr, nullptr);
-                }
+                result = openvr_pair::common::WideToUtf8(path);
                 CoTaskMemFree(path);
             }
             pItem->Release();

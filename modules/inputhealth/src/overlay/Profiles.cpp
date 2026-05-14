@@ -1,58 +1,30 @@
 #define _CRT_SECURE_NO_DEPRECATE
 #include "Profiles.h"
 
+#include "JsonUtil.h"
 #include "Logging.h"
+#include "Win32Paths.h"
+#include "Win32Text.h"
 
 #include "inputhealth/SerialHash.h"
 #include "picojson.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <shlobj.h>
-#include <objbase.h>
 
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
 
 std::wstring ProfilesDir()
 {
-	PWSTR rootRaw = nullptr;
-	if (S_OK != SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &rootRaw)) {
-		if (rootRaw) CoTaskMemFree(rootRaw);
-		return {};
-	}
-	std::wstring root(rootRaw);
-	CoTaskMemFree(rootRaw);
-
-	std::wstring dir = root + L"\\WKOpenVR";
-	CreateDirectoryW(dir.c_str(), nullptr);
-	dir += L"\\profiles";
-	CreateDirectoryW(dir.c_str(), nullptr);
-	return dir;
-}
-
-std::string Wide2Utf8(const std::wstring &w)
-{
-	if (w.empty()) return {};
-	int needed = WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string out(needed, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), out.data(), needed, nullptr, nullptr);
-	return out;
-}
-
-std::wstring Utf82Wide(const std::string &s)
-{
-	if (s.empty()) return {};
-	int needed = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), nullptr, 0);
-	std::wstring out(needed, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), out.data(), needed);
-	return out;
+	return openvr_pair::common::WkOpenVrSubdirectoryPath(L"profiles", true);
 }
 
 // Serial strings can contain characters that aren't filename-safe (slashes,
@@ -206,9 +178,9 @@ void ProfileStore::LoadAll()
 		std::stringstream ss;
 		ss << in.rdbuf();
 		picojson::value v;
-		std::string err = picojson::parse(v, ss.str());
-		if (!err.empty()) {
-			LOG("[profiles] parse error in '%s': %s", Wide2Utf8(path).c_str(), err.c_str());
+		std::string err;
+		if (!openvr_pair::common::json::Parse(v, ss.str(), &err)) {
+			LOG("[profiles] parse error in '%s': %s", openvr_pair::common::WideToUtf8(path).c_str(), err.c_str());
 			continue;
 		}
 		DeviceProfile p = Decode(v);
@@ -226,7 +198,7 @@ bool ProfileStore::Save(const DeviceProfile &profile)
 	std::wstring dir = ProfilesDir();
 	if (dir.empty()) return false;
 
-	std::wstring path    = dir + L"\\" + Utf82Wide(FilenameForHash(profile.serial_hash));
+	std::wstring path    = dir + L"\\" + openvr_pair::common::Utf8ToWide(FilenameForHash(profile.serial_hash));
 	std::wstring tmpPath = path + L".tmp";
 
 	// Write to a temp file first so a crash mid-write never corrupts the
@@ -242,7 +214,7 @@ bool ProfileStore::Save(const DeviceProfile &profile)
 		nullptr);
 	if (hFile == INVALID_HANDLE_VALUE) {
 		LOG("[profiles] failed to open tmp '%s' for write (err=%lu)",
-			Wide2Utf8(tmpPath).c_str(), GetLastError());
+			openvr_pair::common::WideToUtf8(tmpPath).c_str(), GetLastError());
 		return false;
 	}
 
@@ -254,7 +226,7 @@ bool ProfileStore::Save(const DeviceProfile &profile)
 
 	if (!ok || written != static_cast<DWORD>(body.size())) {
 		LOG("[profiles] write/flush failed for tmp '%s' (err=%lu)",
-			Wide2Utf8(tmpPath).c_str(), GetLastError());
+			openvr_pair::common::WideToUtf8(tmpPath).c_str(), GetLastError());
 		DeleteFileW(tmpPath.c_str());
 		return false;
 	}
@@ -262,7 +234,7 @@ bool ProfileStore::Save(const DeviceProfile &profile)
 	if (!MoveFileExW(tmpPath.c_str(), path.c_str(),
 			MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
 		LOG("[profiles] atomic rename failed '%s' -> '%s' (err=%lu)",
-			Wide2Utf8(tmpPath).c_str(), Wide2Utf8(path).c_str(), GetLastError());
+			openvr_pair::common::WideToUtf8(tmpPath).c_str(), openvr_pair::common::WideToUtf8(path).c_str(), GetLastError());
 		DeleteFileW(tmpPath.c_str());
 		return false;
 	}

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "IpcClientBase.h"
 #include "Protocol.h"
 
 // IPC client for the FaceTracking overlay. Talks to the WKOpenVR
@@ -8,29 +9,19 @@
 // RequestHandshake, RequestSetFaceTrackingConfig,
 // RequestSetFaceCalibrationCommand, and RequestSetFaceActiveModule.
 
-class FtIPCClient
+class FtIPCClient : public openvr_pair::overlay::IpcClientBase
 {
 public:
-    ~FtIPCClient();
-
     // Open the pipe, set message mode, handshake, and verify protocol version.
     // Throws std::runtime_error on failure with a UI-ready message.
     void Connect();
 
     // Send a request and read the response, with one transparent reconnect on
     // broken-pipe errors (covers vrserver restart mid-request).
-    protocol::Response SendBlocking(const protocol::Request &request);
-
-    void Send(const protocol::Request &request);
-    protocol::Response Receive();
-
-    void Close();
-
-    bool     IsConnected()        const { return pipe_ != INVALID_HANDLE_VALUE; }
-    uint64_t ConnectionGeneration() const { return connection_generation_; }
-
-private:
-    HANDLE   pipe_                 = INVALID_HANDLE_VALUE;
-    bool     in_reconnect_         = false;
-    uint64_t connection_generation_ = 0;
+    using openvr_pair::overlay::IpcClientBase::Close;
+    using openvr_pair::overlay::IpcClientBase::ConnectionGeneration;
+    using openvr_pair::overlay::IpcClientBase::IsConnected;
+    using openvr_pair::overlay::IpcClientBase::Receive;
+    using openvr_pair::overlay::IpcClientBase::Send;
+    using openvr_pair::overlay::IpcClientBase::SendBlocking;
 };

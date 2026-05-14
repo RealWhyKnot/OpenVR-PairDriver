@@ -71,6 +71,7 @@ target_include_directories(OpenVRPairOverlay PRIVATE
 	${CMAKE_SOURCE_DIR}/lib/gl3w/include)
 
 target_link_libraries(OpenVRPairOverlay PRIVATE
+	openvr_pair_common
 	pair_imgui
 	pair_implot
 	pair_gl3w

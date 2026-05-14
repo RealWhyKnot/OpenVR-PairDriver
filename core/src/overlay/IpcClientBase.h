@@ -7,27 +7,37 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <string>
 
 namespace openvr_pair::overlay {
 
+struct IpcClientConnectOptions
+{
+	using Win32ErrorFormatter = std::function<std::string(DWORD error, const std::string &details)>;
+	using VersionMismatchFormatter = std::function<std::string(uint32_t expectedVersion, uint32_t driverVersion)>;
+
+	Win32ErrorFormatter pipeUnavailable;
+	Win32ErrorFormatter pipeModeFailed;
+	VersionMismatchFormatter versionMismatch;
+	std::string reconnectFailurePrefix = "IPC reconnect failed after broken pipe: ";
+	std::string writeFailurePrefix = "Error writing IPC request";
+	std::string readFailurePrefix = "Error reading IPC response";
+	std::string oversizedResponseMessage = "Invalid IPC response. Message larger than expected ";
+	std::string sizeMismatchMessagePrefix = "Invalid IPC response";
+};
+
 class IpcClientBase
 {
 public:
-	// Version-mismatch state after a failed handshake. Matching means the last
-	// Connect() succeeded (or hasn't been attempted yet). OverlayNewer /
-	// DriverNewer describe which side has the higher protocol version number.
 	enum class MismatchState { Matching, OverlayNewer, DriverNewer };
 
 	virtual ~IpcClientBase();
 
-	// Connect to the named pipe. On real I/O errors (pipe unavailable, mode
-	// failure) throws std::runtime_error. On a protocol-version mismatch,
-	// stores the mismatch state, closes the pipe, and returns without throwing;
-	// subsequent Connect() calls are silently no-oped for 30 seconds so the
-	// caller's polling loop doesn't hammer the driver with reconnect attempts.
-	void Connect(const char *pipeName);
+	void Connect(const char *pipeName, IpcClientConnectOptions options = {});
 	protocol::Response SendBlocking(const protocol::Request &request);
+	void Send(const protocol::Request &request);
+	protocol::Response Receive();
 	bool IsConnected() const { return pipe_ != INVALID_HANDLE_VALUE; }
 	void Close();
 	uint64_t ConnectionGeneration() const { return connectionGeneration_; }
@@ -37,14 +47,19 @@ public:
 	uint32_t GetExpectedVersion() const { return protocol::Version; }
 
 protected:
+	virtual void OnPipeOpenAttempt(HANDLE pipe, DWORD lastError) { (void)pipe; (void)lastError; }
+	virtual void OnHandshakeResponse(const protocol::Response &response) { (void)response; }
+	virtual void OnBrokenPipe(DWORD error) { (void)error; }
+	virtual void OnReconnectSucceeded() {}
+
 	HANDLE pipe_ = INVALID_HANDLE_VALUE;
 	std::string pipeName_;
+	IpcClientConnectOptions options_;
 	uint64_t connectionGeneration_ = 0;
 	bool reconnecting_ = false;
 
 	MismatchState mismatchState_ = MismatchState::Matching;
 	uint32_t driverVersion_ = 0;
-	std::chrono::steady_clock::time_point backoffUntil_{};
 };
 
 } // namespace openvr_pair::overlay

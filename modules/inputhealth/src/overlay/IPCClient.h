@@ -1,5 +1,6 @@
 #pragma once
 
+#include "IpcClientBase.h"
 #include "Protocol.h"
 
 // IPC client for the InputHealth overlay. Talks to the WKOpenVR
@@ -9,11 +10,9 @@
 // RequestSetInputHealthConfig, RequestSetInputHealthCompensation, and
 // RequestResetInputHealthStats.
 
-class IPCClient
+class IPCClient : public openvr_pair::overlay::IpcClientBase
 {
 public:
-	~IPCClient();
-
 	// Open the pipe, switch to message mode, send a handshake, and verify
 	// the protocol version matches. Throws std::runtime_error on any
 	// failure with a human-readable message suitable for surfacing in the
@@ -22,18 +21,12 @@ public:
 
 	// Send a request and read the response in one call. Transparently
 	// reconnects (once) if the pipe is broken between SteamVR restarts.
-	protocol::Response SendBlocking(const protocol::Request &request);
 	protocol::Response SendCompensationEntry(const protocol::InputHealthCompensationEntry &entry);
 
-	void Send(const protocol::Request &request);
-	protocol::Response Receive();
-
-	bool IsConnected() const { return pipe != INVALID_HANDLE_VALUE; }
-	void Close();
-	uint64_t ConnectionGeneration() const { return connection_generation; }
-
-private:
-	HANDLE pipe        = INVALID_HANDLE_VALUE;
-	bool   inReconnect = false;
-	uint64_t connection_generation = 0;
+	using openvr_pair::overlay::IpcClientBase::Close;
+	using openvr_pair::overlay::IpcClientBase::ConnectionGeneration;
+	using openvr_pair::overlay::IpcClientBase::IsConnected;
+	using openvr_pair::overlay::IpcClientBase::Receive;
+	using openvr_pair::overlay::IpcClientBase::Send;
+	using openvr_pair::overlay::IpcClientBase::SendBlocking;
 };
