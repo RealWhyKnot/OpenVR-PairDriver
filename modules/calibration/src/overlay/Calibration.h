@@ -134,9 +134,21 @@ struct CalibrationContext
 	bool enabled = false;
 	bool validProfile = false;
 	bool clearOnLog = false;
-	bool quashTargetInContinuous = false;
+	// Continuous-mode default ON: the target tracker's pose is suppressed in
+	// OpenVR while continuous calibration runs so it doesn't appear as a
+	// duplicate of the reference at the wrong location. One-shot is brief and
+	// the duplicate isn't disruptive there; the field still gates on
+	// state == Continuous in the apply path, so this default only affects
+	// continuous behaviour.
+	bool quashTargetInContinuous = true;
 	double timeLastTick = 0, timeLastScan = 0, timeLastAssign = 0;
-	bool ignoreOutliers = false;
+	// Default ON: drop sample pairs whose rotation axis disagrees with the
+	// consensus before the LS solve. Helps with intermittent USB glitches or
+	// brief tracking loss. Was OFF historically; flipping it to ON across the
+	// board because there is no observed failure mode for clean data (the
+	// filter is a no-op when consensus is uniform) and the failure mode for
+	// noisy data (one bad sample skewing the fit) is exactly what it prevents.
+	bool ignoreOutliers = true;
 	double wantedUpdateInterval = 1.0;
 	float jitterThreshold = 3.0f;
 
@@ -158,6 +170,21 @@ struct CalibrationContext
 
 	float xprev, yprev, zprev;
 	int consecutiveHmdStalls = 0;
+
+	// Per-CollectSample paired-motion tracking. Used to decide whether the
+	// current sample reflects correlated reference+target motion or whether
+	// one device moved while the other was frozen (the passthrough/desktop
+	// overlay case). Seeded on the first sample of a calibration run and
+	// reset to unseeded whenever calibration is restarted (StartCalibration,
+	// StartContinuousCalibration, Clear()).
+	bool        pairedMotionPosSeeded = false;
+	Eigen::Vector3d pairedMotionPrevRefPos {0, 0, 0};
+	Eigen::Vector3d pairedMotionPrevTgtPos {0, 0, 0};
+	// Rolling count of "one moved, other did not" samples in the recent
+	// window. Surfaced via Metrics::pairedMotionWarningCount to the popup
+	// so the user sees a banner when their headset pose is frozen but the
+	// target tracker keeps reporting motion.
+	int         pairedMotionMismatchCount = 0;
 
 	float continuousCalibrationThreshold;
 	float maxRelativeErrorThreshold = 0.005f;
@@ -419,7 +446,13 @@ struct CalibrationContext
 		// noise floor and slows the calibration down when conditions are bad.
 		AUTO = 3,
 	};
-	Speed calibrationSpeed = AUTO;
+	// Default FAST. AUTO only makes sense in continuous mode (it re-evaluates
+	// each tick based on observed jitter and slows down when conditions
+	// degrade). In one-shot mode the user has committed to a single run --
+	// AUTO would just pick once and confuse them. ResolvedCalibrationSpeed
+	// folds AUTO -> FAST whenever state is not Continuous so an old profile
+	// carrying calibrationSpeed=AUTO behaves correctly for one-shot.
+	Speed calibrationSpeed = FAST;
 
 	vr::DriverPose_t devicePoses[vr::k_unMaxTrackedDeviceCount];
 
@@ -545,9 +578,10 @@ struct CalibrationContext
 	// Resolve the user's selected speed to a concrete FAST/SLOW/VERY_SLOW. When
 	// the user picks AUTO, we look at the recent observed jitter on both
 	// reference and target trackers and pick the buffer size that matches:
-	//   - clean trackers (sub-mm jitter) get FAST so calibration converges quickly
-	//   - typical setups (1-5mm) get SLOW
-	//   - noisy / reflective rooms / drifty IMU (>5mm) get VERY_SLOW
+	//   - clean to typical setups (sub-5mm jitter) get FAST so calibration
+	//     converges quickly. Covers tracker-on-HMD and most lighthouse setups.
+	//   - moderately noisy (5-10mm) get SLOW
+	//   - genuinely noisy / reflective rooms / drifty IMU (>10mm) get VERY_SLOW
 	// This is sticky-by-default: we only re-evaluate every few seconds and
 	// require the new bucket to have been right for a while before switching,
 	// so the buffer size doesn't oscillate during transient noise.
@@ -558,13 +592,17 @@ struct CalibrationContext
 		switch (ResolvedCalibrationSpeed())
 		{
 		case FAST:
-			return 100;
+			// 30 samples at ~18 Hz = ~1.7s buffer fill. The direct O(N) translation
+			// solve converges with N >= ~20 when the per-axis ranges are >= 10cm;
+			// the diversity gate already enforces that, so 30 is comfortably above
+			// the math floor.
+			return 30;
 		case SLOW:
-			return 250;
-		case VERY_SLOW:
-			return 500;
-		default:
 			return 100;
+		case VERY_SLOW:
+			return 200;
+		default:
+			return 30;
 		}
 	}
 

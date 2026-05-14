@@ -736,8 +736,8 @@ TEST(CalibrationCalcTest, JitterMeasuresNoiseDuringMotion) {
 
 // ---------------------------------------------------------------------------
 // TranslationDiversity boundary cases: empty / single-sample buffers report
-// 0; a buffer with a 30 cm spread per axis reports 1.0 (saturating); below
-// that, the score is the smallest-axis-range divided by 30 cm.
+// 0; a buffer with >= 20 cm spread per axis saturates to 1.0; below that,
+// the score is the smallest-axis-range divided by kDesiredAxisRange (0.20 m).
 // ---------------------------------------------------------------------------
 TEST(CalibrationCalcTest, TranslationDiversityBoundaryCases) {
     CalibrationCalc calc;
@@ -751,16 +751,17 @@ TEST(CalibrationCalcTest, TranslationDiversityBoundaryCases) {
     calc.PushSample(Sample(ref, tgt, 0.0));
     EXPECT_DOUBLE_EQ(calc.TranslationDiversity(), 0.0);
 
-    // Two samples, exactly 30 cm spread on every axis -> score 1.0.
+    // Two samples, exactly 20 cm spread on every axis -> score 1.0 (saturates
+    // at kDesiredAxisRange=0.20m; any spread >= 20cm clamps to 1.0).
     Pose tgt2; tgt2.rot = Eigen::Matrix3d::Identity();
-    tgt2.trans = Eigen::Vector3d(0.10 + 0.30, 0.10 + 0.30, 0.10 + 0.30);
+    tgt2.trans = Eigen::Vector3d(0.10 + 0.20, 0.10 + 0.20, 0.10 + 0.20);
     calc.PushSample(Sample(ref, tgt2, 0.01));
     EXPECT_NEAR(calc.TranslationDiversity(), 1.0, 1e-9);
 
-    // Reset; spread of 15 cm on every axis -> score 0.5.
+    // Reset; spread of 10 cm on every axis -> score 0.5 (10cm / 20cm = 0.5).
     CalibrationCalc calc2;
     Pose tgtA; tgtA.rot = Eigen::Matrix3d::Identity(); tgtA.trans = Eigen::Vector3d::Zero();
-    Pose tgtB; tgtB.rot = Eigen::Matrix3d::Identity(); tgtB.trans = Eigen::Vector3d(0.15, 0.15, 0.15);
+    Pose tgtB; tgtB.rot = Eigen::Matrix3d::Identity(); tgtB.trans = Eigen::Vector3d(0.10, 0.10, 0.10);
     calc2.PushSample(Sample(ref, tgtA, 0.0));
     calc2.PushSample(Sample(ref, tgtB, 0.01));
     EXPECT_NEAR(calc2.TranslationDiversity(), 0.5, 1e-9);

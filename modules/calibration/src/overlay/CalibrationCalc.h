@@ -64,6 +64,17 @@ struct Sample
 	// stay informative.
 	double refSpeed = 0.0;
 	double targetSpeed = 0.0;
+	// True when both the reference and target devices showed correlated
+	// motion since the previous sample (or both were stationary; that is
+	// not a failure mode -- it just doesn't contribute new variety). False
+	// only when one device moved meaningfully while the other did not --
+	// the classic "HMD frozen by passthrough/desktop overlay while target
+	// tracker keeps reporting motion" case. Diversity scores filter this
+	// out so the user's progress bars reflect data the math can actually
+	// use, not raw target-tracker motion. Default true so existing
+	// callers (tests, replay harness, the two `valid=true` constructors)
+	// behave as they always did.
+	bool pairedMotionValid = true;
 	Sample() : valid(false), timestamp(0) { }
 	Sample(Pose ref, Pose target, double timestamp) : valid(true), ref(ref), target(target), timestamp(timestamp){ }
 	Sample(Pose ref, Pose target, double timestamp, double refSpeed, double targetSpeed)
@@ -139,7 +150,7 @@ public:
 	// motion that the math will produce a clean fit; you can stop now".
 	//
 	// TranslationDiversity is the smallest per-axis position range divided by
-	// a target range (~30cm). Penalises planar / single-axis motion -- you
+	// a target range (~20cm). Penalises planar / single-axis motion -- you
 	// want all three axes to have meaningful spread, not just the one the
 	// user is comfortable swinging.
 	//
@@ -154,7 +165,7 @@ public:
 	// live sample buffer, in centimetres. UI uses this to point the user at
 	// the limiting axis when TranslationDiversity() is below 1.0; whichever
 	// component is smallest is the bottleneck (the diversity score is
-	// component-min / 30 cm). Returns zero vector when fewer than two valid
+	// component-min / 20 cm). Returns zero vector when fewer than two valid
 	// samples are available.
 	Eigen::Vector3d TranslationAxisRangesCm() const;
 

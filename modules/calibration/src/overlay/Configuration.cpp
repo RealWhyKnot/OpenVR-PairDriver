@@ -277,9 +277,16 @@ void ParseProfile(CalibrationContext &ctx, std::istream &stream)
 	if (obj["autostart_continuous_calibration"].evaluate_as_boolean()) {
 		ctx.state = CalibrationState::ContinuousStandby;
 	}
-	ctx.quashTargetInContinuous = obj["quash_target_in_continuous"].evaluate_as_boolean();
-	ctx.requireTriggerPressToApply = obj["require_trigger_press_to_apply"].evaluate_as_boolean();
-	ctx.ignoreOutliers = obj["ignore_outliers"].evaluate_as_boolean();
+	// Only override the in-code default if the key is actually present. Older
+	// `evaluate_as_boolean()` calls clobbered the default to false for any
+	// profile missing the key, which is why fresh installs were landing with
+	// these set to false despite the struct defaults being true.
+	if (obj["quash_target_in_continuous"].is<bool>())
+		ctx.quashTargetInContinuous = obj["quash_target_in_continuous"].get<bool>();
+	if (obj["require_trigger_press_to_apply"].is<bool>())
+		ctx.requireTriggerPressToApply = obj["require_trigger_press_to_apply"].get<bool>();
+	if (obj["ignore_outliers"].is<bool>())
+		ctx.ignoreOutliers = obj["ignore_outliers"].get<bool>();
 	ctx.continuousCalibrationOffset(0) = obj["continuous_calibration_target_offset_x"].get<double>();
 	ctx.continuousCalibrationOffset(1) = obj["continuous_calibration_target_offset_y"].get<double>();
 	ctx.continuousCalibrationOffset(2) = obj["continuous_calibration_target_offset_z"].get<double>();

@@ -218,9 +218,10 @@ void CCal_DrawSettings() {
 				}
 				if (ImGui::IsItemHovered()) {
 					ImGui::SetTooltip("Pick the speed automatically based on observed tracker jitter.\n"
-					                  "Sub-mm jitter -> Fast.  1-5mm -> Slow.  Above 5mm -> Very Slow.\n"
+					                  "<5mm -> Fast.  5-10mm -> Slow.  >10mm -> Very Slow.\n"
 					                  "Re-evaluates while continuous calibration runs; sticky so it doesn't oscillate.\n"
-					                  "Recommended for everyone except people who want a specific speed for a reason.");
+					                  "Recommended for continuous mode. (One-shot mode hides Auto because\n"
+					                  "it has no second chance to switch.)");
 				}
 				ImGui::NextColumn();
 				if (ImGui::RadioButton(" Fast          ", speed == CalibrationContext::FAST)) {
@@ -228,8 +229,8 @@ void CCal_DrawSettings() {
 					SaveProfile(CalCtx);
 				}
 				if (ImGui::IsItemHovered()) {
-					ImGui::SetTooltip("100-sample buffer. Fastest convergence, most sensitive to noise.\n"
-					                  "Good for clean lighthouse setups.");
+					ImGui::SetTooltip("30-sample buffer. Fastest convergence, most sensitive to noise.\n"
+					                  "Good for clean lighthouse setups and tracker-on-HMD mounts.");
 				}
 				ImGui::NextColumn();
 				if (ImGui::RadioButton(" Slow          ", speed == CalibrationContext::SLOW)) {
@@ -237,7 +238,7 @@ void CCal_DrawSettings() {
 					SaveProfile(CalCtx);
 				}
 				if (ImGui::IsItemHovered()) {
-					ImGui::SetTooltip("250-sample buffer. Smoother result at the cost of slower response.\n"
+					ImGui::SetTooltip("100-sample buffer. Smoother result at the cost of slower response.\n"
 					                  "Good for typical mixed setups.");
 				}
 				ImGui::NextColumn();
@@ -246,7 +247,7 @@ void CCal_DrawSettings() {
 					SaveProfile(CalCtx);
 				}
 				if (ImGui::IsItemHovered()) {
-					ImGui::SetTooltip("500-sample buffer. Maximum smoothing, slowest convergence.\n"
+					ImGui::SetTooltip("200-sample buffer. Maximum smoothing, slowest convergence.\n"
 					                  "For noisy / reflective rooms or drift-prone IMU trackers.");
 				}
 				ImGui::Columns(1);

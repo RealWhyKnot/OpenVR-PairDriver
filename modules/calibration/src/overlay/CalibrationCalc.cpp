@@ -905,24 +905,31 @@ double CalibrationCalc::TranslationDiversity() const {
 	// samples. The smallest axis-range relative to a desired total spread
 	// is the "weakest link" -- a user who waved on X+Y but never on Z gets
 	// a low score regardless of how much they waved on the other two.
+	//
+	// pairedMotionValid filter: a sample where only the target moved (HMD
+	// frozen by passthrough/desktop overlay, etc.) tells us nothing useful
+	// about the calibration. Excluding those samples keeps the progress bar
+	// honest about how much *usable* data the user has provided.
 	if (m_samples.size() < 2) return 0.0;
 	constexpr double kInf = std::numeric_limits<double>::infinity();
 	Eigen::Vector3d minPos(kInf, kInf, kInf);
 	Eigen::Vector3d maxPos(-kInf, -kInf, -kInf);
 	int n = 0;
 	for (const auto& s : m_samples) {
-		if (!s.valid) continue;
+		if (!s.valid || !s.pairedMotionValid) continue;
 		minPos = minPos.cwiseMin(s.target.trans);
 		maxPos = maxPos.cwiseMax(s.target.trans);
 		++n;
 	}
 	if (n < 2) return 0.0;
 	const Eigen::Vector3d range = maxPos - minPos;
-	// 30cm spread per axis is the sweet spot where the translation LS is
-	// well-conditioned for a typical room-scale setup. Going much wider
-	// doesn't help; going narrower starts to leak per-axis correlation noise
-	// into the fitted offset.
-	constexpr double kDesiredAxisRange = 0.30;
+	// 20cm spread per axis is sufficient for the translation LS to be
+	// well-conditioned across typical setups, including trackers rigid-
+	// mounted to an HMD where pure-translation head movement is limited.
+	// Lowered from 0.30 m (2026-05-13): 30cm demanded 21cm per axis before
+	// the 70% gate fired, which a head-mounted tracker rarely achieves on
+	// the weakest (usually Y or Z) axis in a normal calibration sweep.
+	constexpr double kDesiredAxisRange = 0.20;
 	const double minAxis = range.minCoeff();
 	const double score = minAxis / kDesiredAxisRange;
 	return std::min(std::max(score, 0.0), 1.0);
@@ -933,13 +940,13 @@ Eigen::Vector3d CalibrationCalc::TranslationAxisRangesCm() const {
 	// ranges in centimetres rather than collapsing them to a single score. The
 	// UI tooltip uses these to tell the user which axis is the bottleneck when
 	// the Translation% bar is stuck below 100. Whichever component is smallest
-	// is what's pinning the score (= min component / 30 cm).
+	// is what's pinning the score (= min component / kDesiredAxisRange = 20 cm).
 	if (m_samples.size() < 2) return Eigen::Vector3d::Zero();
 	Eigen::Vector3d minPos = Eigen::Vector3d::Constant(std::numeric_limits<double>::infinity());
 	Eigen::Vector3d maxPos = -minPos;
 	int n = 0;
 	for (const auto& s : m_samples) {
-		if (!s.valid) continue;
+		if (!s.valid || !s.pairedMotionValid) continue;
 		minPos = minPos.cwiseMin(s.target.trans);
 		maxPos = maxPos.cwiseMax(s.target.trans);
 		++n;
@@ -961,7 +968,7 @@ double CalibrationCalc::RotationDiversity() const {
 	bool haveFirst = false;
 	double maxAngle = 0.0;
 	for (const auto& s : m_samples) {
-		if (!s.valid) continue;
+		if (!s.valid || !s.pairedMotionValid) continue;
 		const Eigen::Quaterniond q(s.target.rot);
 		if (!haveFirst) { first = q; haveFirst = true; continue; }
 		const double a = first.angularDistance(q);
@@ -1246,7 +1253,7 @@ bool CalibrationCalc::ComputeOneshot(const bool ignoreOutliers) {
 	// Refuse to attempt a calibration on too-small inputs rather than letting
 	// the math fall through to NaN / divide-by-zero territory. The Calibration.cpp
 	// caller already gates on SampleCount() (100+) so production never hits this
-	// branch — it's a safety net for direct callers (the replay harness, tests).
+	// branch -- it's a safety net for direct callers (the replay harness, tests).
 	if (m_samples.size() < 6) {
 		CalCtx.Log("Not updating: too few samples to compute a calibration\n");
 		return false;
@@ -1254,73 +1261,82 @@ bool CalibrationCalc::ComputeOneshot(const bool ignoreOutliers) {
 
 	auto calibration = ComputeCalibration(ignoreOutliers);
 
+	// Hard-reject only on zero-rank rotation (m_rotationConditionRatio == 0.0
+	// exactly, set inside CalibrateRotation). That means no pair of samples had
+	// > 23 deg of rotation between them. The rotation matrix is undefined; the
+	// output is literally zeros and committing it corrupts the profile.
+	// Translation conditioning is checked below but never causes a hard-reject
+	// in one-shot: poor conditioning produces a noisy translation output that
+	// the user can clear and re-run; blocking silently is worse.
+	if (m_rotationConditionRatio == 0.0) {
+		CalCtx.Log("Not updating: no rotation diversity -- rotate HMD/tracker through more angles\n");
+		return false;
+	}
+
 	double rmsError = INFINITY;
 	bool valid = ValidateCalibration(calibration, &rmsError);
 
-	// Compute the auxiliary gates that ComputeIncremental uses, so the failure
-	// log line for one-shot can name the *actual* problem instead of a generic
-	// "low quality" shrug. (Item #5 from the math review.)
+	// Auxiliary metrics for the warning log. These mirror what ComputeIncremental
+	// emits so the log is self-describing for both paths.
 	double newVariance = ComputeAxisVariance(calibration)(1);
 	const double RotationConditionMin = 0.05;
 
-	// Rec G: Fisher-rank observability gate. The deleted Phase 1+2 silent-
-	// recal (2026-04-29 main 9fab09d) accepted candidates from stationary
-	// buffers because RMS was tautologically small. The actual degenerate
-	// case is m_rotationConditionRatio == 0.0 (zero-rank cross-covariance,
-	// from CalibrateRotation's empty-deltas early return -- no pair of
-	// samples with > 23 deg of rotation between them). Hard-reject in that
-	// case even when ValidateCalibration's RMS gate would pass. The
-	// existing 0.05 threshold below stays as a rejection-reason label
-	// rather than a hard gate so legitimate-but-marginal motion does not
-	// regress; the hard reject only fires on the truly unobservable
-	// stationary case (Nobre & Heckman 2017/2018 FastCal).
-	if (valid && m_rotationConditionRatio == 0.0) {
-		valid = false;
-	}
-	if (valid && m_translationConditionRatio == 0.0) {
-		valid = false;
-	}
-
 	if (valid) {
-		m_estimatedTransformation = calibration; // @NOTE: Normal calibration
+		m_estimatedTransformation = calibration;
 		m_isValid = true;
 		return true;
 	}
-	else {
-		// Item #5: branch the user-facing log on which threshold tripped. The
-		// generic "low-quality calibration result" was actionable for nobody —
-		// these messages tell the user what motion to add.
-		char buf[256];
-		double priorRms = INFINITY;
-		Eigen::Vector3d priorOffset;
-		if (m_isValid) {
-			(void)ValidateCalibration(m_estimatedTransformation, &priorRms, &priorOffset);
-		}
 
-		if (m_isValid && rmsError * 1.5 > priorRms) {
-			snprintf(buf, sizeof buf,
-				"Not updating: candidate RMS %.1fmm not better than active %.1fmm by 1.5x\n",
-				rmsError * 1000.0, priorRms * 1000.0);
-			CalCtx.Log(buf);
-		}
-		else if (newVariance < AxisVarianceThreshold) {
-			CalCtx.Log("Not updating: rotation single-axis (move tracker through more orientations)\n");
-		}
-		else if (m_rotationConditionRatio < RotationConditionMin) {
-			// Catch-all for both empty-deltas (ratio == 0) and ill-conditioned (small but nonzero).
-			CalCtx.Log("Not updating: motion too planar (rotate around more axes)\n");
-		}
-		else if (m_translationConditionRatio < RotationConditionMin) {
-			CalCtx.Log("Translation conditioning poor — need more diverse motion\n");
-		}
-		else {
-			snprintf(buf, sizeof buf,
-				"Not updating: RMS %.1fmm above gate %.1fmm\n",
-				rmsError * 1000.0, m_lastRejectRmsThreshold * 1000.0);
-			CalCtx.Log(buf);
-		}
-		return false;
+	// One-shot: warn but apply anyway. The user initiated this explicitly,
+	// watched the diversity bars, and did the work. Denying the result silently
+	// is worse than letting them see a noisy calibration they can clear.
+	// Continuous mode uses ComputeIncremental which has its own accept/reject
+	// loop; that gate is appropriate there and is unaffected by this change.
+	char buf[512];
+	double priorRms = INFINITY;
+	Eigen::Vector3d priorOffset;
+	if (m_isValid) {
+		(void)ValidateCalibration(m_estimatedTransformation, &priorRms, &priorOffset);
 	}
+
+	// Log whichever signal looks worst so the user knows what to improve.
+	if (newVariance < AxisVarianceThreshold) {
+		snprintf(buf, sizeof buf,
+			"WARNING: rotation single-axis (low variance=%.4f); calibration applied but may be noisy"
+			" -- rotate through more orientations for a better result\n",
+			newVariance);
+		CalCtx.Log(buf);
+	} else if (m_rotationConditionRatio < RotationConditionMin) {
+		snprintf(buf, sizeof buf,
+			"WARNING: rotation conditioning low (ratio=%.4f threshold=%.2f);"
+			" calibration applied but translation may drift"
+			" -- add more head rotation for a better result\n",
+			m_rotationConditionRatio, RotationConditionMin);
+		CalCtx.Log(buf);
+	} else if (m_translationConditionRatio < RotationConditionMin) {
+		snprintf(buf, sizeof buf,
+			"WARNING: translation conditioning low (ratio=%.4f threshold=%.2f, rms=%.1fmm);"
+			" calibration applied but translation offset may be inaccurate"
+			" -- walk through a larger area or vary head orientation during the translation phase\n",
+			m_translationConditionRatio, RotationConditionMin, rmsError * 1000.0);
+		CalCtx.Log(buf);
+	} else if (m_isValid && rmsError * 1.5 > priorRms) {
+		snprintf(buf, sizeof buf,
+			"WARNING: candidate RMS %.1fmm not better than active %.1fmm by 1.5x;"
+			" calibration applied -- re-run if tracking looks worse\n",
+			rmsError * 1000.0, priorRms * 1000.0);
+		CalCtx.Log(buf);
+	} else {
+		snprintf(buf, sizeof buf,
+			"WARNING: RMS %.1fmm above gate %.1fmm;"
+			" calibration applied -- re-run if tracking looks wrong\n",
+			rmsError * 1000.0, m_lastRejectRmsThreshold * 1000.0);
+		CalCtx.Log(buf);
+	}
+
+	m_estimatedTransformation = calibration;
+	m_isValid = true;
+	return true;
 }
 
 void CalibrationCalc::ComputeInstantOffset() {

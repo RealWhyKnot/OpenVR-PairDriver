@@ -34,6 +34,7 @@ namespace Metrics {
 	TimeSeries<double> translationDiversity;
 	TimeSeries<double> rotationDiversity;
 	TimeSeries<Eigen::Vector3d> translationAxisRangesCm;
+	TimeSeries<double> pairedMotionWarningCount;
 	TimeSeries<double> watchdogHealthySkip;
 	TimeSeries<double> effectivePriorMm;
 	TimeSeries<double> validateRmsThresholdMm;
@@ -201,6 +202,7 @@ namespace Metrics {
 		TS_FIELD(translationDiversity),
 		TS_FIELD(rotationDiversity),
 		TS_VECTOR_FIELD(translationAxisRangesCm),
+		TS_FIELD(pairedMotionWarningCount),
 		// Wedge-detection diagnostics. watchdogHealthySkip flags ticks where the
 		// watchdog wanted to clear but couldn't (prior in healthy band).
 		// effectivePriorMm is the actual prior the 1.5× gate compared against.

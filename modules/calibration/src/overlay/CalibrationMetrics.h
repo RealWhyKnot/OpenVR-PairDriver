@@ -84,9 +84,20 @@ namespace Metrics {
 	// the live sample buffer. The "Translation coverage" tooltip uses this to
 	// tell the user which axis (X / Y / Z) is the bottleneck when the bar is
 	// stuck below 100 %. Whichever component is smallest IS what's pinning
-	// translationDiversity (= min component / 30 cm). Pushed each tick from
+	// translationDiversity (= min component / 20 cm). Pushed each tick from
 	// CollectSample alongside the scalar diversity metrics.
 	extern TimeSeries<Eigen::Vector3d> translationAxisRangesCm;
+
+	// Rolling count of recent samples where the reference and target devices
+	// moved in disagreement -- one stepped meaningfully while the other was
+	// effectively stationary. The classic case is the user's headset being
+	// frozen by a passthrough/desktop overlay while the target tracker keeps
+	// reporting motion: the math has no usable correspondence in that state,
+	// but the old diversity bars would still fill from raw target motion.
+	// The popup reads this each frame and surfaces a warning banner when it
+	// rises, so the user gets real-time feedback that their data is bad
+	// rather than discovering it post-solve.
+	extern TimeSeries<double> pairedMotionWarningCount;
 
 	// 1 when the watchdog WANTED to fire (consecutive rejections >= cap and
 	// m_isValid) but skipped because the prior calibration error is in the

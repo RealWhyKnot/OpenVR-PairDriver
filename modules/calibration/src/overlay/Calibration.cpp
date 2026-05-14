@@ -291,13 +291,31 @@ CalibrationContext::Speed CalibrationContext::ResolvedCalibrationSpeed() const {
 		return calibrationSpeed;
 	}
 
+	// AUTO only re-evaluates meaningfully during continuous calibration --
+	// it watches drift evidence and slows the buffer down when conditions
+	// degrade. Outside continuous mode there's no second chance to switch,
+	// so AUTO would just gamble on the first jitter sample. Default to FAST:
+	// the user can pick SLOW or VERY_SLOW explicitly if they want a larger
+	// buffer.
+	if (state != CalibrationState::Continuous &&
+	    state != CalibrationState::ContinuousStandby) {
+		return FAST;
+	}
+
 	// Sticky state. Mutable-via-cast is fine here -- these are pure caches.
 	static Speed s_lastResolved = SLOW;          // safe default before first sample
 	static Speed s_pendingResolved = SLOW;
 	static int s_pendingTicks = 0;
 	constexpr int kRequiredStableTicks = 5;      // ~5 samples of consistency
-	constexpr double kFastThreshold = 0.001;     // 1 mm
-	constexpr double kSlowThreshold = 0.005;     // 5 mm
+	// Biased toward FAST: typical lighthouse and tracker-on-HMD setups show
+	// 2-5mm of measured jitter even when stationary (lighthouse interpolation
+	// + microvibration), but their data is still clean enough for the direct
+	// O(N) translation solve. Previously these landed in SLOW (250 samples,
+	// ~14s buffer fill) which was punitively slow. The diversity gate already
+	// rejects genuinely bad data; the speed selector is a buffer-size hint,
+	// not a quality gate.
+	constexpr double kFastThreshold = 0.005;     // 5 mm
+	constexpr double kSlowThreshold = 0.010;     // 10 mm
 
 	const double jRef = Metrics::jitterRef.last();
 	const double jTgt = Metrics::jitterTarget.last();
@@ -657,13 +675,60 @@ namespace {
 			}
 		}
 
-		calibration.PushSample(Sample(
-			ConvertPose(reference),
-			ConvertPose(target),
-			glfwGetTime(),
-			refSpeed,
-			tgtSpeed
-		));
+		// Paired-motion validity. We want the diversity bars to reflect data
+		// the math can actually use, not raw target-tracker motion. If only
+		// one device moved meaningfully since the previous sample (the
+		// classic case: HMD pose frozen by passthrough or a desktop overlay
+		// while the target tracker keeps reporting motion), the sample is
+		// tagged so TranslationDiversity / RotationDiversity exclude it.
+		// A separate metric ticks up so the popup can surface a warning.
+		//
+		// The motion threshold is generous: 2 mm between successive samples.
+		// Above that we are confident the device genuinely moved; below it
+		// we treat the device as stationary regardless of velocity reports
+		// (Quest passthrough emits nonzero IMU velocity even when the
+		// rendered pose is locked, so velocity alone is unreliable here).
+		constexpr double kPairedMotionDeltaMeters = 0.002;
+		const Pose refPose = ConvertPose(reference);
+		const Pose tgtPose = ConvertPose(target);
+		bool pairedMotionValid = true;
+		{
+			CalibrationContext& mctx = const_cast<CalibrationContext&>(ctx);
+			if (!mctx.pairedMotionPosSeeded) {
+				mctx.pairedMotionPrevRefPos = refPose.trans;
+				mctx.pairedMotionPrevTgtPos = tgtPose.trans;
+				mctx.pairedMotionPosSeeded = true;
+				// First sample of the run; nothing to compare against. Leave
+				// pairedMotionValid = true so this sample contributes
+				// normally.
+			} else {
+				const double refDelta = (refPose.trans - mctx.pairedMotionPrevRefPos).norm();
+				const double tgtDelta = (tgtPose.trans - mctx.pairedMotionPrevTgtPos).norm();
+				const bool refMoved = refDelta > kPairedMotionDeltaMeters;
+				const bool tgtMoved = tgtDelta > kPairedMotionDeltaMeters;
+				if (refMoved != tgtMoved) {
+					// Exactly one moved: misaligned data. Don't count this
+					// sample toward diversity, and bump the warning counter.
+					pairedMotionValid = false;
+					mctx.pairedMotionMismatchCount = std::min(
+						mctx.pairedMotionMismatchCount + 1, 30);
+				} else {
+					// Both moved together OR both stationary -- both are fine
+					// (the latter just doesn't extend diversity range). Decay
+					// the warning counter so the banner clears once the user
+					// fixes the mismatch.
+					if (mctx.pairedMotionMismatchCount > 0) {
+						--mctx.pairedMotionMismatchCount;
+					}
+				}
+				mctx.pairedMotionPrevRefPos = refPose.trans;
+				mctx.pairedMotionPrevTgtPos = tgtPose.trans;
+			}
+		}
+
+		Sample collectedSample(refPose, tgtPose, glfwGetTime(), refSpeed, tgtSpeed);
+		collectedSample.pairedMotionValid = pairedMotionValid;
+		calibration.PushSample(collectedSample);
 
 		// Feed the auto-lock detector with the same sample. We use the world
 		// poses directly (not the post-calibration relative pose) so the
@@ -685,6 +750,7 @@ namespace {
 		Metrics::translationDiversity.Push(calibration.TranslationDiversity());
 		Metrics::rotationDiversity.Push(calibration.RotationDiversity());
 		Metrics::translationAxisRangesCm.Push(calibration.TranslationAxisRangesCm());
+		Metrics::pairedMotionWarningCount.Push((double)ctx.pairedMotionMismatchCount);
 
 		// Push observed jitter every tick so the AUTO calibration-speed selector
 		// in ResolvedCalibrationSpeed sees a fresh value -- the previous push
@@ -2581,6 +2647,11 @@ void StartCalibration() {
 	CalCtx.wantedUpdateInterval = 0.0;
 	CalCtx.messages.clear();
 	calibration.Clear();
+	// Reset paired-motion tracking so the first sample of the new run seeds
+	// from current positions instead of comparing against stale data left
+	// over from the previous calibration.
+	CalCtx.pairedMotionPosSeeded = false;
+	CalCtx.pairedMotionMismatchCount = 0;
 	Metrics::WriteLogAnnotation("StartCalibration");
 }
 
@@ -3173,9 +3244,10 @@ void CalibrationTick(double time)
 	//   the translation half.
 	//
 	//   Translation phase: gate on translationDiversity only, computed on a
-	//   fresh live buffer. Buffer rolls until the user has waved >= 30 cm on
-	//   every axis. When the gate passes, fall through to ComputeOneshot,
-	//   which splices the frozen rotation samples back in for the math.
+	//   fresh live buffer. Buffer rolls until translationDiversity >= 0.55
+	//   (with kDesiredAxisRange=0.20m that means ~11cm on the weakest axis).
+	//   When the gate passes, fall through to ComputeOneshot, which splices
+	//   the frozen rotation samples back in for the math.
 	if (CalCtx.state == CalibrationState::Rotation) {
 		constexpr double kPhaseDiversity = 0.70;
 		if (calibration.RotationDiversity() < kPhaseDiversity) {
@@ -3190,12 +3262,18 @@ void CalibrationTick(double time)
 		// preserved.
 		calibration.FreezeRotationPhaseSamples();
 		CalCtx.state = CalibrationState::Translation;
-		CalCtx.Log("Rotation phase complete. Now wave the tracker through ~30 cm on every axis.\n");
+		CalCtx.Log("Rotation phase complete. Now wave the tracker through ~15 cm on every axis.\n");
 		Metrics::WriteLogAnnotation("RotationPhaseFrozen");
 		return;
 	}
 	if (CalCtx.state == CalibrationState::Translation) {
-		constexpr double kPhaseDiversity = 0.70;
+		// Lowered from 0.70 (2026-05-13): combined with kDesiredAxisRange=0.20m
+		// the 70% gate demanded 21cm per axis, which a tracker rigidly mounted
+		// to an HMD struggles to hit on the weakest axis via normal head movement.
+		// 0.55 * 0.20m = 11cm per axis -- achievable with a deliberate nod and
+		// lateral lean. The math gates in ComputeOneshot still reject genuinely
+		// under-constrained solutions; this only speeds up the collection trigger.
+		constexpr double kPhaseDiversity = 0.55;
 		if (calibration.TranslationDiversity() < kPhaseDiversity) {
 			calibration.ShiftSample();
 			return;

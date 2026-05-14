@@ -67,9 +67,9 @@ TEST(ConfigurationTest, RoundTripPreservesCustomFields) {
     src.jitterThreshold = 5.5f;
     src.recalibrateOnMovement = false;
     src.baseStationDriftCorrectionEnabled = false;
-    src.ignoreOutliers = true;
+    src.ignoreOutliers = false;             // non-default; must be written
     src.continuousCalibrationThreshold = 2.5f;
-    src.calibrationSpeed = CalibrationContext::FAST;
+    src.calibrationSpeed = CalibrationContext::SLOW; // non-default; must round-trip
     src.lockRelativePositionMode = CalibrationContext::LockMode::ON;
     src.validProfile = true;
 
@@ -87,9 +87,9 @@ TEST(ConfigurationTest, RoundTripPreservesCustomFields) {
     EXPECT_FLOAT_EQ(dst.jitterThreshold, 5.5f);
     EXPECT_FALSE(dst.recalibrateOnMovement);
     EXPECT_FALSE(dst.baseStationDriftCorrectionEnabled);
-    EXPECT_TRUE(dst.ignoreOutliers);
+    EXPECT_FALSE(dst.ignoreOutliers);
     EXPECT_FLOAT_EQ(dst.continuousCalibrationThreshold, 2.5f);
-    EXPECT_EQ(dst.calibrationSpeed, CalibrationContext::FAST);
+    EXPECT_EQ(dst.calibrationSpeed, CalibrationContext::SLOW);
     EXPECT_EQ(dst.lockRelativePositionMode, CalibrationContext::LockMode::ON);
 }
 
@@ -116,7 +116,7 @@ TEST(ConfigurationTest, DefaultFieldsRoundTripAsDefaults) {
     EXPECT_TRUE(dst.enableStaticRecalibration);          // default true (flipped this session)
     EXPECT_TRUE(dst.baseStationDriftCorrectionEnabled);  // default AUTO (no-op without base stations)
     EXPECT_FLOAT_EQ(dst.jitterThreshold, 3.0f);
-    EXPECT_EQ(dst.calibrationSpeed, CalibrationContext::AUTO);
+    EXPECT_EQ(dst.calibrationSpeed, CalibrationContext::FAST);
     EXPECT_EQ(dst.lockRelativePositionMode, CalibrationContext::LockMode::AUTO);
 }
 
@@ -211,11 +211,19 @@ TEST(ConfigurationTest, InCodeDefaultsArePinned) {
            "no-op when no base stations are detected (e.g. Quest-only "
            "setups), corrects on detected universe shifts otherwise";
     EXPECT_FALSE(ctx.requireTriggerPressToApply);
-    EXPECT_FALSE(ctx.ignoreOutliers);
-    EXPECT_FALSE(ctx.quashTargetInContinuous);
+    EXPECT_TRUE(ctx.ignoreOutliers)
+        << "ignoreOutliers default is now true: the filter is a no-op when "
+           "consensus is uniform and prevents one bad sample from skewing "
+           "the fit when it isn't.";
+    EXPECT_TRUE(ctx.quashTargetInContinuous)
+        << "quashTargetInContinuous default is now true: hides the duplicate "
+           "tracker pose while continuous calibration runs. Gated on "
+           "state == Continuous in the apply path, so one-shot is unaffected.";
     EXPECT_FLOAT_EQ(ctx.continuousCalibrationThreshold, 1.5f);
     EXPECT_FLOAT_EQ(ctx.maxRelativeErrorThreshold, 0.005f);
-    EXPECT_EQ(ctx.calibrationSpeed, CalibrationContext::AUTO);
+    EXPECT_EQ(ctx.calibrationSpeed, CalibrationContext::FAST)
+        << "Default speed is FAST. AUTO only re-evaluates meaningfully in "
+           "continuous mode; for one-shot the user picks explicitly.";
     EXPECT_EQ(ctx.lockRelativePositionMode, CalibrationContext::LockMode::AUTO);
     EXPECT_DOUBLE_EQ(ctx.calibratedScale, 1.0);
     EXPECT_DOUBLE_EQ(ctx.targetLatencyOffsetMs, 0.0);
@@ -319,9 +327,9 @@ TEST(ConfigurationTest, WriteProfile_SkipsDefaultTunables) {
         << "default-true bool must be skipped on save";
     // baseStationDriftCorrectionEnabled defaults to true â†’ skip
     EXPECT_EQ(json.find("base_station_drift_correction"), std::string::npos);
-    // ignoreOutliers defaults to false â†’ skip
+    // ignoreOutliers defaults to true -> skip
     EXPECT_EQ(json.find("ignore_outliers"), std::string::npos);
-    // jitterThreshold defaults to 3.0f â†’ skip
+    // jitterThreshold defaults to 3.0f -> skip
     EXPECT_EQ(json.find("jitter_threshold"), std::string::npos);
 }
 
@@ -334,7 +342,7 @@ TEST(ConfigurationTest, WriteProfile_StampsNonDefaultTunables) {
     ctx.targetTrackingSystem = "oculus";
     ctx.validProfile = true;
     ctx.recalibrateOnMovement = false;       // flipped from default true
-    ctx.ignoreOutliers = true;               // flipped from default false
+    ctx.ignoreOutliers = false;              // flipped from default true
     ctx.jitterThreshold = 5.5f;              // flipped from default 3.0
     ctx.baseStationDriftCorrectionEnabled = false; // flipped from default true
 

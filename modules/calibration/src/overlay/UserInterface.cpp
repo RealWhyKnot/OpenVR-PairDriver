@@ -504,21 +504,30 @@ static void OneShot_DrawSettings() {
 	ImGui::Spacing();
 	ImGui::BeginGroupPanel("Calibration speed", panelSize);
 	{
+		// One-shot speed picker. AUTO is intentionally absent here: it only
+		// re-evaluates meaningfully during continuous calibration. The
+		// Advanced tab's continuous-mode panel exposes AUTO. If the user's
+		// profile still has calibrationSpeed=AUTO from an older version,
+		// ResolvedCalibrationSpeed maps it to FAST for one-shot.
 		auto speed = CalCtx.calibrationSpeed;
+		// Stored AUTO maps to FAST visually so the user sees a coherent
+		// selection rather than no radio being lit.
+		const auto displaySpeed = (speed == CalibrationContext::AUTO)
+			? CalibrationContext::FAST : speed;
 		struct Opt { const char* label; CalibrationContext::Speed value; const char* tooltip; };
 		const Opt opts[] = {
-			{ "Auto",      CalibrationContext::AUTO,
-				"Pick FAST / SLOW / VERY SLOW automatically from observed jitter. Recommended." },
 			{ "Fast",      CalibrationContext::FAST,
-				"100 samples (~5 s buffer). Best for low-jitter setups where motion is varied." },
+				"30 samples (~1.7 s buffer). Good for almost everyone. Pick this first." },
 			{ "Slow",      CalibrationContext::SLOW,
-				"250 samples (~12 s). Better for moderately noisy trackers." },
+				"100 samples (~5.5 s buffer). Try this if FAST keeps producing visibly\n"
+				"misaligned results on the same hardware." },
 			{ "Very Slow", CalibrationContext::VERY_SLOW,
-				"500 samples (~25 s). Use for noisy IMU-based body trackers." },
+				"200 samples (~11 s buffer). For IMU-based body trackers or very noisy\n"
+				"environments. Most people never need this." },
 		};
 		for (size_t i = 0; i < sizeof(opts) / sizeof(opts[0]); ++i) {
 			if (i > 0) ImGui::SameLine();
-			if (ImGui::RadioButton(opts[i].label, speed == opts[i].value)) {
+			if (ImGui::RadioButton(opts[i].label, displaySpeed == opts[i].value)) {
 				CalCtx.calibrationSpeed = opts[i].value;
 				SaveProfile(CalCtx);
 			}
@@ -849,11 +858,27 @@ void BuildMenu(bool runningInOverlay)
 				ImGui::TextWrapped("Rotate the tracker through different orientations (>= 90 deg between some pair).");
 			} else if (CalCtx.state == CalibrationState::Translation) {
 				ImGui::TextDisabled("Phase 2 of 2: Translation");
-				ImGui::TextWrapped("Wave the tracker through ~30 cm on each of left/right, up/down, and forward/back.");
+				ImGui::TextWrapped("Wave the tracker through ~15 cm on each of left/right, up/down, and forward/back.");
 			} else {
 				ImGui::TextDisabled("Motion coverage");
 			}
 			ImGui::Spacing();
+
+			// Paired-motion warning. Fires when recent samples show one
+			// device moving while the other stayed put -- the most common
+			// case is the headset pose being frozen by a passthrough or
+			// desktop overlay while the target tracker keeps reporting
+			// motion. The threshold is a few mismatched samples in a row,
+			// not a single transient. Banner clears automatically once the
+			// user fixes the mismatch (counter decays each correlated
+			// sample).
+			const int pairedMotionWarn = (int)Metrics::pairedMotionWarningCount.last();
+			if (pairedMotionWarn >= 5) {
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.55f, 0.30f, 1.0f));
+				ImGui::TextWrapped("Reference and target aren't moving together. If you're in passthrough or a desktop overlay, your headset pose may be frozen -- exit to VR view so the headset reports real motion.");
+				ImGui::PopStyleColor();
+				ImGui::Spacing();
+			}
 
 			const float trDiv = (float)Metrics::translationDiversity.last();
 			// Latch the rotation bar at 100 % once we've moved into Translation
@@ -870,11 +895,15 @@ void BuildMenu(bool runningInOverlay)
 			snprintf(trLabel, sizeof trLabel, "Translation %d%%", (int)(trDiv * 100.0f));
 			snprintf(rotLabel, sizeof rotLabel, "Rotation %d%%", (int)(rotDiv * 100.0f));
 
-			constexpr float kGoodThreshold = 0.70f;
-			const ImVec4 trColor = trDiv >= kGoodThreshold
+			// Translation gate fires at kPhaseDiversity=0.55; rotation at 0.70.
+			// Match the green threshold to each phase's actual trigger so the
+			// bar turns green exactly when calibration will proceed.
+			constexpr float kTrGoodThreshold  = 0.55f;
+			constexpr float kRotGoodThreshold = 0.70f;
+			const ImVec4 trColor = trDiv >= kTrGoodThreshold
 				? ImVec4(0.40f, 0.85f, 0.40f, 1.0f)
 				: ImVec4(0.95f, 0.70f, 0.20f, 1.0f);
-			const ImVec4 rotColor = rotDiv >= kGoodThreshold
+			const ImVec4 rotColor = rotDiv >= kRotGoodThreshold
 				? ImVec4(0.40f, 0.85f, 0.40f, 1.0f)
 				: ImVec4(0.95f, 0.70f, 0.20f, 1.0f);
 
@@ -884,7 +913,7 @@ void BuildMenu(bool runningInOverlay)
 			if (ImGui::IsItemHovered()) {
 				// Per-axis ranges of the target tracker across the live sample
 				// buffer. Whichever axis is smallest is what's pinning the
-				// Translation% score (= min / 30 cm). Naming axes in user
+				// Translation% score (= min / 20 cm). Naming axes in user
 				// terms (left/right, up/down, fwd/back) is more useful than
 				// raw X/Y/Z because the user is moving a hand, not thinking
 				// in tracker-space coordinates.
@@ -896,7 +925,7 @@ void BuildMenu(bool runningInOverlay)
 				};
 				ImGui::SetTooltip(
 					"Translation coverage: how much you've moved the tracker along all three axes.\n"
-					"Wave it ~30 cm in each of left/right, up/down, and forward/back to fill this bar.\n"
+					"Wave it ~15 cm in each of left/right, up/down, and forward/back to fill this bar.\n"
 					"Green = enough variety for a clean calibration.\n"
 					"\n"
 					"Current ranges: X=%.0f cm, Y=%.0f cm, Z=%.0f cm\n"
@@ -912,7 +941,7 @@ void BuildMenu(bool runningInOverlay)
 				                  "Green = enough variety for a clean calibration.");
 			}
 
-			if (trDiv < kGoodThreshold || rotDiv < kGoodThreshold) {
+			if (trDiv < kTrGoodThreshold || rotDiv < kRotGoodThreshold) {
 				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
 				if (trDiv < rotDiv) {
 					ImGui::TextWrapped("Tip: try moving the tracker through wider distances on every axis.");
