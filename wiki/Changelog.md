@@ -9,6 +9,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 
 ### Fixed
 - **smoothing:** Lock out per-tracker prediction on the calibration anchor (e87f318)
+- **installer:** Include translator host tree in setup-exe and release zip (ca55616)
 
 ---
 
