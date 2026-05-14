@@ -2,13 +2,18 @@
 #include "Translator.h"
 #include "Logging.h"
 
-// CTranslate2 C++ API. The library is vendored under lib/ctranslate2/.
-// CMakeLists links ctranslate2.lib and stages ctranslate2.dll.
-#include <ctranslate2/translator.h>
-
 #include <sstream>
 #include <stdexcept>
 #include <vector>
+
+// CTranslate2 is vendored under lib/ctranslate2/. When it is absent the
+// CMakeLists builds the host without HAVE_CT2 defined and the whole
+// implementation collapses to stubs that pass `text` through unchanged.
+#ifdef HAVE_CT2
+#include <ctranslate2/translator.h>
+#endif
+
+#ifdef HAVE_CT2
 
 struct Translator::Impl
 {
@@ -95,3 +100,36 @@ std::string Translator::Translate(const std::string &text,
         return text;
     }
 }
+
+#else // !HAVE_CT2
+
+// Build-without-CT2 stubs. The host links and runs; Translate() returns the
+// input string unchanged so the chatbox still gets the user's words in their
+// native language. A first-call log line explains how to enable real
+// translation.
+struct Translator::Impl {};
+
+Translator::Translator()  : impl_(std::make_unique<Impl>()) {}
+Translator::~Translator() = default;
+
+bool Translator::Load(const std::string &)
+{
+    static bool logged = false;
+    if (!logged) {
+        TH_LOG("[translator] CTranslate2 was not vendored at build time. The "
+               "translator host built in stub mode -- translation pass-through "
+               "only. Drop the prebuilt ctranslate2 Windows tree into "
+               "lib/ctranslate2/ (headers + lib + dll) and rebuild to enable "
+               "translation.");
+        logged = true;
+    }
+    return false;
+}
+
+void        Translator::Unload()                  {}
+bool        Translator::IsLoaded() const noexcept { return false; }
+std::string Translator::Translate(const std::string &text,
+                                  const std::string &,
+                                  const std::string &) { return text; }
+
+#endif // HAVE_CT2

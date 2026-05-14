@@ -2,17 +2,22 @@
 #include "SileroVad.h"
 #include "Logging.h"
 
-// Pull in the ONNX Runtime C API header.
-// onnxruntime.dll is loaded at link time; the import lib (onnxruntime.lib) is
-// expected to exist in lib/onnxruntime/lib/. The DLL is staged alongside the
-// host binary by the CMake install step.
-#include <onnxruntime_c_api.h>
-
 #include <algorithm>
 #include <cstring>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+// ONNX Runtime is vendored under lib/onnxruntime/. When it is absent the
+// CMakeLists builds the host without HAVE_ORT defined; the whole
+// implementation collapses to stubs that log a clear "not vendored" error
+// at runtime. The point is letting a C++-only contributor build + run the
+// driver + overlay without the inference-library dependency drop.
+#ifdef HAVE_ORT
+#include <onnxruntime_c_api.h>
+#endif
+
+#ifdef HAVE_ORT
 
 // Silero VAD v4 input names (from the ONNX model's graph).
 static const char *kInputNames[]  = { "input", "sr", "h", "c" };
@@ -174,3 +179,28 @@ float SileroVad::Feed(const float *samples, size_t count)
         return prob;
     }
 }
+
+#else // !HAVE_ORT
+
+// Build-without-ORT stubs. The host links and runs, but speech detection
+// never fires. The host-status log line on first Load() call tells anyone
+// looking at the log how to get the real implementation.
+SileroVad::SileroVad()  = default;
+SileroVad::~SileroVad() = default;
+bool SileroVad::Load(const std::string &)
+{
+    static bool logged = false;
+    if (!logged) {
+        TH_LOG("[vad] ONNX Runtime was not vendored at build time. The "
+               "translator host built in stub mode -- VAD will not fire. "
+               "Drop the prebuilt onnxruntime Windows tree into lib/onnxruntime/ "
+               "(headers + lib + dll) and rebuild to enable speech detection.");
+        logged = true;
+    }
+    return false;
+}
+void  SileroVad::Reset()      {}
+void  SileroVad::ResetState() {}
+float SileroVad::Feed(const float *, size_t) { return -1.f; }
+
+#endif // HAVE_ORT

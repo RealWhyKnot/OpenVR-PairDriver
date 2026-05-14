@@ -16,7 +16,9 @@ namespace {
 std::mutex  g_logMutex;
 FILE       *g_logFile = nullptr;
 
-// Resolve %LocalAppDataLow%\WKOpenVR\Logs\
+// Resolve %LocalAppDataLow%/WKOpenVR/Logs (forward slashes used in this
+// comment to avoid a trailing-backslash line-continuation eating the
+// function signature on the next line).
 std::wstring ResolveLogDir()
 {
     PWSTR raw = nullptr;
