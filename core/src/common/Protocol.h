@@ -267,6 +267,7 @@ namespace protocol
 		// settings; TranslatorRestartHost terminates and respawns the sidecar.
 		RequestSetTranslatorConfig,
 		RequestTranslatorRestartHost,
+		RequestTranslatorGetSupervisorStatus,
 	};
 
 	enum ResponseType
@@ -276,6 +277,8 @@ namespace protocol
 		ResponseSuccess,
 		// v16: sent in reply to RequestOscGetStats. Payload is OscRouterStats.
 		ResponseOscRouterStats,
+		// Translator: sent in reply to RequestTranslatorGetSupervisorStatus.
+		ResponseTranslatorSupervisorStatus,
 	};
 
 	struct Protocol
@@ -749,6 +752,16 @@ namespace protocol
 		char     chatbox_address[TRANSLATOR_ADDR_LEN];
 	};
 
+	// Response payload for RequestTranslatorGetSupervisorStatus.
+	struct TranslatorSupervisorStatus
+	{
+		// 1 if the circuit breaker has tripped (5 consecutive fast exits);
+		// 0 otherwise. When 1, the host will not be respawned until the
+		// driver module is restarted or Restart is explicitly requested.
+		uint8_t host_halted;
+		uint8_t _pad[7];
+	};
+
 	struct Request
 	{
 		RequestType type;
@@ -817,8 +830,9 @@ namespace protocol
 		ResponseType type;
 
 		union {
-			Protocol       protocol;
-			OscRouterStats oscRouterStats;  // v16: ResponseOscRouterStats
+			Protocol                  protocol;
+			OscRouterStats            oscRouterStats;           // v16: ResponseOscRouterStats
+			TranslatorSupervisorStatus translatorSupervisorStatus; // Translator: supervisor state
 		};
 
 		Response() : type(ResponseInvalid), protocol({}) {}

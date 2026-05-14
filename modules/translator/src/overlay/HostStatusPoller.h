@@ -9,6 +9,7 @@ struct HostStatusSnapshot
 {
     bool        valid            = false;
     bool        stale            = false;
+    bool        host_halted      = false;  // circuit breaker tripped in the driver supervisor
     int         host_pid         = 0;
     int         state            = 0;   // HostStatus::State int value
     std::string mic_name;
@@ -29,6 +30,9 @@ public:
 
     const HostStatusSnapshot &Snapshot() const noexcept { return snapshot_; }
     const std::string &PathUtf8() const noexcept { return path_utf8_; }
+
+    // Set host_halted on the snapshot directly (driven by the driver IPC query).
+    void SetHostHalted(bool halted) { snapshot_.host_halted = halted; }
 
 private:
     void ResolvePath();

@@ -34,6 +34,10 @@ public:
     // Send a restart-host request to the driver.
     void SendRestartHost();
 
+    // Query the driver supervisor state and propagate host_halted to the
+    // host status snapshot so the tab can show appropriate guidance.
+    void PollSupervisorStatus();
+
     // Accessors for the UI helpers.
     translator::HostStatusPoller &HostStatus() { return host_status_; }
 

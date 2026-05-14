@@ -145,6 +145,12 @@ public:
             resp.type = protocol::ResponseSuccess;
             return true;
         }
+        case protocol::RequestTranslatorGetSupervisorStatus: {
+            resp.type = protocol::ResponseTranslatorSupervisorStatus;
+            resp.translatorSupervisorStatus.host_halted =
+                (supervisor_ && supervisor_->IsHalted()) ? 1 : 0;
+            return true;
+        }
         default:
             return false;
         }

@@ -40,6 +40,7 @@ void TranslatorPlugin::Tick(openvr_pair::overlay::ShellContext &)
     if (now - last_connection_check_ >= std::chrono::seconds(1)) {
         MaintainDriverConnection();
         last_connection_check_ = now;
+        PollSupervisorStatus();
     }
     host_status_.Tick();
 }
@@ -95,6 +96,20 @@ void TranslatorPlugin::SendRestartHost()
         ipc_.SendBlocking(req);
     } catch (...) {
         ipc_.Close();
+    }
+}
+
+void TranslatorPlugin::PollSupervisorStatus()
+{
+    if (!ipc_.IsConnected()) return;
+    try {
+        auto resp = ipc_.SendBlocking(
+            protocol::Request(protocol::RequestTranslatorGetSupervisorStatus));
+        if (resp.type == protocol::ResponseTranslatorSupervisorStatus) {
+            host_status_.SetHostHalted(resp.translatorSupervisorStatus.host_halted != 0);
+        }
+    } catch (...) {
+        // Non-fatal; host_halted remains at its last known value.
     }
 }
 
