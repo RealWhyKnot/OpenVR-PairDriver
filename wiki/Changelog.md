@@ -18,6 +18,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **overlay:** VR scroll wheel sensitivity (360*8 -> 2) (1482ab3)
 - **calibration:** Faster initial-cal, paired-motion validity, mode-aware defaults (e26d16f)
 - **translator,facetracking:** Host path walk + CBOR control-pipe wire (f8e7f9d)
+- **quick.ps1:** Also deploy WKOpenVR.TranslatorHost tree (a28eae4)
 
 ---
 
