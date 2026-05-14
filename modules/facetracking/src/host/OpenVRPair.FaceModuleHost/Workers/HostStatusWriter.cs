@@ -5,10 +5,10 @@
 // the host; the overlay talks to the driver). Plumbing real-time
 // status all the way from host -> driver -> overlay would need a new
 // IPC channel and a Protocol.h version bump. For values that update
-// at human-readable rates (OSC packet counters, active module name,
-// installed module list), a file the overlay re-reads once a second
-// is plenty: zero protocol changes, zero driver-side C++ changes, and
-// the file format can grow without breaking on-wire compatibility.
+// at human-readable rates (active module name, installed module list),
+// a file the overlay re-reads once a second is plenty: zero protocol
+// changes, zero driver-side C++ changes, and the file format can grow
+// without breaking on-wire compatibility.
 //
 // Atomicity: writes to a sibling .tmp file then File.Move with
 // overwrite. Readers that race with a write see either the previous
@@ -19,22 +19,18 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenVRPair.FaceModuleHost.Logging;
-using OpenVRPair.FaceModuleHost.Output;
 
 namespace OpenVRPair.FaceModuleHost.Workers;
 
 public sealed class HostStatusWriter(
     string statusFilePath,
     ModuleLoader loader,
-    OscSender osc,
     HostLogger logger,
     HostOptions options)
 {
     private readonly Stopwatch _uptime = Stopwatch.StartNew();
     private readonly DateTime  _startedAt = DateTime.UtcNow;
     private readonly int       _pid = Environment.ProcessId;
-    private long _prevPacketsSent;
-    private DateTime _prevStamp = DateTime.UtcNow;
 
     public async Task RunAsync(CancellationToken ct)
     {
@@ -75,13 +71,6 @@ public sealed class HostStatusWriter(
 
     private void WriteOnce(bool shuttingDown = false)
     {
-        long packetsNow = osc.PacketsSent;
-        DateTime now    = DateTime.UtcNow;
-        double seconds  = Math.Max(0.001, (now - _prevStamp).TotalSeconds);
-        float rate      = (float)((packetsNow - _prevPacketsSent) / seconds);
-        _prevPacketsSent = packetsNow;
-        _prevStamp       = now;
-
         var status = new HostStatus
         {
             SchemaVersion       = 1,
@@ -91,7 +80,6 @@ public sealed class HostStatusWriter(
             HostShuttingDown    = shuttingDown,
             ActiveModule        = BuildActiveModule(),
             InstalledModules    = ScanInstalledModules(),
-            Osc                 = BuildOscStatus(rate),
         };
 
         string json = JsonSerializer.Serialize(
@@ -114,21 +102,6 @@ public sealed class HostStatusWriter(
             Name    = m.Manifest.Name,
             Vendor  = m.Manifest.Vendor,
             Version = m.Manifest.Version?.ToString() ?? "",
-        };
-    }
-
-    private OscStatus BuildOscStatus(float rate)
-    {
-        return new OscStatus
-        {
-            Enabled         = osc.IsRunning,
-            TargetHost      = osc.TargetHost,
-            TargetPort      = osc.TargetPort,
-            PacketsSent     = osc.PacketsSent,
-            PacketsErrored  = osc.PacketsErrored,
-            PacketsPerSecond = rate,
-            LastError       = osc.LastErrorMessage,
-            LastErrorAt     = osc.LastErrorAt,
         };
     }
 
@@ -193,7 +166,6 @@ public sealed class HostStatus
     [JsonPropertyName("host_shutting_down")] public bool     HostShuttingDown  { get; init; }
     [JsonPropertyName("active_module")]     public ActiveModuleStatus? ActiveModule { get; init; }
     [JsonPropertyName("installed_modules")] public IList<InstalledModule> InstalledModules { get; init; } = [];
-    [JsonPropertyName("osc")]               public OscStatus Osc               { get; init; } = new();
 }
 
 public sealed class ActiveModuleStatus
@@ -210,18 +182,6 @@ public sealed class InstalledModule
     [JsonPropertyName("name")]    public string Name    { get; init; } = "";
     [JsonPropertyName("vendor")]  public string Vendor  { get; init; } = "";
     [JsonPropertyName("version")] public string Version { get; init; } = "";
-}
-
-public sealed class OscStatus
-{
-    [JsonPropertyName("enabled")]            public bool       Enabled          { get; init; }
-    [JsonPropertyName("target_host")]        public string     TargetHost       { get; init; } = "";
-    [JsonPropertyName("target_port")]        public int        TargetPort       { get; init; }
-    [JsonPropertyName("packets_sent")]       public long       PacketsSent      { get; init; }
-    [JsonPropertyName("packets_errored")]    public long       PacketsErrored   { get; init; }
-    [JsonPropertyName("packets_per_second")] public float      PacketsPerSecond { get; init; }
-    [JsonPropertyName("last_error")]         public string?    LastError        { get; init; }
-    [JsonPropertyName("last_error_at")]      public DateTime?  LastErrorAt      { get; init; }
 }
 
 // Source generator context for AOT-safe JSON serialization. Even though the host
