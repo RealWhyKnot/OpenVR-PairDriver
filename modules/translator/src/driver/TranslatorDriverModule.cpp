@@ -42,7 +42,13 @@ std::string ResolveHostExePath()
     char dllPath[MAX_PATH] = {};
     GetModuleFileNameA(hSelf, dllPath, MAX_PATH);
     std::string path(dllPath);
-    for (int up = 0; up < 2; ++up) {
+    // DLL lives at <root>/bin/win64/driver_wkopenvr.dll. Pop the filename,
+    // then "win64", then "bin" -- three pops -- to reach <root>, then
+    // append resources/translator/host/. The original two-pop landed at
+    // <root>/bin and produced a phantom <root>/bin/resources/... path
+    // that does not exist; CreateProcessW returned err=3 PATH_NOT_FOUND.
+    // Same bug class the facetracking driver had; fixed there in 68fd11d.
+    for (int up = 0; up < 3; ++up) {
         auto sep = path.find_last_of("/\\");
         if (sep == std::string::npos) break;
         path = path.substr(0, sep);

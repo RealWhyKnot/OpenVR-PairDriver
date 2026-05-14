@@ -174,10 +174,54 @@ void HostSupervisor::MonitorLoop()
     FT_LOG_DRV("[host] monitor thread exiting", 0);
 }
 
+// Minimal CBOR encoder for the control-pipe wire. The host's
+// HostControlPipeServer reads [4-byte LE length][CBOR map]. We only need
+// to emit one shape:
+//   { "type": "SelectModule", "uuid": "<uuid>" }
+// All keys and values are short ASCII text strings.
+//
+// CBOR text-string framing:
+//   0..23  : single byte 0x60 + len, followed by the bytes
+//   24..255: byte 0x78, one length byte, then the bytes
+// All strings used here fit one of those two cases.
+static void CborAppendTextString(std::string &out, const char *s, size_t len)
+{
+    if (len < 24) {
+        out.push_back(static_cast<char>(0x60 | static_cast<unsigned char>(len)));
+    } else {
+        out.push_back(static_cast<char>(0x78));
+        out.push_back(static_cast<char>(len & 0xff));
+    }
+    out.append(s, len);
+}
+
+static std::string EncodeSelectModule(const std::string &uuid)
+{
+    std::string body;
+    body.push_back(static_cast<char>(0xA2)); // map with 2 pairs
+    CborAppendTextString(body, "type", 4);
+    CborAppendTextString(body, "SelectModule", 12);
+    CborAppendTextString(body, "uuid", 4);
+    CborAppendTextString(body, uuid.c_str(), uuid.size());
+
+    std::string wire;
+    wire.reserve(4 + body.size());
+    const uint32_t len = static_cast<uint32_t>(body.size());
+    wire.push_back(static_cast<char>(len        & 0xff));
+    wire.push_back(static_cast<char>((len >> 8) & 0xff));
+    wire.push_back(static_cast<char>((len >> 16) & 0xff));
+    wire.push_back(static_cast<char>((len >> 24) & 0xff));
+    wire.append(body);
+    return wire;
+}
+
 bool HostSupervisor::TrySendUuid(const std::string &uuid)
 {
-    // Build the message: "module:<uuid>\n"
-    std::string msg = "module:" + uuid + "\n";
+    // The host's HostControlPipeServer reads [4-byte LE length][CBOR map].
+    // The legacy code wrote "module:<uuid>\n" plain text, which the host
+    // interpreted as a length prefix of 0x75646F6D = 1969516397 ("modu")
+    // and dropped the connection. Build the proper wire.
+    std::string msg = EncodeSelectModule(uuid);
 
     HANDLE h = CreateFileA(
         FT_HOST_CONTROL_PIPE_NAME,
@@ -199,7 +243,7 @@ bool HostSupervisor::TrySendUuid(const std::string &uuid)
     if (ok && written == (DWORD)msg.size()) {
         std::lock_guard<std::mutex> lk(uuid_mutex_);
         uuid_sent_ = true;
-        FT_LOG_DRV("[host] sent module uuid '%s'", uuid.c_str());
+        FT_LOG_DRV("[host] sent SelectModule uuid '%s'", uuid.c_str());
         return true;
     }
     return false;
