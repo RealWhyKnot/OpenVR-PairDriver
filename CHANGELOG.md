@@ -10,6 +10,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **oscrouter:** OSC router substrate (v16 protocol, UDP send, OOP publish pipe, stats shmem) (0cdd797)
 - **facetracking:** Migrate face-tracking OSC through router (a2dd55b)
 - **translator:** Real-time STT + translation module for VR (203a18c)
+- **overlay:** Expose OSC Router + Translator in Start Menu shortcut tables (ba74dfe)
 
 ### Changed
 - **common:** Share Win32 and IPC helpers (4f3b435)
