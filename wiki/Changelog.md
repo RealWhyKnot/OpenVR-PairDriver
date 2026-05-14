@@ -4,6 +4,9 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 
 ## Unreleased
 
+### Added
+- **oscrouter:** OSC router substrate (v16 protocol, UDP send, OOP publish pipe, stats shmem) (0cdd797)
+
 ### Changed
 - **common:** Share Win32 and IPC helpers (4f3b435)
 
