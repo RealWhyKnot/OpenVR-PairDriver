@@ -13,6 +13,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **calibration:** Hide-tracker now flags pose as disconnected instead of punting out of bounds (2a0e8db)
 - **host,supervisor:** Hide console window, guard respawn race, add circuit breaker (95ec265)
 - **facetracking-host:** Wire VRCFT singleton and map upstream expression enum (03e85f0)
+- **translator:** Surface circuit-breaker halt state with deps-missing guidance (6a318a0)
 
 ---
 
