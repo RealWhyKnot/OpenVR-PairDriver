@@ -1,8 +1,7 @@
-// Tracked fallback so umbrella and direct cmake builds always resolve
-// the include. build.ps1 overwrites this file with the real per-build
-// YYYY.M.D.N-XXXX stamp the in-app updater compares against the latest
-// GitHub release before producing a release artifact.
+// Overwritten by WKOpenVR/build.ps1 with the umbrella binary's
+// per-build stamp so SC's version footer reads the same string the
+// umbrella top header reports.
 #pragma once
 
-#define SPACECAL_BUILD_STAMP "0.0.0.0-DEV"
+#define SPACECAL_BUILD_STAMP "2026.5.13.4-DCB4"
 #define SPACECAL_BUILD_CHANNEL "dev"

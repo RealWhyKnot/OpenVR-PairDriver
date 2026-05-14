@@ -27,6 +27,10 @@ add_subdirectory("${CMAKE_SOURCE_DIR}/modules/facetracking/src/overlay" "${CMAKE
 list(APPEND OPENVR_PAIR_OVERLAY_FEATURE_LIBS openvr_pair_feature_facetracking_overlay)
 list(APPEND OPENVR_PAIR_OVERLAY_DEFINES OPENVR_PAIR_HAS_FACETRACKING_OVERLAY=1)
 
+add_subdirectory("${CMAKE_SOURCE_DIR}/modules/oscrouter/src/overlay" "${CMAKE_BINARY_DIR}/modules/oscrouter-overlay")
+list(APPEND OPENVR_PAIR_OVERLAY_FEATURE_LIBS openvr_pair_feature_oscrouter_overlay)
+list(APPEND OPENVR_PAIR_OVERLAY_DEFINES OPENVR_PAIR_HAS_OSCROUTER_OVERLAY=1)
+
 if(WIN32)
 	enable_language(RC)
 	set(OPENVR_PAIR_RC_SOURCES openvr-pair.rc)

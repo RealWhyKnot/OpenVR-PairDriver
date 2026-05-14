@@ -1,0 +1,36 @@
+#pragma once
+
+#include "OscRouterStatsReader.h"
+#include "RouterIpcClient.h"
+#include "ShellContext.h"
+
+// Renders the OSC Router Modules-tab subpage. Displays send-target config,
+// active route list with per-route message counts, and a test-publish row.
+// No DockSpace or docking-branch ImGui APIs (pinned at master 82d0584e7).
+
+class RouterTab
+{
+public:
+    RouterTab() = default;
+
+    void Tick(openvr_pair::overlay::ShellContext &ctx);
+    void Draw(openvr_pair::overlay::ShellContext &ctx);
+
+private:
+    OscRouterStatsReader statsReader_;
+    RouterIpcClient      ipc_;
+    bool                 ipcConnectAttempted_ = false;
+
+    // Test publish state.
+    char testAddress_[64] = "/avatar/parameters/Test";
+    char testValue_[32]   = "0.5";
+    char testStatus_[256] = "";
+
+    // Last known global stats for display.
+    protocol::OscRouterStats lastStats_ = {};
+
+    void DrawRouteTable();
+    void DrawTestPublish();
+    void TrySendTestPublish();
+    void EnsureIpc();
+};

@@ -22,6 +22,7 @@ constexpr uint32_t kFeatureCalibration  = 1u << 0;
 constexpr uint32_t kFeatureSmoothing    = 1u << 1;
 constexpr uint32_t kFeatureInputHealth  = 1u << 2;
 constexpr uint32_t kFeatureFaceTracking = 1u << 3;
+constexpr uint32_t kFeatureOscRouter    = 1u << 4;
 
 // Returns the bitwise OR of detected feature flags. Logs the path it scanned
 // and the result to the driver log so install issues are easy to diagnose.
