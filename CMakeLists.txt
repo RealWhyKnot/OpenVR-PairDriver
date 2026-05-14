@@ -37,11 +37,15 @@ add_subdirectory(core/src)
 add_subdirectory(modules/calibration/tests)
 add_subdirectory(modules/facetracking/tests)
 add_subdirectory(modules/oscrouter/tests)
+add_subdirectory(modules/translator/tests)
 
 # Face-tracking C# host sidecar. Built via `dotnet publish` and staged into the
 # artifacts tree by build.ps1. Toggleable via OPENVR_PAIR_BUILD_FACE_HOST so a
 # C++-only contributor doesn't need the .NET SDK to build the driver+overlay.
 add_subdirectory(modules/facetracking/src/host)
+
+# Translator native C++ host sidecar. Toggleable via OPENVR_PAIR_BUILD_TRANSLATOR_HOST.
+add_subdirectory(modules/translator/src/host)
 
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC" OR "${CMAKE_C_COMPILER_ID}" STREQUAL "MSVC")
 	add_compile_options(

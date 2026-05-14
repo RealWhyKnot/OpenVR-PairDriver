@@ -31,6 +31,10 @@ add_subdirectory("${CMAKE_SOURCE_DIR}/modules/oscrouter/src/overlay" "${CMAKE_BI
 list(APPEND OPENVR_PAIR_OVERLAY_FEATURE_LIBS openvr_pair_feature_oscrouter_overlay)
 list(APPEND OPENVR_PAIR_OVERLAY_DEFINES OPENVR_PAIR_HAS_OSCROUTER_OVERLAY=1)
 
+add_subdirectory("${CMAKE_SOURCE_DIR}/modules/translator/src/overlay" "${CMAKE_BINARY_DIR}/modules/translator-overlay")
+list(APPEND OPENVR_PAIR_OVERLAY_FEATURE_LIBS openvr_pair_feature_translator_overlay)
+list(APPEND OPENVR_PAIR_OVERLAY_DEFINES OPENVR_PAIR_HAS_TRANSLATOR_OVERLAY=1)
+
 if(WIN32)
 	enable_language(RC)
 	set(OPENVR_PAIR_RC_SOURCES openvr-pair.rc)
