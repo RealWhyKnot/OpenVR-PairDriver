@@ -44,6 +44,7 @@ add_executable(spacecal_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/test_recovery_delta_buffer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test_reanchor_chi_square.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test_translation_solve_direct.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_common_helpers.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/stubs.cpp
     ${SPACECAL_SRC}/overlay/CalibrationCalc.cpp
     ${SPACECAL_SRC}/overlay/TranslationSolveDirect.cpp
@@ -63,6 +64,7 @@ target_include_directories(spacecal_tests
 
 target_link_libraries(spacecal_tests
     PRIVATE GTest::gtest_main
+    PRIVATE openvr_pair_common
     PRIVATE ${CMAKE_SOURCE_DIR}/lib/openvr/lib/win64/openvr_api.lib
 )
 

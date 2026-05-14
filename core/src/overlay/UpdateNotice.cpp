@@ -1,5 +1,7 @@
 #include "UpdateNotice.h"
 
+#include "JsonUtil.h"
+
 #include <picojson.h>
 
 #define WIN32_LEAN_AND_MEAN
@@ -217,8 +219,8 @@ void RunCheck()
 	}
 
 	picojson::value v;
-	const std::string parseErr = picojson::parse(v, body);
-	if (!parseErr.empty() || !v.is<picojson::object>()) {
+	std::string parseErr;
+	if (!openvr_pair::common::json::ParseObject(v, body, &parseErr)) {
 		next.checkComplete = true;
 		next.errorMessage = "JSON parse failed: " + parseErr;
 		{
@@ -229,11 +231,8 @@ void RunCheck()
 		return;
 	}
 
-	const auto &obj = v.get<picojson::object>();
-	auto getStr = [&obj](const char *key) -> std::string {
-		const auto it = obj.find(key);
-		if (it == obj.end() || !it->second.is<std::string>()) return {};
-		return it->second.get<std::string>();
+	auto getStr = [&v](const char *key) -> std::string {
+		return openvr_pair::common::json::StringAt(v, key);
 	};
 
 	next.latestTag     = getStr("tag_name");

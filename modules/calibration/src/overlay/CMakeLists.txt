@@ -45,6 +45,7 @@ if(OPENVR_PAIR_BUILD_UMBRELLA)
         ${CMAKE_SOURCE_DIR}/lib/Eigen)
 
     target_link_libraries(openvr_pair_feature_calibration_overlay PUBLIC
+        openvr_pair_common
         glfw
         pair_imgui
         pair_implot

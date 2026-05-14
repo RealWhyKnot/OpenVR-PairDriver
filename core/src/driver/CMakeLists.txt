@@ -100,6 +100,7 @@ target_include_directories(OpenVRPairDriver
 	PRIVATE ${CMAKE_SOURCE_DIR}/lib)
 
 target_link_libraries(OpenVRPairDriver
+	PRIVATE openvr_pair_common
 	PRIVATE ${OPENVR_LIBRARIES}
 	PRIVATE minhook
 	PRIVATE ${OPENVR_PAIR_FEATURE_LIBS})
