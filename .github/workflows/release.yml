@@ -15,11 +15,12 @@
 name: Release
 
 # Triggered by pushing a tag like v2026.5.12.0. Builds the umbrella binary
-# (WKOpenVR.exe), driver (driver_wkopenvr.dll), and the C# face-tracking
-# host (OpenVRPair.FaceModuleHost.exe) via CMake + MSVC + dotnet publish,
-# runs the test suite, packages an umbrella zip and four per-feature mirror
-# zips, publishes the umbrella release on this repo, and pushes a mirror
-# release to each sibling repo.
+# (WKOpenVR.exe), driver (driver_wkopenvr.dll), the C# face-tracking host
+# (OpenVRPair.FaceModuleHost.exe), and the native translator host
+# (WKOpenVR.TranslatorHost.exe) via CMake + MSVC + dotnet publish, runs
+# the test suite, packages an umbrella zip and four per-feature mirror zips,
+# publishes the umbrella release on this repo, and pushes a mirror release
+# to each sibling repo.
 #
 # Changelog promotion: before the build, Update-Changelog.ps1 renames the
 # "## Unreleased" heading to "## [vTAG] -- DATE". After the GitHub release
@@ -213,6 +214,11 @@ jobs:
             Copy-Item -Recurse -Path $srcFt -Destination "$stage/driver_wkopenvr/resources/facetracking"
           }
 
+          $srcTr = "$driverSrc/resources/translator"
+          if (Test-Path $srcTr) {
+            Copy-Item -Recurse -Path $srcTr -Destination "$stage/driver_wkopenvr/resources/translator"
+          }
+
           if (-not (Test-Path "$artifacts/dashboard_icon.png")) {
             throw "dashboard_icon.png not found at $artifacts"
           }
@@ -245,6 +251,18 @@ jobs:
           Copy-Item -Recurse -Force -Path "$faceHostBuildDir\*" -Destination $faceHostStageDir
           if (-not (Test-Path "$faceHostStageDir/OpenVRPair.FaceModuleHost.exe")) {
             throw "Staged OpenVRPair.FaceModuleHost.exe missing under $faceHostStageDir."
+          }
+
+          # Stage the native translator host. CMake emits it to
+          # build/driver_wkopenvr/resources/translator/host/ (same driver-tree
+          # layout that quick.ps1 deploys). The $srcTr block above already
+          # copied the translator resources tree into the stage; this block
+          # verifies the host exe landed correctly so a missing TranslatorHost
+          # build (OPENVR_PAIR_BUILD_TRANSLATOR_HOST=OFF) is caught early with
+          # a clear message rather than a silent gap in the release zip.
+          $trHostStageExe = "$stage/driver_wkopenvr/resources/translator/host/WKOpenVR.TranslatorHost.exe"
+          if (-not (Test-Path $trHostStageExe)) {
+            throw "WKOpenVR.TranslatorHost.exe missing from stage at $trHostStageExe. Check that OPENVR_PAIR_BUILD_TRANSLATOR_HOST is ON and the translator host CMake target built successfully."
           }
 
           New-Item -ItemType Directory -Force -Path "release" | Out-Null
@@ -331,7 +349,8 @@ jobs:
             'build/driver_wkopenvr/resources/driver.vrresources',
             'build/driver_wkopenvr/resources/settings/default.vrsettings',
             'build/driver_wkopenvr/bin/win64/driver_wkopenvr.dll',
-            'build/driver_wkopenvr/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe'
+            'build/driver_wkopenvr/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe',
+            'build/driver_wkopenvr/resources/translator/host/WKOpenVR.TranslatorHost.exe'
           )
           $missing = @()
           foreach ($p in $required) {

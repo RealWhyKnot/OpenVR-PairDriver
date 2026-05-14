@@ -226,6 +226,19 @@ Section "Install"
         DetailPrint "FaceModuleHost not embedded in this installer (build host had no .NET 10 SDK); FaceTracking feature will run inert until the host is staged manually."
     !endif
 
+    ; Translator host sidecar (native Win64 exe + dependencies). Driver's
+    ; HostSupervisor spawns WKOpenVR.TranslatorHost.exe from this directory
+    ; when enable_translator.flag is present. Same /FileExists guard as
+    ; FaceModuleHost: omits the File directive silently when the build host
+    ; produced no translator host (OPENVR_PAIR_BUILD_TRANSLATOR_HOST=OFF),
+    ; rather than aborting makensis with "no files found".
+    !if /FileExists "${DRIVER_BASEDIR}\resources\translator\host\WKOpenVR.TranslatorHost.exe"
+        SetOutPath "$vrRuntimePath\drivers\01wkopenvr\resources\translator\host"
+        File /r "${DRIVER_BASEDIR}\resources\translator\host\*.*"
+    !else
+        DetailPrint "TranslatorHost not embedded in this installer (OPENVR_PAIR_BUILD_TRANSLATOR_HOST=OFF or build missing); Translator feature will run inert until the host is staged manually."
+    !endif
+
     ; Drop the feature enable flag when building a per-feature installer.
     ; Content matches what ShellContext::SetFlagPresent writes:
     ;   Set-Content -Value enabled -NoNewline
@@ -343,6 +356,7 @@ Section "Uninstall"
     Delete "$vrRuntimePath\drivers\01wkopenvr\resources\enable_inputhealth.flag"
     Delete "$vrRuntimePath\drivers\01wkopenvr\resources\enable_facetracking.flag"
     RMDir /r "$vrRuntimePath\drivers\01wkopenvr\resources\facetracking"
+    RMDir /r "$vrRuntimePath\drivers\01wkopenvr\resources\translator"
     RMDir /r "$vrRuntimePath\drivers\01wkopenvr"
 
     ; ---- Best-effort legacy driver cleanup (pre-rename product) -----------
