@@ -39,7 +39,7 @@ public sealed class ModuleLoadContext(string modulePath) : AssemblyLoadContext(
     // FaceTrackingModule throws InvalidCastException. Force these names to
     // resolve in the default context by returning null here; .NET then
     // falls back to the default ALC, sharing the host's types.
-    private static readonly HashSet<string> SharedAssemblyNames = new()
+    internal static readonly HashSet<string> SharedAssemblyNames = new()
     {
         "OpenVRPair.FaceTracking.ModuleSdk",
         "OpenVRPair.FaceTracking.VrcftCompat",
@@ -48,6 +48,10 @@ public sealed class ModuleLoadContext(string modulePath) : AssemblyLoadContext(
         // the same singleton that modules write to. If each module loads its own
         // copy the writes and reads go to different objects and no data flows.
         "VRCFaceTracking.Core",
+        // VRCFaceTracking.Core v5.1.1.1 has a strong-name reference to v7.0.0.0;
+        // modules that depend on VRCFaceTracking.Core inherit this dependency.
+        // Pin to the host's vendored copy so all ALCs share one instance.
+        "Microsoft.Extensions.Logging.Abstractions",
     };
 
     protected override Assembly? Load(AssemblyName assemblyName)
@@ -99,6 +103,8 @@ public sealed class ModuleLoader(
 
     /// <summary>The currently-active module, or null if no module is selected.</summary>
     public LoadedModule? Active => _active;
+
+    public static IReadOnlyCollection<string> SharedAssemblyNamesSnapshot() => ModuleLoadContext.SharedAssemblyNames;
 
     public async Task<IReadOnlyList<LoadedModule>> LoadAllAsync()
     {

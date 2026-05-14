@@ -53,6 +53,7 @@ try
         status.RunAsync(ct),
     };
 
+    logger.Info($"[startup] shared-assemblies=[{string.Join(", ", ModuleLoader.SharedAssemblyNamesSnapshot())}]");
     logger.Info("[startup] phase=running");
 
     // Surface any worker fault rather than silently discarding it.

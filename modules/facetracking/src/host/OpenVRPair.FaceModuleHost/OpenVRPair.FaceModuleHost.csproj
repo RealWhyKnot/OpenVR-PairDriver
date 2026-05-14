@@ -18,11 +18,9 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="System.Formats.Cbor" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="7.0.0" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Vendored VRCFaceTracking.Core v5.1.1.1 (Apache-2.0).
-         Loaded into the default ALC so the bridge can resolve
-         VRCFaceTracking.UnifiedTracking from any module's context. -->
     <Reference Include="VRCFaceTracking.Core">
       <HintPath>lib\VRCFaceTracking.Core.dll</HintPath>
       <Private>true</Private>
