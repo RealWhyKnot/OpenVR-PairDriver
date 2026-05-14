@@ -14,6 +14,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **installer:** Include translator host tree in setup-exe and release zip (ca55616)
 - **calibration:** Hide-tracker now flags pose as disconnected instead of punting out of bounds (2a0e8db)
 - **host,supervisor:** Hide console window, guard respawn race, add circuit breaker (95ec265)
+- **facetracking-host:** Wire VRCFT singleton and map upstream expression enum (03e85f0)
 
 ---
 
