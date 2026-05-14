@@ -27,14 +27,27 @@ public:
     void Restart();
     bool IsRunning() const;
 
+    // True if the circuit breaker has tripped (5 consecutive fast exits).
+    // Cleared by Stop() / Start() so a redeployment attempt is not blocked.
+    bool IsHalted() const;
+
 private:
     std::string       host_exe_path_;
     std::atomic<bool> stop_requested_{ false };
     std::atomic<bool> running_{ false };
 
+    // process_handle_ is read/written by both MonitorLoop and Restart/Kill;
+    // all accesses must hold process_mutex_.
+    mutable std::mutex process_mutex_;
     HANDLE process_handle_ = INVALID_HANDLE_VALUE;
 
     std::thread monitor_thread_;
+
+    // Circuit breaker: counts consecutive exits within kFastExitThresholdMs.
+    static constexpr int  kFastExitThresholdMs     = 2000;
+    static constexpr int  kCircuitBreakerThreshold  = 5;
+    int  consecutive_fast_exits_ = 0;
+    bool halted_                 = false;
 
     bool Spawn();
     void Kill();

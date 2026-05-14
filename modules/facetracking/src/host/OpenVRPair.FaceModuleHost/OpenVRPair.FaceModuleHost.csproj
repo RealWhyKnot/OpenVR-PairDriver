@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AssemblyName>OpenVRPair.FaceModuleHost</AssemblyName>
     <RootNamespace>OpenVRPair.FaceModuleHost</RootNamespace>
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <UseAppHost>true</UseAppHost>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <!-- This process is a SteamVR sidecar; it only ships for Windows.
@@ -18,5 +18,14 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="System.Formats.Cbor" Version="9.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Vendored VRCFaceTracking.Core v5.1.1.1 (Apache-2.0).
+         Loaded into the default ALC so the bridge can resolve
+         VRCFaceTracking.UnifiedTracking from any module's context. -->
+    <Reference Include="VRCFaceTracking.Core">
+      <HintPath>lib\VRCFaceTracking.Core.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
   </ItemGroup>
 </Project>

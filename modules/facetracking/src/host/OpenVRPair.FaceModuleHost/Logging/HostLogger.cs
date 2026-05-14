@@ -33,6 +33,14 @@ public sealed class HostLogger : IDisposable
     public void Warn(string msg)  => Write(Level.Warn,  msg);
     public void Error(string msg) => Write(Level.Error, msg);
 
+    public void Flush()
+    {
+        lock (_lock)
+        {
+            try { _writer.Flush(); } catch { }
+        }
+    }
+
     private void Write(Level level, string msg)
     {
         string line = $"{DateTime.UtcNow:yyyy-MM-ddTHH:mm:ss.fffZ} [{level,5}] [FaceHost] {msg}";

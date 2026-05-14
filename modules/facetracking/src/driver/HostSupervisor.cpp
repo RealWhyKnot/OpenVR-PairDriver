@@ -11,8 +11,6 @@
 
 // Named pipe the host exposes for control messages from the driver.
 #define FT_HOST_CONTROL_PIPE_NAME  "\\\\.\\pipe\\OpenVR-FaceTracking.host"
-// Each control message is a simple NUL-terminated ASCII string, e.g.
-// "module:<uuid>" -- small enough to write in one synchronous call.
 
 namespace facetracking {
 
@@ -31,7 +29,12 @@ bool HostSupervisor::Start()
         FT_LOG_DRV("[host] host exe path is empty -- not starting", 0);
         return false;
     }
-    stop_requested_.store(false, std::memory_order_release);
+    {
+        std::lock_guard<std::mutex> lk(process_mutex_);
+        stop_requested_.store(false, std::memory_order_release);
+        halted_                 = false;
+        consecutive_fast_exits_ = 0;
+    }
     if (!Spawn()) return false;
     monitor_thread_ = std::thread([this]{ MonitorLoop(); });
     return true;
@@ -42,15 +45,20 @@ void HostSupervisor::Stop()
     stop_requested_.store(true, std::memory_order_release);
     Kill();
     if (monitor_thread_.joinable()) monitor_thread_.join();
+    std::lock_guard<std::mutex> lk(process_mutex_);
+    halted_                 = false;
+    consecutive_fast_exits_ = 0;
 }
 
 void HostSupervisor::Restart()
 {
     FT_LOG_DRV("[host] Restart() requested", 0);
-    Kill(); // terminates the current process; running_ set to false
-    // The monitor thread is still alive and will see process_handle_ ==
-    // INVALID_HANDLE_VALUE on its next iteration and re-Spawn().
-    // To avoid waiting for the next 1-second poll, explicitly respawn now.
+    {
+        std::lock_guard<std::mutex> lk(process_mutex_);
+        halted_                 = false;
+        consecutive_fast_exits_ = 0;
+    }
+    Kill();
     if (!stop_requested_.load(std::memory_order_acquire)) {
         Spawn();
     }
@@ -59,6 +67,12 @@ void HostSupervisor::Restart()
 bool HostSupervisor::IsRunning() const
 {
     return running_.load(std::memory_order_acquire);
+}
+
+bool HostSupervisor::IsHalted() const
+{
+    std::lock_guard<std::mutex> lk(process_mutex_);
+    return halted_;
 }
 
 void HostSupervisor::SetActiveModuleUuid(const char *uuid)
@@ -89,9 +103,17 @@ bool HostSupervisor::Spawn()
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi{};
 
+    int spawn_attempt = 0;
+    {
+        std::lock_guard<std::mutex> lk(process_mutex_);
+        spawn_attempt = consecutive_fast_exits_;
+    }
+    FT_LOG_DRV("[host-supervisor] spawn attempt #%d (consecutive_fast_exits=%d)",
+        spawn_attempt + 1, spawn_attempt);
+
     DWORD cpErr = 0;
     if (!CreateProcessW(wpath.c_str(), nullptr, nullptr, nullptr, FALSE,
-            0, nullptr, nullptr, &si, &pi)) {
+            CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
         cpErr = GetLastError();
         char errMsg[256] = {};
         FormatMessageA(
@@ -106,7 +128,10 @@ bool HostSupervisor::Spawn()
     }
     // Close the thread handle; we only need the process handle.
     CloseHandle(pi.hThread);
-    process_handle_ = pi.hProcess;
+    {
+        std::lock_guard<std::mutex> lk(process_mutex_);
+        process_handle_ = pi.hProcess;
+    }
     running_.store(true, std::memory_order_release);
     FT_LOG_DRV("[facetracking] CreateProcessW OK: pid=%lu path='%s'",
         pi.dwProcessId, host_exe_path_.c_str());
@@ -131,6 +156,7 @@ bool HostSupervisor::Spawn()
 
 void HostSupervisor::Kill()
 {
+    std::lock_guard<std::mutex> lk(process_mutex_);
     if (process_handle_ == INVALID_HANDLE_VALUE) return;
     TerminateProcess(process_handle_, 0);
     WaitForSingleObject(process_handle_, 5000);
@@ -146,14 +172,31 @@ void HostSupervisor::MonitorLoop()
     constexpr int kMaxBackoffMs = 30000;
 
     while (!stop_requested_.load(std::memory_order_acquire)) {
-        if (process_handle_ == INVALID_HANDLE_VALUE) {
+        HANDLE cur_handle = INVALID_HANDLE_VALUE;
+        bool   is_halted  = false;
+        {
+            std::lock_guard<std::mutex> lk(process_mutex_);
+            cur_handle = process_handle_;
+            is_halted  = halted_;
+        }
+
+        if (is_halted) {
+            // Circuit breaker tripped: sleep and wait for a Stop()/Start() reset.
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            continue;
+        }
+
+        if (cur_handle == INVALID_HANDLE_VALUE) {
             // Not spawned yet; this shouldn't happen but guard anyway.
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             continue;
         }
 
+        // Record spawn time to detect fast exits.
+        auto spawn_time = std::chrono::steady_clock::now();
+
         // Wait for the process to exit or for a stop request.
-        DWORD wait = WaitForSingleObject(process_handle_,
+        DWORD wait = WaitForSingleObject(cur_handle,
             static_cast<DWORD>(backoff_ms > 1000 ? backoff_ms : 1000));
 
         if (stop_requested_.load(std::memory_order_acquire)) break;
@@ -161,13 +204,54 @@ void HostSupervisor::MonitorLoop()
         if (wait == WAIT_OBJECT_0) {
             // Process exited.
             DWORD code = 0;
-            GetExitCodeProcess(process_handle_, &code);
-            CloseHandle(process_handle_);
-            process_handle_ = INVALID_HANDLE_VALUE;
+            bool handle_was_valid = false;
+            {
+                std::lock_guard<std::mutex> lk(process_mutex_);
+                if (process_handle_ != INVALID_HANDLE_VALUE) {
+                    GetExitCodeProcess(process_handle_, &code);
+                    CloseHandle(process_handle_);
+                    process_handle_  = INVALID_HANDLE_VALUE;
+                    handle_was_valid = true;
+                }
+            }
+            if (!handle_was_valid) {
+                // Kill() beat us to it; just reset running state and loop.
+                running_.store(false, std::memory_order_release);
+                continue;
+            }
             running_.store(false, std::memory_order_release);
 
+            auto now = std::chrono::steady_clock::now();
+            long long uptime_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                now - spawn_time).count();
+
+            FT_LOG_DRV("[host-supervisor] host process exited code=0x%08lx uptime_ms=%lld",
+                (unsigned long)code, uptime_ms);
+
+            // Circuit breaker: accumulate fast exits.
+            bool should_halt = false;
+            {
+                std::lock_guard<std::mutex> lk(process_mutex_);
+                if (uptime_ms < kFastExitThresholdMs) {
+                    consecutive_fast_exits_++;
+                } else {
+                    consecutive_fast_exits_ = 0;
+                }
+                if (consecutive_fast_exits_ >= kCircuitBreakerThreshold) {
+                    halted_      = true;
+                    should_halt  = true;
+                }
+            }
+
+            if (should_halt) {
+                FT_LOG_DRV("[host-supervisor] CIRCUIT BREAKER: 5 consecutive fast exits, "
+                    "halting respawn for facetracking. Last exit code: 0x%08lx",
+                    (unsigned long)code);
+                continue;
+            }
+
             FT_LOG_DRV("[host] process exited (code=%lu); restarting in %d ms",
-                code, backoff_ms);
+                (unsigned long)code, backoff_ms);
             std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
 
             if (stop_requested_.load(std::memory_order_acquire)) break;
@@ -228,9 +312,6 @@ static std::string EncodeSelectModule(const std::string &uuid)
 bool HostSupervisor::TrySendUuid(const std::string &uuid)
 {
     // The host's HostControlPipeServer reads [4-byte LE length][CBOR map].
-    // The legacy code wrote "module:<uuid>\n" plain text, which the host
-    // interpreted as a length prefix of 0x75646F6D = 1969516397 ("modu")
-    // and dropped the connection. Build the proper wire.
     std::string msg = EncodeSelectModule(uuid);
 
     HANDLE h = CreateFileA(

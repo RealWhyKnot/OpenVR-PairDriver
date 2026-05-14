@@ -41,6 +41,10 @@ public:
     // True if the host process is currently alive.
     bool IsRunning() const;
 
+    // True if the circuit breaker has tripped (5 consecutive fast exits).
+    // Cleared by Stop() / Start() so a redeployment attempt is not blocked.
+    bool IsHalted() const;
+
     // Send the active-module uuid to the host via the control pipe.
     // If the pipe isn't up the uuid is queued for the next reconnect.
     void SetActiveModuleUuid(const char *uuid);
@@ -50,10 +54,19 @@ private:
     std::atomic<bool> stop_requested_{ false };
     std::atomic<bool> running_{ false };
 
+    // process_handle_ is read/written by both MonitorLoop and Restart/Kill;
+    // all accesses must hold process_mutex_.
+    mutable std::mutex process_mutex_;
     HANDLE process_handle_ = INVALID_HANDLE_VALUE;
     HANDLE process_thread_ = INVALID_HANDLE_VALUE;  // not used but kept for CloseHandle
 
     std::thread monitor_thread_;
+
+    // Circuit breaker: counts consecutive exits within kFastExitThresholdMs.
+    static constexpr int  kFastExitThresholdMs    = 2000;
+    static constexpr int  kCircuitBreakerThreshold = 5;
+    int  consecutive_fast_exits_ = 0;
+    bool halted_                 = false;
 
     // Pending module-uuid to send on next pipe connection.
     std::mutex  uuid_mutex_;
@@ -63,7 +76,7 @@ private:
     // Spawn the exe; returns true on success.
     bool Spawn();
 
-    // Kill the current process if it is alive.
+    // Kill the current process if it is alive.  Caller must NOT hold process_mutex_.
     void Kill();
 
     // Monitor-thread body.

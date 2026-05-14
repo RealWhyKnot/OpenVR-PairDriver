@@ -143,8 +143,10 @@ static std::string DefaultSileroModelPath()
 // ---------------------------------------------------------------------------
 
 int main(int argc, char **argv)
+try
 {
     TranslatorHostOpenLogFile();
+    TH_LOG("[startup] phase=logger-open");
     TH_LOG("[main] WKOpenVR.TranslatorHost starting");
 
     // Parse optional command-line overrides: --model <path> --silero <path>
@@ -158,6 +160,7 @@ int main(int argc, char **argv)
         }
     }
 
+    TH_LOG("[startup] phase=opening-control-pipe");
     // Start control pipe thread.
     std::thread ctrl_thread(ControlPipeThread);
 
@@ -170,6 +173,7 @@ int main(int argc, char **argv)
         if (!vr_ok) TH_LOG("[main] VR_Init failed (%d); PTT will be unavailable", (int)vr_err);
     }
 
+    TH_LOG("[startup] phase=initializing-vad");
     // Load Silero VAD.
     SileroVad vad;
     {
@@ -183,6 +187,7 @@ int main(int argc, char **argv)
         }
     }
 
+    TH_LOG("[startup] phase=initializing-translation");
     // Load Whisper.
     WhisperEngine whisper;
     {
@@ -236,6 +241,7 @@ int main(int argc, char **argv)
     bool  ptt_was_held = false;
     std::vector<float> speech_buf;
 
+    TH_LOG("[startup] phase=initializing-audio-capture");
     // WASAPI capture: 30 ms chunks fed through a thread-safe queue.
     std::mutex              audio_mutex;
     std::vector<std::vector<float>> audio_queue;
@@ -250,6 +256,8 @@ int main(int argc, char **argv)
 
     status.SetMicName(capture.DeviceName());
     status.SetState(HostStatus::State::Idle);
+
+    TH_LOG("[startup] phase=running");
 
     // ---------------------------------------------------------------------------
     // Main loop
@@ -396,4 +404,16 @@ int main(int argc, char **argv)
 
     TranslatorHostFlushLog();
     return 0;
+}
+catch (const std::exception &e)
+{
+    TH_LOG("[crash] main threw std::exception: %s", e.what());
+    TranslatorHostFlushLog();
+    return 1;
+}
+catch (...)
+{
+    TH_LOG("[crash] main threw unknown exception");
+    TranslatorHostFlushLog();
+    return 1;
 }

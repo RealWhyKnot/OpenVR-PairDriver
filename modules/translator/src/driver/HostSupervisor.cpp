@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 
 namespace translator {
 
@@ -25,6 +26,11 @@ bool HostSupervisor::Start()
         TR_LOG_DRV("[host] host exe path is empty -- not starting");
         return false;
     }
+    {
+        std::lock_guard<std::mutex> lk(process_mutex_);
+        halted_                 = false;
+        consecutive_fast_exits_ = 0;
+    }
     stop_requested_.store(false, std::memory_order_release);
     if (!Spawn()) return false;
     monitor_thread_ = std::thread([this]{ MonitorLoop(); });
@@ -36,11 +42,19 @@ void HostSupervisor::Stop()
     stop_requested_.store(true, std::memory_order_release);
     Kill();
     if (monitor_thread_.joinable()) monitor_thread_.join();
+    std::lock_guard<std::mutex> lk(process_mutex_);
+    halted_                 = false;
+    consecutive_fast_exits_ = 0;
 }
 
 void HostSupervisor::Restart()
 {
     TR_LOG_DRV("[host] Restart() requested");
+    {
+        std::lock_guard<std::mutex> lk(process_mutex_);
+        halted_                 = false;
+        consecutive_fast_exits_ = 0;
+    }
     Kill();
     if (!stop_requested_.load(std::memory_order_acquire)) {
         Spawn();
@@ -52,10 +66,24 @@ bool HostSupervisor::IsRunning() const
     return running_.load(std::memory_order_acquire);
 }
 
+bool HostSupervisor::IsHalted() const
+{
+    std::lock_guard<std::mutex> lk(process_mutex_);
+    return halted_;
+}
+
 // -----------------------------------------------------------------------
 
 bool HostSupervisor::Spawn()
 {
+    int spawn_attempt = 0;
+    {
+        std::lock_guard<std::mutex> lk(process_mutex_);
+        spawn_attempt = consecutive_fast_exits_;
+    }
+    TR_LOG_DRV("[translator-supervisor] spawn attempt #%d (consecutive_fast_exits=%d)",
+        spawn_attempt + 1, spawn_attempt);
+
     int wlen = MultiByteToWideChar(CP_UTF8, 0,
         host_exe_path_.c_str(), -1, nullptr, 0);
     if (wlen <= 0) return false;
@@ -68,7 +96,7 @@ bool HostSupervisor::Spawn()
 
     DWORD cpErr = 0;
     if (!CreateProcessW(wpath.c_str(), nullptr, nullptr, nullptr, FALSE,
-            0, nullptr, nullptr, &si, &pi)) {
+            CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
         cpErr = GetLastError();
         char errMsg[256] = {};
         FormatMessageA(
@@ -83,7 +111,10 @@ bool HostSupervisor::Spawn()
         return false;
     }
     CloseHandle(pi.hThread);
-    process_handle_ = pi.hProcess;
+    {
+        std::lock_guard<std::mutex> lk(process_mutex_);
+        process_handle_ = pi.hProcess;
+    }
     running_.store(true, std::memory_order_release);
     TR_LOG_DRV("[translator] CreateProcessW OK: pid=%lu path='%s'",
         pi.dwProcessId, host_exe_path_.c_str());
@@ -92,6 +123,7 @@ bool HostSupervisor::Spawn()
 
 void HostSupervisor::Kill()
 {
+    std::lock_guard<std::mutex> lk(process_mutex_);
     if (process_handle_ == INVALID_HANDLE_VALUE) return;
     TerminateProcess(process_handle_, 0);
     WaitForSingleObject(process_handle_, 5000);
@@ -106,25 +138,82 @@ void HostSupervisor::MonitorLoop()
     constexpr int kMaxBackoffMs = 30000;
 
     while (!stop_requested_.load(std::memory_order_acquire)) {
-        if (process_handle_ == INVALID_HANDLE_VALUE) {
+        HANDLE cur_handle = INVALID_HANDLE_VALUE;
+        bool   is_halted  = false;
+        {
+            std::lock_guard<std::mutex> lk(process_mutex_);
+            cur_handle = process_handle_;
+            is_halted  = halted_;
+        }
+
+        if (is_halted) {
+            // Circuit breaker tripped: sleep and wait for a Stop()/Start() reset.
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            continue;
+        }
+
+        if (cur_handle == INVALID_HANDLE_VALUE) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             continue;
         }
 
-        DWORD wait = WaitForSingleObject(process_handle_,
+        // Record spawn time to detect fast exits.
+        auto spawn_time = std::chrono::steady_clock::now();
+
+        DWORD wait = WaitForSingleObject(cur_handle,
             static_cast<DWORD>(backoff_ms > 1000 ? backoff_ms : 1000));
 
         if (stop_requested_.load(std::memory_order_acquire)) break;
 
         if (wait == WAIT_OBJECT_0) {
             DWORD code = 0;
-            GetExitCodeProcess(process_handle_, &code);
-            CloseHandle(process_handle_);
-            process_handle_ = INVALID_HANDLE_VALUE;
+            bool handle_was_valid = false;
+            {
+                std::lock_guard<std::mutex> lk(process_mutex_);
+                if (process_handle_ != INVALID_HANDLE_VALUE) {
+                    GetExitCodeProcess(process_handle_, &code);
+                    CloseHandle(process_handle_);
+                    process_handle_  = INVALID_HANDLE_VALUE;
+                    handle_was_valid = true;
+                }
+            }
+            if (!handle_was_valid) {
+                running_.store(false, std::memory_order_release);
+                continue;
+            }
             running_.store(false, std::memory_order_release);
 
+            auto now = std::chrono::steady_clock::now();
+            long long uptime_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                now - spawn_time).count();
+
+            TR_LOG_DRV("[translator-supervisor] host process exited code=0x%08lx uptime_ms=%lld",
+                (unsigned long)code, uptime_ms);
+
+            // Circuit breaker: accumulate fast exits.
+            bool should_halt = false;
+            {
+                std::lock_guard<std::mutex> lk(process_mutex_);
+                if (uptime_ms < kFastExitThresholdMs) {
+                    consecutive_fast_exits_++;
+                } else {
+                    consecutive_fast_exits_ = 0;
+                }
+                if (consecutive_fast_exits_ >= kCircuitBreakerThreshold) {
+                    halted_     = true;
+                    should_halt = true;
+                }
+            }
+
+            if (should_halt) {
+                TR_LOG_DRV("[translator-supervisor] CIRCUIT BREAKER: 5 consecutive fast exits, "
+                    "halting respawn for translator. Last exit code: 0x%08lx",
+                    (unsigned long)code);
+                continue;
+            }
+
             TR_LOG_DRV("[host] process exited (code=%lu); restarting in %d ms",
-                code, backoff_ms);
+                (unsigned long)code, backoff_ms);
             std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
 
             if (stop_requested_.load(std::memory_order_acquire)) break;

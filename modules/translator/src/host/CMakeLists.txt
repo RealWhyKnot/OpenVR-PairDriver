@@ -98,7 +98,9 @@ set(HOST_SOURCES
     main.cpp)
 
 add_executable(WKOpenVRTranslatorHost ${HOST_SOURCES})
-set_target_properties(WKOpenVRTranslatorHost PROPERTIES OUTPUT_NAME "WKOpenVR.TranslatorHost")
+set_target_properties(WKOpenVRTranslatorHost PROPERTIES
+    OUTPUT_NAME "WKOpenVR.TranslatorHost"
+    WIN32_EXECUTABLE TRUE)
 
 target_compile_definitions(WKOpenVRTranslatorHost PRIVATE
     NOMINMAX
@@ -106,6 +108,12 @@ target_compile_definitions(WKOpenVRTranslatorHost PRIVATE
     WIN32_LEAN_AND_MEAN)
 
 target_compile_features(WKOpenVRTranslatorHost PRIVATE cxx_std_17)
+
+# WIN32_EXECUTABLE sets SUBSYSTEM:WINDOWS (no console window) but expects WinMain.
+# Override the entry point so int main() is used as-is.
+if(MSVC)
+    target_link_options(WKOpenVRTranslatorHost PRIVATE /ENTRY:mainCRTStartup)
+endif()
 
 target_include_directories(WKOpenVRTranslatorHost PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
