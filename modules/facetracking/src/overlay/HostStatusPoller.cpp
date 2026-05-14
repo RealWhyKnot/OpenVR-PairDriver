@@ -53,7 +53,17 @@ void HostStatusPoller::Tick()
         // Not yet time for another disk read; just refresh staleness flag.
         if (snapshot_.valid)
         {
-            snapshot_.stale = (now - last_successful_read_) > kStaleAfter;
+            bool became_stale = (now - last_successful_read_) > kStaleAfter;
+            snapshot_.stale = became_stale;
+            if (became_stale &&
+                (now - last_stale_warn_) >= std::chrono::seconds(5))
+            {
+                auto stale_s = std::chrono::duration_cast<std::chrono::seconds>(
+                    now - last_successful_read_).count();
+                FT_LOG_OVL("[host-supervisor] host_status.json stale for %llds (pid=%d)",
+                    (long long)stale_s, snapshot_.host_pid);
+                last_stale_warn_ = now;
+            }
         }
         return;
     }
@@ -73,7 +83,17 @@ void HostStatusPoller::Tick()
         // we ever had one, but flag it stale.
         if (snapshot_.valid)
         {
-            snapshot_.stale = (now - last_successful_read_) > kStaleAfter;
+            bool became_stale = (now - last_successful_read_) > kStaleAfter;
+            snapshot_.stale = became_stale;
+            if (became_stale &&
+                (now - last_stale_warn_) >= std::chrono::seconds(5))
+            {
+                auto stale_s = std::chrono::duration_cast<std::chrono::seconds>(
+                    now - last_successful_read_).count();
+                FT_LOG_OVL("[host-supervisor] host_status.json stale for %llds (host not running?)",
+                    (long long)stale_s);
+                last_stale_warn_ = now;
+            }
         }
         return;
     }
@@ -81,7 +101,17 @@ void HostStatusPoller::Tick()
     if (mtime == last_observed_mtime_)
     {
         // File unchanged since last successful read. Refresh staleness.
-        snapshot_.stale = (now - last_successful_read_) > kStaleAfter;
+        bool became_stale = (now - last_successful_read_) > kStaleAfter;
+        snapshot_.stale = became_stale;
+        if (became_stale &&
+            (now - last_stale_warn_) >= std::chrono::seconds(5))
+        {
+            auto stale_s = std::chrono::duration_cast<std::chrono::seconds>(
+                now - last_successful_read_).count();
+            FT_LOG_OVL("[host-supervisor] host_status.json stale for %llds (mtime frozen, pid=%d)",
+                (long long)stale_s, snapshot_.host_pid);
+            last_stale_warn_ = now;
+        }
         return;
     }
 

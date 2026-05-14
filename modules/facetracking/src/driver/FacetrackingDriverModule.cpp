@@ -486,6 +486,12 @@ private:
     std::chrono::steady_clock::time_point last_telemetry_write_{};
     uint64_t frames_processed_ = 0;
 
+    // Diagnostics state: OSC output transition tracking.
+    bool     osc_was_enabled_     = false;
+    bool     osc_first_publish_   = false;
+    uint32_t all_zero_frames_     = 0;
+    bool     all_zero_warned_     = false;
+
     // -----------------------------------------------------------------------
     // Worker thread: polls shmem, runs the filter pipeline, publishes.
     // -----------------------------------------------------------------------
@@ -545,9 +551,51 @@ private:
             // Forward face data to the OSC router. PublishOsc is non-blocking
             // and returns false silently when the router is not active, so
             // gating on output_osc_enabled is the only check we need here.
-            if (cfg.output_osc_enabled) {
+            const bool osc_enabled = (cfg.output_osc_enabled != 0);
+            if (osc_enabled != osc_was_enabled_) {
+                if (osc_enabled) {
+                    FT_LOG_DRV("[facetracking] OSC output enabled", 0);
+                    osc_first_publish_ = false;
+                } else {
+                    FT_LOG_DRV("[facetracking] OSC output disabled", 0);
+                }
+                osc_was_enabled_ = osc_enabled;
+            }
+
+            if (osc_enabled) {
                 const bool eye_valid  = (frame.flags & 0x1u) != 0;
                 const bool expr_valid = (frame.flags & 0x2u) != 0;
+
+                // All-zero expression guard.
+                bool has_nonzero = false;
+                if (expr_valid) {
+                    for (uint32_t i = 0; i < protocol::FACETRACKING_EXPRESSION_COUNT; ++i) {
+                        if (frame.expressions[i] != 0.f) { has_nonzero = true; break; }
+                    }
+                }
+                if (eye_valid) {
+                    has_nonzero = has_nonzero ||
+                        frame.eye_openness_l != 0.f || frame.eye_openness_r != 0.f;
+                }
+
+                if (!has_nonzero) {
+                    if (++all_zero_frames_ >= 60 && !all_zero_warned_) {
+                        FT_LOG_DRV("[facetracking] expression frame all-zero for 60+ frames -- module may not be delivering data", 0);
+                        all_zero_warned_ = true;
+                    }
+                } else {
+                    all_zero_frames_ = 0;
+                    all_zero_warned_ = false;
+                }
+
+                if (!osc_first_publish_ && (eye_valid || expr_valid)) {
+                    FT_LOG_DRV("[facetracking] first OSC publish: JawOpen=%.3f LeftEyeLid=%.3f flags=0x%x paths=both",
+                        frame.expressions[26], // index 26 = JawOpen
+                        frame.eye_openness_l,
+                        (unsigned)frame.flags);
+                    osc_first_publish_ = true;
+                }
+
                 if (eye_valid)  OscPublishEye(frame);
                 if (expr_valid) OscPublishExpressions(frame);
             }

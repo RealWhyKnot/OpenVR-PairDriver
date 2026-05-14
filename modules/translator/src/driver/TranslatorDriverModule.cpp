@@ -83,10 +83,24 @@ public:
     bool Init(DriverModuleContext &) override
     {
         TrDrvOpenLogFile();
-        TR_LOG_DRV("[module] Init()");
+        TR_LOG_DRV("[translator] driver module Init() entered");
 
         std::string host_path = ResolveHostExePath();
-        TR_LOG_DRV("[module] host exe: %s", host_path.c_str());
+        TR_LOG_DRV("[translator] resolved host exe path: %s", host_path.c_str());
+
+        // Verify the exe exists on disk before handing off to HostSupervisor.
+        // CreateProcessW err=3 (PATH_NOT_FOUND) produces no obvious log without this.
+        bool host_on_disk = false;
+        if (!host_path.empty()) {
+            DWORD attr = GetFileAttributesA(host_path.c_str());
+            host_on_disk = (attr != INVALID_FILE_ATTRIBUTES &&
+                            (attr & FILE_ATTRIBUTE_DIRECTORY) == 0);
+        }
+        TR_LOG_DRV("[translator] host exe exists on disk: %s",
+            host_on_disk ? "true" : "false");
+        if (!host_on_disk) {
+            TR_LOG_DRV("[translator] host exe missing -- Translator feature will be inert until redeploy");
+        }
 
         supervisor_ = std::make_unique<HostSupervisor>(host_path);
         supervisor_->Start();

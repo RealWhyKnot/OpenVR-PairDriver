@@ -89,17 +89,27 @@ bool HostSupervisor::Spawn()
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi{};
 
+    DWORD cpErr = 0;
     if (!CreateProcessW(wpath.c_str(), nullptr, nullptr, nullptr, FALSE,
             0, nullptr, nullptr, &si, &pi)) {
-        FT_LOG_DRV("[host] CreateProcessW failed (err=%lu) for '%s'",
-            GetLastError(), host_exe_path_.c_str());
+        cpErr = GetLastError();
+        char errMsg[256] = {};
+        FormatMessageA(
+            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+            nullptr, cpErr, 0, errMsg, sizeof(errMsg) - 1, nullptr);
+        size_t mlen = strlen(errMsg);
+        while (mlen > 0 && (errMsg[mlen-1] == '\r' || errMsg[mlen-1] == '\n'))
+            errMsg[--mlen] = '\0';
+        FT_LOG_DRV("[facetracking] CreateProcessW FAILED: err=%lu msg=%s path='%s'",
+            cpErr, errMsg, host_exe_path_.c_str());
         return false;
     }
     // Close the thread handle; we only need the process handle.
     CloseHandle(pi.hThread);
     process_handle_ = pi.hProcess;
     running_.store(true, std::memory_order_release);
-    FT_LOG_DRV("[host] spawned pid=%lu '%s'", pi.dwProcessId, host_exe_path_.c_str());
+    FT_LOG_DRV("[facetracking] CreateProcessW OK: pid=%lu path='%s'",
+        pi.dwProcessId, host_exe_path_.c_str());
 
     // Deliver any queued module uuid. Capture the value under the lock,
     // release the lock, THEN call TrySendUuid. The previous form held

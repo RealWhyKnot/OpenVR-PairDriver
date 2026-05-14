@@ -74,6 +74,7 @@ class HostStatusPoller
     std::string                              path_utf8_;
     std::chrono::steady_clock::time_point    last_read_attempt_{};
     std::chrono::steady_clock::time_point    last_successful_read_{};
+    std::chrono::steady_clock::time_point    last_stale_warn_{};
     int64_t                                  last_observed_mtime_ = 0;
     HostStatusSnapshot                       snapshot_;
 };

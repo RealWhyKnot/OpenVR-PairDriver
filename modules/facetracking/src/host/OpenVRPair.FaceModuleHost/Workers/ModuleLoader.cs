@@ -170,6 +170,8 @@ public sealed class ModuleLoader(
 
             long prevTick    = System.Diagnostics.Stopwatch.GetTimestamp();
             float invFreq    = 1.0f / (float)System.Diagnostics.Stopwatch.Frequency;
+            long  frameNum   = 0;
+            int   noDataRun  = 0;
 
             try
             {
@@ -183,9 +185,32 @@ public sealed class ModuleLoader(
 
                     module.Update(in ctx);
 
+                    // Heartbeat: log sample values every 60 frames.
+                    frameNum++;
+                    var exprSink = module.ExpressionSinkInternal;
+                    var eyeSink  = module.EyeSinkInternal;
+                    ReadOnlySpan<float> shapes = exprSink.Values;
+                    int nonZero = 0;
+                    foreach (float v in shapes) if (v != 0f) nonZero++;
+                    float jawOpen  = shapes.Length > 26 ? shapes[26] : 0f;
+                    float leftLid  = eyeSink.LeftOpenness;
+
+                    if (nonZero == 0 && leftLid == 0f) {
+                        noDataRun++;
+                        if (noDataRun % 60 == 0)
+                            logger.Warn($"[host] module={loadedModule.Manifest.Name} no-data for {noDataRun} frames");
+                    } else {
+                        noDataRun = 0;
+                    }
+
+                    if (frameNum % 60 == 0)
+                    {
+                        logger.Info($"[host] module={loadedModule.Manifest.Name} frame={frameNum} jawOpen={jawOpen:F3} leftEyeLid={leftLid:F3} nonZeroShapes={nonZero}/{shapes.Length}");
+                    }
+
                     await writer.PublishAsync(
-                        module.EyeSinkInternal,
-                        module.ExpressionSinkInternal,
+                        eyeSink,
+                        exprSink,
                         eye, expr, uuidHash, ct);
 
                     // Yield so other tasks get CPU time; hardware ticks at ~120 Hz.
@@ -195,7 +220,7 @@ public sealed class ModuleLoader(
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                logger.Error($"Module {loadedModule.Manifest.Name} threw during Update: {ex}");
+                logger.Error($"[host] module={loadedModule.Manifest.Name} threw during Update: {ex.GetType().Name} {ex.Message}");
                 _active = null;
             }
         }

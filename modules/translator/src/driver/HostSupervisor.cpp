@@ -66,16 +66,27 @@ bool HostSupervisor::Spawn()
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi{};
 
+    DWORD cpErr = 0;
     if (!CreateProcessW(wpath.c_str(), nullptr, nullptr, nullptr, FALSE,
             0, nullptr, nullptr, &si, &pi)) {
-        TR_LOG_DRV("[host] CreateProcessW failed (err=%lu) for '%s'",
-            GetLastError(), host_exe_path_.c_str());
+        cpErr = GetLastError();
+        char errMsg[256] = {};
+        FormatMessageA(
+            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+            nullptr, cpErr, 0, errMsg, sizeof(errMsg) - 1, nullptr);
+        // Strip trailing newline that FormatMessageA appends.
+        size_t mlen = strlen(errMsg);
+        while (mlen > 0 && (errMsg[mlen-1] == '\r' || errMsg[mlen-1] == '\n'))
+            errMsg[--mlen] = '\0';
+        TR_LOG_DRV("[translator] CreateProcessW FAILED: err=%lu msg=%s path='%s'",
+            cpErr, errMsg, host_exe_path_.c_str());
         return false;
     }
     CloseHandle(pi.hThread);
     process_handle_ = pi.hProcess;
     running_.store(true, std::memory_order_release);
-    TR_LOG_DRV("[host] spawned pid=%lu '%s'", pi.dwProcessId, host_exe_path_.c_str());
+    TR_LOG_DRV("[translator] CreateProcessW OK: pid=%lu path='%s'",
+        pi.dwProcessId, host_exe_path_.c_str());
     return true;
 }
 

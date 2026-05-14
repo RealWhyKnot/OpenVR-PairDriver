@@ -220,6 +220,7 @@ void OscRouter::SendWorkerMain()
 
     using clock = std::chrono::steady_clock;
     auto nextStats = clock::now() + std::chrono::milliseconds(100);
+    bool socket_not_open_logged_ = false;
 
     SendEntry entry;
 
@@ -241,9 +242,23 @@ void OscRouter::SendWorkerMain()
         if (sender_.IsOpen() && entry.size > 0) {
             int sent = sender_.Send(entry.data, entry.size);
             if (sent > 0) {
-                packetsSent_.fetch_add(1, std::memory_order_relaxed);
+                uint64_t prev  = packetsSent_.fetch_add(1, std::memory_order_relaxed);
+                uint64_t total = prev + 1;
                 bytesSent_.fetch_add(static_cast<uint64_t>(sent), std::memory_order_relaxed);
                 if (shmemReady_) statsShmem_.AddSent(static_cast<uint64_t>(sent));
+
+                if (prev == 0) {
+                    OscMessage firstMsg = OscParseMessage(entry.data, entry.size);
+                    OR_LOG("[OscRouter] first packet emitted: addr='%s' bytes=%d target=%s:%u",
+                        firstMsg.valid ? firstMsg.address : "(unknown)",
+                        sent,
+                        sendHost_.c_str(), (unsigned)sendPort_);
+                }
+                if (total % 1000 == 0) {
+                    OR_LOG("[OscRouter] sent %llu packets target=%s:%u",
+                        (unsigned long long)total,
+                        sendHost_.c_str(), (unsigned)sendPort_);
+                }
 
                 // Dispatch for route stats.
                 OscMessage msg = OscParseMessage(entry.data, entry.size);
@@ -253,6 +268,9 @@ void OscRouter::SendWorkerMain()
                     (void)matched;
                 }
             }
+        } else if (!sender_.IsOpen() && !socket_not_open_logged_) {
+            OR_LOG("[OscRouter] send worker: socket not open, packets will be dropped");
+            socket_not_open_logged_ = true;
         }
 
         maybe_stats:
