@@ -12,6 +12,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 ### Fixed
 - **smoothing:** Lock out per-tracker prediction on the calibration anchor (e87f318)
 - **installer:** Include translator host tree in setup-exe and release zip (ca55616)
+- **calibration:** Hide-tracker now flags pose as disconnected instead of punting out of bounds (2a0e8db)
 
 ---
 
