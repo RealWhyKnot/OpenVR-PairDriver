@@ -10,6 +10,7 @@
 #include "DriverModule.h"
 #include "FeatureFlags.h"
 #include "Protocol.h"
+#include "RouterPublishApi.h"
 #include "ServerTrackedDeviceProvider.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -29,6 +30,139 @@
 
 namespace facetracking {
 namespace {
+
+// -----------------------------------------------------------------------
+// OSC publish helpers
+// -----------------------------------------------------------------------
+
+// Encode a single IEEE 754 float in OSC 1.0 big-endian wire format and
+// forward it to the OSC router. No-ops if the router is not active.
+static inline void OscPublishFloat(const char *address, float value)
+{
+    uint32_t bits;
+    // Use memcpy to avoid strict-aliasing UB; the compiler optimises it away.
+    std::memcpy(&bits, &value, sizeof(bits));
+    uint8_t arg_bytes[4] = {
+        static_cast<uint8_t>(bits >> 24),
+        static_cast<uint8_t>(bits >> 16),
+        static_cast<uint8_t>(bits >>  8),
+        static_cast<uint8_t>(bits        ),
+    };
+    pairdriver::oscrouter::PublishOsc(
+        "facetracking", address, ",f", arg_bytes, 4);
+}
+
+// Send all eye-gaze OSC messages for one frame. Called when eye data is valid
+// and the user's output_osc_enabled toggle is set.
+static void OscPublishEye(const protocol::FaceTrackingFrameBody &frame)
+{
+    // Left/right gaze direction components mapped to the expected avatar params.
+    // DirHmd convention: gaze in HMD space; X = horizontal, Y = vertical.
+    OscPublishFloat("/avatar/parameters/LeftEyeX",     frame.eye_gaze_l[0]);
+    OscPublishFloat("/avatar/parameters/LeftEyeY",     frame.eye_gaze_l[1]);
+    OscPublishFloat("/avatar/parameters/RightEyeX",    frame.eye_gaze_r[0]);
+    OscPublishFloat("/avatar/parameters/RightEyeY",    frame.eye_gaze_r[1]);
+    OscPublishFloat("/avatar/parameters/LeftEyeLid",   frame.eye_openness_l);
+    OscPublishFloat("/avatar/parameters/RightEyeLid",  frame.eye_openness_r);
+    OscPublishFloat("/avatar/parameters/EyesDilation",
+        (frame.pupil_dilation_l + frame.pupil_dilation_r) * 0.5f);
+}
+
+// Unified Expression parameter names in index order 0..62.
+// Must match the C# UnifiedExpression enum order byte-for-byte.
+// Source: modules/facetracking/src/host/OpenVRPair.FaceModuleHost/Output/UnifiedExpressions.cs
+// (which derives names from the ModuleSdk's UnifiedExpression enum via .ToString()).
+static const char *const kExprParamNames[protocol::FACETRACKING_EXPRESSION_COUNT] = {
+    "EyeLookOutLeft",
+    "EyeLookInLeft",
+    "EyeLookUpLeft",
+    "EyeLookDownLeft",
+    "EyeLookOutRight",
+    "EyeLookInRight",
+    "EyeLookUpRight",
+    "EyeLookDownRight",
+    "EyeWideLeft",
+    "EyeWideRight",
+    "EyeSquintLeft",
+    "EyeSquintRight",
+    "BrowLowererLeft",
+    "BrowLowererRight",
+    "BrowInnerUpLeft",
+    "BrowInnerUpRight",
+    "BrowOuterUpLeft",
+    "BrowOuterUpRight",
+    "BrowPinchLeft",
+    "BrowPinchRight",
+    "CheekPuffLeft",
+    "CheekPuffRight",
+    "CheekSuckLeft",
+    "CheekSuckRight",
+    "NoseSneerLeft",
+    "NoseSneerRight",
+    "JawOpen",
+    "JawForward",
+    "JawLeft",
+    "JawRight",
+    "LipSuckUpperLeft",
+    "LipSuckUpperRight",
+    "LipSuckLowerLeft",
+    "LipSuckLowerRight",
+    "LipFunnelUpperLeft",
+    "LipFunnelUpperRight",
+    "LipFunnelLowerLeft",
+    "LipFunnelLowerRight",
+    "LipPuckerUpperLeft",
+    "LipPuckerUpperRight",
+    "MouthClose",
+    "MouthUpperLeft",
+    "MouthUpperRight",
+    "MouthLowerLeft",
+    "MouthLowerRight",
+    "MouthSmileLeft",
+    "MouthSmileRight",
+    "MouthSadLeft",
+    "MouthSadRight",
+    "MouthStretchLeft",
+    "MouthStretchRight",
+    "MouthDimpleLeft",
+    "MouthDimpleRight",
+    "MouthRaiserUpper",
+    "MouthRaiserLower",
+    "MouthPressLeft",
+    "MouthPressRight",
+    "MouthTightenerLeft",
+    "MouthTightenerRight",
+    "TongueOut",
+    "TongueUp",
+    "TongueDown",
+    "TongueLeft",
+};
+
+static_assert(
+    sizeof(kExprParamNames) / sizeof(kExprParamNames[0]) ==
+        protocol::FACETRACKING_EXPRESSION_COUNT,
+    "kExprParamNames length must match FACETRACKING_EXPRESSION_COUNT");
+
+// Prefix used for all Unified Expression avatar parameters.
+static const char kAvatarParamPrefix[] = "/avatar/parameters/";
+static const size_t kAvatarParamPrefixLen =
+    sizeof(kAvatarParamPrefix) - 1; // excludes NUL
+
+// Send all expression OSC messages for one frame. Called when expression data
+// is valid and the user's output_osc_enabled toggle is set.
+static void OscPublishExpressions(const protocol::FaceTrackingFrameBody &frame)
+{
+    char address[64]; // long enough for /avatar/parameters/ + longest name
+    for (uint32_t i = 0; i < protocol::FACETRACKING_EXPRESSION_COUNT; ++i) {
+        const char *name = kExprParamNames[i];
+        // Build "/avatar/parameters/<name>" in the stack buffer.
+        std::memcpy(address, kAvatarParamPrefix, kAvatarParamPrefixLen);
+        size_t nameLen = std::strlen(name);
+        if (kAvatarParamPrefixLen + nameLen + 1 > sizeof(address)) continue;
+        std::memcpy(address + kAvatarParamPrefixLen, name, nameLen + 1);
+        OscPublishFloat(address, frame.expressions[i]);
+    }
+}
 
 // -----------------------------------------------------------------------
 // Telemetry sidecar helpers
@@ -360,6 +494,16 @@ private:
             // Publish to SteamVR inputs.
             if (cfg._reserved_native && device_) {
                 device_->PublishFrame(frame);
+            }
+
+            // Forward face data to the OSC router. PublishOsc is non-blocking
+            // and returns false silently when the router is not active, so
+            // gating on output_osc_enabled is the only check we need here.
+            if (cfg.output_osc_enabled) {
+                const bool eye_valid  = (frame.flags & 0x1u) != 0;
+                const bool expr_valid = (frame.flags & 0x2u) != 0;
+                if (eye_valid)  OscPublishEye(frame);
+                if (expr_valid) OscPublishExpressions(frame);
             }
 
             ++frames_processed_;
