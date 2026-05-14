@@ -287,8 +287,15 @@ std::string ResolveHostExePath(vr::IVRDriverContext *driverContext)
         char dllPath[MAX_PATH] = {};
         GetModuleFileNameA(hSelf, dllPath, MAX_PATH);
         std::string path(dllPath);
-        // Walk up to the driver root (bin/win64/driver_wkopenvr.dll -> ../..)
-        for (int up = 0; up < 2; ++up) {
+        // Walk up to the driver root. DLL lives at
+        //   <driver_root>/bin/win64/driver_wkopenvr.dll
+        // so we pop the filename, then "win64", then "bin" -- three pops -- to
+        // reach <driver_root>, and then append resources/facetracking/host/.
+        // The original code popped only twice and landed at <driver_root>/bin,
+        // producing a phantom <driver_root>/bin/resources/... path that does
+        // not exist on disk; CreateProcessW returned err=3 (PATH_NOT_FOUND)
+        // and the host never spawned.
+        for (int up = 0; up < 3; ++up) {
             auto sep = path.find_last_of("/\\");
             if (sep == std::string::npos) break;
             path = path.substr(0, sep);

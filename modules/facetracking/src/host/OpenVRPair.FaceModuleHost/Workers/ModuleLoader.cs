@@ -30,8 +30,28 @@ public sealed class ModuleLoadContext(string modulePath) : AssemblyLoadContext(
 {
     public string AssembliesDir => modulePath;
 
+    // Assemblies that MUST always come from the host's default load context.
+    // The host casts module instances to FaceTrackingModule (in ModuleSdk)
+    // and many modules use the reflecting bridge (in VrcftCompat). If a
+    // module ships its own copy of either DLL in assemblies/ and we let the
+    // per-module ALC load it, the loaded type ends up distinct from the
+    // host's type even though the FullName matches -- and the cast to
+    // FaceTrackingModule throws InvalidCastException. Force these names to
+    // resolve in the default context by returning null here; .NET then
+    // falls back to the default ALC, sharing the host's types.
+    private static readonly HashSet<string> SharedAssemblyNames = new()
+    {
+        "OpenVRPair.FaceTracking.ModuleSdk",
+        "OpenVRPair.FaceTracking.VrcftCompat",
+    };
+
     protected override Assembly? Load(AssemblyName assemblyName)
     {
+        if (assemblyName.Name is { } name && SharedAssemblyNames.Contains(name))
+        {
+            return null;
+        }
+
         // Resolve the assembly from the module's own directory first, then fall
         // back to the default context so the SDK and BCL types are shared.
         string candidate = Path.Combine(modulePath, assemblyName.Name + ".dll");

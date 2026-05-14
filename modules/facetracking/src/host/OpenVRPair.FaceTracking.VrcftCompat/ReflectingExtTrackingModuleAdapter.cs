@@ -72,7 +72,7 @@ public sealed class ReflectingExtTrackingModuleAdapter : FaceTrackingModule
             Uuid          = cfg.Uuid,
             Name          = cfg.Name,
             Vendor        = cfg.Vendor,
-            Version       = Version.Parse(cfg.Version),
+            Version       = ParseLenientVersion(cfg.Version),
             SupportedHmds = cfg.SupportedHmds.ToArray(),
             Capabilities  = ParseCapabilities(cfg.Capabilities),
         };
@@ -176,6 +176,22 @@ public sealed class ReflectingExtTrackingModuleAdapter : FaceTrackingModule
 
         Type? nullLoggerType = loggingAsm?.GetType(NullLoggerTypeName, throwOnError: false);
         return nullLoggerType?.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+    }
+
+    // System.Version.Parse rejects any non-numeric component, so legitimate
+    // VRCFT module versions like "1.0.5-fix" or "1.6.0-beta" throw before
+    // the module ever loads. Strip everything from the first '-' or '+'
+    // onward (semver pre-release / build-metadata suffixes), then trim any
+    // trailing dots, then fall back to a zeroed Version if the result still
+    // doesn't parse. A bad-version-string module is still useful to load --
+    // the version is descriptive metadata, not a load gate.
+    private static Version ParseLenientVersion(string raw)
+    {
+        string cleaned = raw ?? string.Empty;
+        int cut = cleaned.IndexOfAny(new[] { '-', '+' });
+        if (cut >= 0) cleaned = cleaned[..cut];
+        cleaned = cleaned.TrimEnd('.', ' ');
+        return Version.TryParse(cleaned, out Version? v) ? v : new Version(0, 0, 0, 0);
     }
 
     private static Capabilities ParseCapabilities(IList<string> caps)
