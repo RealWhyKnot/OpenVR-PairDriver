@@ -46,3 +46,7 @@ std::unique_ptr<DriverModule> CreateDriverModule();
 namespace facetracking {
 std::unique_ptr<DriverModule> CreateDriverModule();
 }
+
+namespace oscrouter {
+std::unique_ptr<DriverModule> CreateDriverModule();
+}
