@@ -58,6 +58,13 @@ $srcHostDir = Join-Path $PSScriptRoot "build\driver_wkopenvr\resources\facetrack
 $srcHostExe = Join-Path $srcHostDir "OpenVRPair.FaceModuleHost.exe"
 $hostPresent = (Test-Path -LiteralPath $srcHostExe)
 
+# Optional: the native translator host sidecar. Built when
+# OPENVR_PAIR_BUILD_TRANSLATOR_HOST is on (default). If absent the driver
+# loads but the Translator feature reports CreateProcessW err=3 every Init.
+$srcTrHostDir = Join-Path $PSScriptRoot "build\driver_wkopenvr\resources\translator\host"
+$srcTrHostExe = Join-Path $srcTrHostDir "WKOpenVR.TranslatorHost.exe"
+$trHostPresent = (Test-Path -LiteralPath $srcTrHostExe)
+
 # Overlay-side resources tree (currently: face-module-sync.ps1 for the FaceTracking
 # Modules tab's Sync button). The overlay launches resources\face-module-sync.ps1
 # via CreateProcessW with an absolute path computed from the exe's directory, so the
@@ -77,6 +84,8 @@ $dstDriverDir = Join-Path $dstDriverRoot "bin\win64"
 $dstDll       = Join-Path $dstDriverDir "driver_01wkopenvr.dll"
 $dstHostDir   = Join-Path $dstDriverRoot "resources\facetracking\host"
 $dstHostExe   = Join-Path $dstHostDir "OpenVRPair.FaceModuleHost.exe"
+$dstTrHostDir = Join-Path $dstDriverRoot "resources\translator\host"
+$dstTrHostExe = Join-Path $dstTrHostDir "WKOpenVR.TranslatorHost.exe"
 $dstResourcesDir = Join-Path $InstallDir "resources"
 $dstSyncScript   = Join-Path $dstResourcesDir "face-module-sync.ps1"
 
@@ -86,6 +95,7 @@ $srcDllSha      = Get-Sha $srcDll
 $srcManifestSha = Get-Sha $srcManifest
 $srcIconSha     = Get-Sha $srcIcon
 $srcHostExeSha   = if ($hostPresent) { Get-Sha $srcHostExe } else { $null }
+$srcTrHostExeSha = if ($trHostPresent) { Get-Sha $srcTrHostExe } else { $null }
 $srcSyncScriptSha = Get-Sha $srcSyncScript
 $dstExeSha       = Get-Sha $dstExe
 $dstOpenVRSha    = Get-Sha $dstOpenVR
@@ -93,6 +103,7 @@ $dstDllSha       = Get-Sha $dstDll
 $dstManifestSha  = Get-Sha $dstManifest
 $dstIconSha      = Get-Sha $dstIcon
 $dstHostExeSha   = Get-Sha $dstHostExe
+$dstTrHostExeSha = Get-Sha $dstTrHostExe
 $dstSyncScriptSha = Get-Sha $dstSyncScript
 
 Write-Host ""
@@ -114,6 +125,12 @@ if ($hostPresent) {
 } else {
 	Write-Host "Source host:       (not built; OPENVR_PAIR_BUILD_FACE_HOST=OFF or .NET 10 SDK missing)"
 }
+if ($trHostPresent) {
+	Write-Host ("Source tr-host:    {0}" -f $srcTrHostExeSha)
+	Write-Host ("Deployed tr-host:  {0}" -f $dstTrHostExeSha)
+} else {
+	Write-Host "Source tr-host:    (not built; OPENVR_PAIR_BUILD_TRANSLATOR_HOST=OFF)"
+}
 
 $exeStale       = ($srcExeSha -ne $dstExeSha)
 $openVRStale    = ($srcOpenVRSha -ne $dstOpenVRSha)
@@ -122,6 +139,7 @@ $manifestStale  = ($srcManifestSha -ne $dstManifestSha)
 $iconStale      = ($srcIconSha -ne $dstIconSha)
 $resourcesStale = ($srcSyncScriptSha -ne $dstSyncScriptSha)
 $hostStale      = $hostPresent -and ($srcHostExeSha -ne $dstHostExeSha)
+$trHostStale    = $trHostPresent -and ($srcTrHostExeSha -ne $dstTrHostExeSha)
 
 # Detect stale Start Menu shortcuts. The Modules-tab toggle helper and the
 # NSIS installer both stamp distinct --launch arguments on each .lnk so
@@ -153,7 +171,7 @@ if (Test-Path -LiteralPath $startMenuDir) {
 	}
 }
 
-if (-not $exeStale -and -not $openVRStale -and -not $driverStale -and -not $manifestStale -and -not $iconStale -and -not $resourcesStale -and -not $hostStale -and -not $shortcutsStale) {
+if (-not $exeStale -and -not $openVRStale -and -not $driverStale -and -not $manifestStale -and -not $iconStale -and -not $resourcesStale -and -not $hostStale -and -not $trHostStale -and -not $shortcutsStale) {
 	Write-Host ""
 	Write-Host "Already up to date. Deployed build: $(Resolve-Version $dstExe)"
 	exit 0
@@ -167,6 +185,7 @@ if ($manifestStale)   { Write-Host "vrmanifest needs redeploy." }
 if ($iconStale)       { Write-Host "Dashboard icon needs redeploy." }
 if ($resourcesStale)  { Write-Host "Overlay resources tree needs redeploy." }
 if ($hostStale)       { Write-Host "FaceModuleHost tree needs redeploy." }
+if ($trHostStale)     { Write-Host "TranslatorHost tree needs redeploy." }
 if ($shortcutsStale)  { Write-Host "Start Menu shortcuts need refresh (distinct --launch args)." }
 
 if (-not $Yes) {
@@ -187,6 +206,7 @@ $resultFile = Join-Path $env:TEMP "WKOpenVR-deploy-result.txt"
 foreach ($p in @($helperOut, $helperErr, $resultFile)) { if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force } }
 
 $hostPresentBool = if ($hostPresent) { '$true' } else { '$false' }
+$trHostPresentBool = if ($trHostPresent) { '$true' } else { '$false' }
 
 $helperScript = @"
 `$ErrorActionPreference = 'Continue'
@@ -242,6 +262,22 @@ try {
 		}
 		Get-ChildItem -LiteralPath `$hostDst -File | Where-Object { `$_.Name -notlike '*.old.*' } | Remove-Item -Force
 		Copy-Item -Path (Join-Path `$hostSrc '*') -Destination `$hostDst -Recurse -Force
+	}
+
+	# Translator host sidecar. Same rename-aside pattern as FaceModuleHost so a
+	# SteamVR session holding the exe open does not block the copy.
+	if ($trHostPresentBool) {
+		`$trHostSrc = '$srcTrHostDir'
+		`$trHostDst = '$dstTrHostDir'
+		New-Item -ItemType Directory -Force -Path `$trHostDst | Out-Null
+		`$trHostExeDst = Join-Path `$trHostDst 'WKOpenVR.TranslatorHost.exe'
+		if (Test-Path -LiteralPath `$trHostExeDst) {
+			`$stamp = (Get-Date).ToString('yyyyMMddHHmmss')
+			`$bak = `$trHostExeDst + '.old.' + `$stamp
+			try { Rename-Item -LiteralPath `$trHostExeDst -NewName (Split-Path -Leaf `$bak) -Force } catch { }
+		}
+		Get-ChildItem -LiteralPath `$trHostDst -File | Where-Object { `$_.Name -notlike '*.old.*' } | Remove-Item -Force
+		Copy-Item -Path (Join-Path `$trHostSrc '*') -Destination `$trHostDst -Recurse -Force
 	}
 
 	# Refresh existing Start Menu shortcuts so each one carries its
@@ -346,6 +382,7 @@ $postManifestSha   = Get-Sha $dstManifest
 $postIconSha       = Get-Sha $dstIcon
 $postSyncScriptSha = Get-Sha $dstSyncScript
 $postHostExeSha    = Get-Sha $dstHostExe
+$postTrHostExeSha  = Get-Sha $dstTrHostExe
 
 $exeOk         = ($postExeSha -eq $srcExeSha)
 $openVROk      = ($postOpenVRSha -eq $srcOpenVRSha)
@@ -354,6 +391,7 @@ $manifestOk    = ($postManifestSha -eq $srcManifestSha)
 $iconOk        = ($postIconSha -eq $srcIconSha)
 $syncScriptOk  = ($postSyncScriptSha -eq $srcSyncScriptSha)
 $hostOk        = (-not $hostPresent) -or ($postHostExeSha -eq $srcHostExeSha)
+$trHostOk      = (-not $trHostPresent) -or ($postTrHostExeSha -eq $srcTrHostExeSha)
 
 Write-Host ""
 Write-Host ("Post-copy exe:         {0} {1}" -f $postExeSha,        ($(if ($exeOk)        { "OK" } else { "MISMATCH" })))
@@ -365,8 +403,11 @@ Write-Host ("Post-copy sync-script: {0} {1}" -f $postSyncScriptSha, ($(if ($sync
 if ($hostPresent) {
 	Write-Host ("Post-copy host:        {0} {1}" -f $postHostExeSha, ($(if ($hostOk) { "OK" } else { "MISMATCH" })))
 }
+if ($trHostPresent) {
+	Write-Host ("Post-copy tr-host:     {0} {1}" -f $postTrHostExeSha, ($(if ($trHostOk) { "OK" } else { "MISMATCH" })))
+}
 
-if (-not $exeOk -or -not $openVROk -or -not $dllOk -or -not $manifestOk -or -not $iconOk -or -not $syncScriptOk -or -not $hostOk) {
+if (-not $exeOk -or -not $openVROk -or -not $dllOk -or -not $manifestOk -or -not $iconOk -or -not $syncScriptOk -or -not $hostOk -or -not $trHostOk) {
 	$detail = @()
 	if (-not $exeOk)        { $detail += "exe at $dstExe still does not match source" }
 	if (-not $openVROk)     { $detail += "openvr_api.dll at $dstOpenVR still does not match source" }
@@ -375,6 +416,7 @@ if (-not $exeOk -or -not $openVROk -or -not $dllOk -or -not $manifestOk -or -not
 	if (-not $iconOk)       { $detail += "icon at $dstIcon still does not match source" }
 	if (-not $syncScriptOk) { $detail += "face-module-sync.ps1 at $dstSyncScript still does not match source" }
 	if (-not $hostOk)       { $detail += "FaceModuleHost.exe at $dstHostExe still does not match source" }
+	if (-not $trHostOk)     { $detail += "WKOpenVR.TranslatorHost.exe at $dstTrHostExe still does not match source" }
 	throw ("Deploy did not converge: " + ($detail -join "; "))
 }
 
