@@ -1,0 +1,14 @@
+{
+  "name": "WKOpenVR Translator - Vive Wand",
+  "controller_type": "vive_controller",
+  "bindings": {
+    "/actions/translator": {
+      "button_inputs": [
+        {
+          "output": "/actions/translator/in/push_to_talk",
+          "input": "/user/hand/left/input/menu/click"
+        }
+      ]
+    }
+  }
+}
