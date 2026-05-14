@@ -268,10 +268,12 @@ const wchar_t *ShortcutLabelFor(const char *flagFileName)
 	if (!flagFileName) return nullptr;
 	struct Entry { const char *flag; const wchar_t *label; };
 	static const Entry kEntries[] = {
-		{ "enable_calibration.flag", L"Space Calibrator" },
-		{ "enable_smoothing.flag",   L"Smoothing"        },
-		{ "enable_inputhealth.flag", L"Input Health"     },
-		{ "enable_facetracking.flag", L"Face Tracking"   },
+		{ "enable_calibration.flag",  L"Space Calibrator" },
+		{ "enable_smoothing.flag",    L"Smoothing"        },
+		{ "enable_inputhealth.flag",  L"Input Health"     },
+		{ "enable_facetracking.flag", L"Face Tracking"    },
+		{ "enable_oscrouter.flag",    L"OSC Router"       },
+		{ "enable_translator.flag",   L"Translator"       },
 	};
 	for (const auto &e : kEntries) {
 		if (strcmp(e.flag, flagFileName) == 0) return e.label;
@@ -293,6 +295,8 @@ const wchar_t *ShortcutArgFor(const char *flagFileName)
 		{ "enable_smoothing.flag",    L"--launch=smoothing"    },
 		{ "enable_inputhealth.flag",  L"--launch=inputhealth"  },
 		{ "enable_facetracking.flag", L"--launch=facetracking" },
+		{ "enable_oscrouter.flag",    L"--launch=oscrouter"    },
+		{ "enable_translator.flag",   L"--launch=translator"   },
 	};
 	for (const auto &e : kEntries) {
 		if (strcmp(e.flag, flagFileName) == 0) return e.arg;
