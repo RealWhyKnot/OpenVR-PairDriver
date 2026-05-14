@@ -46,6 +46,9 @@ std::unique_ptr<FeaturePlugin> CreateFaceTrackingPlugin();
 #if OPENVR_PAIR_HAS_OSCROUTER_OVERLAY
 std::unique_ptr<FeaturePlugin> CreateOscRouterPlugin();
 #endif
+#if OPENVR_PAIR_HAS_TRANSLATOR_OVERLAY
+std::unique_ptr<FeaturePlugin> CreateTranslatorPlugin();
+#endif
 
 } // namespace openvr_pair::overlay
 
@@ -74,6 +77,9 @@ std::vector<std::unique_ptr<openvr_pair::overlay::FeaturePlugin>> CreatePlugins(
 #endif
 #if OPENVR_PAIR_HAS_OSCROUTER_OVERLAY
 	plugins.push_back(CreateOscRouterPlugin());
+#endif
+#if OPENVR_PAIR_HAS_TRANSLATOR_OVERLAY
+	plugins.push_back(CreateTranslatorPlugin());
 #endif
 	return plugins;
 }

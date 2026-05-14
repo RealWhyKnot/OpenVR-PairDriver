@@ -26,6 +26,9 @@
 // Publish pipe: fire-and-forget from out-of-process sidecars. Wire format:
 // 32-byte source-id, 4-byte LE frame length, then `length` bytes of raw OSC.
 #define OPENVR_PAIRDRIVER_OSCROUTER_PUB_PIPE_NAME "\\\\.\\pipe\\WKOpenVR-OscRouterPub"
+// Translator module. Driver opens this pipe gated on enable_translator.flag.
+// Accepts RequestSetTranslatorConfig and RequestTranslatorRestartHost.
+#define OPENVR_PAIRDRIVER_TRANSLATOR_PIPE_NAME   "\\\\.\\pipe\\WKOpenVR-Translator"
 
 // Pose telemetry shmem segment. Created by the driver only when the calibration
 // feature is enabled; the calibration overlay opens it to read driver-side
@@ -258,6 +261,12 @@ namespace protocol
 		RequestOscRouteUnsubscribe,
 		RequestOscPublish,
 		RequestOscGetStats,
+		// Translator module (appended after v16 entries; no version bump).
+		// Driver routes these on \\.\pipe\WKOpenVR-Translator, gated on
+		// kFeatureTranslator. SetTranslatorConfig pushes mic/language/mode
+		// settings; TranslatorRestartHost terminates and respawns the sidecar.
+		RequestSetTranslatorConfig,
+		RequestTranslatorRestartHost,
 	};
 
 	enum ResponseType
@@ -684,6 +693,62 @@ namespace protocol
 		uint32_t _reserved;
 	};
 
+	// =========================================================================
+	// Translator module protocol additions (no version bump; appended after v16)
+	// =========================================================================
+
+	// Maximum field widths for translator config strings.
+	// These are kept small so TranslatorConfig fits inside SetDeviceTransform.
+	static const size_t TRANSLATOR_LANG_LEN = 16;  // BCP-47 code, e.g. "en", "zh", "auto"
+	static const size_t TRANSLATOR_ADDR_LEN = 48;  // OSC address, e.g. "/chatbox/input"
+
+	// Translator operating mode.
+	enum TranslatorMode : uint8_t
+	{
+		TranslatorModePushToTalk = 0,
+		TranslatorModeAlwaysOn   = 1,
+	};
+
+	// POD payload for RequestSetTranslatorConfig. The overlay pushes this
+	// whenever the user changes any setting. The driver caches and forwards
+	// it to the sidecar over the host control pipe. All string fields are
+	// NUL-terminated; the driver truncates silently on overflow.
+	//
+	// Model paths are not carried over IPC (they are large and change
+	// infrequently); the host reads them from a local config JSON file.
+	//
+	// sizeof(TranslatorConfig) must not exceed sizeof(SetDeviceTransform)
+	// -- enforced by the static_assert below.
+	struct TranslatorConfig
+	{
+		// Master enable. 0 = sidecar runs but produces no output (muted).
+		uint8_t  master_enabled;
+
+		// Operating mode: PTT or always-on.
+		uint8_t  mode;                      // TranslatorMode
+
+		// Notification sound on chatbox send. 0 = silent.
+		uint8_t  notify_sound;
+
+		// When nonzero the sidecar writes transcripts to disk.
+		uint8_t  transcript_logging;
+
+		// Target chatbox OSC port (default 9000).
+		uint16_t chatbox_port;
+
+		// Padding to align the string fields on a natural boundary.
+		uint8_t  _pad[2];
+
+		// Source language code ("auto" = whisper auto-detect).
+		char     source_lang[TRANSLATOR_LANG_LEN];
+
+		// Target language code ("" = transcribe only, no translation).
+		char     target_lang[TRANSLATOR_LANG_LEN];
+
+		// Chatbox OSC address (default "/chatbox/input").
+		char     chatbox_address[TRANSLATOR_ADDR_LEN];
+	};
+
 	struct Request
 	{
 		RequestType type;
@@ -720,6 +785,9 @@ namespace protocol
 			OscRouteSubscribe   oscRouteSubscribe;
 			OscRouteUnsubscribe oscRouteUnsubscribe;
 			OscPublish          oscPublish;
+			// Translator: config push. Smaller than SetDeviceTransform;
+			// static_assert below enforces it.
+			TranslatorConfig    setTranslatorConfig;
 		};
 
 		Request() : type(RequestInvalid), setAlignmentSpeedParams({}) { }
@@ -741,6 +809,8 @@ namespace protocol
 		"OscRouteUnsubscribe must not grow Request");
 	static_assert(sizeof(OscPublish) <= sizeof(SetDeviceTransform),
 		"OscPublish must not grow Request");
+	static_assert(sizeof(TranslatorConfig) <= sizeof(SetDeviceTransform),
+		"TranslatorConfig must not grow Request");
 
 	struct Response
 	{

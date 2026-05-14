@@ -1,0 +1,14 @@
+{
+  "name": "WKOpenVR Translator - Oculus Touch",
+  "controller_type": "oculus_touch",
+  "bindings": {
+    "/actions/translator": {
+      "button_inputs": [
+        {
+          "output": "/actions/translator/in/push_to_talk",
+          "input": "/user/hand/left/input/y/click"
+        }
+      ]
+    }
+  }
+}

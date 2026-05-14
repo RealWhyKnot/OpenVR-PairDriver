@@ -24,6 +24,9 @@
 #ifndef OPENVR_PAIR_HAS_OSCROUTER_DRIVER
 #define OPENVR_PAIR_HAS_OSCROUTER_DRIVER 0
 #endif
+#ifndef OPENVR_PAIR_HAS_TRANSLATOR_DRIVER
+#define OPENVR_PAIR_HAS_TRANSLATOR_DRIVER 0
+#endif
 
 namespace {
 
@@ -84,6 +87,9 @@ vr::EVRInitError ServerTrackedDeviceProvider::Init(vr::IVRDriverContext *pDriver
 #endif
 #if OPENVR_PAIR_HAS_FACETRACKING_DRIVER
 	activateModule(facetracking::CreateDriverModule());
+#endif
+#if OPENVR_PAIR_HAS_TRANSLATOR_DRIVER
+	activateModule(translator::CreateDriverModule());
 #endif
 
 	if (featureFlags & pairdriver::kFeatureCalibration) {
