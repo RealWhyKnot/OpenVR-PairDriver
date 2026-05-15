@@ -6,6 +6,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 
 ### Added
 - **diagnostics:** Add OSC + translator + host-supervisor instrumentation (b0fa13d)
+- **hosts:** Singleton mutex + connect-first spawn for face and translator hosts (cd69dac)
 
 ### Fixed
 - **smoothing:** Lock out per-tracker prediction on the calibration anchor (e87f318)
