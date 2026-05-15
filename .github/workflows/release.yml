@@ -125,7 +125,7 @@ jobs:
         # The minhook submodule declares cmake_minimum_required(2.8.12) which
         # CMake 4.x rejects. -DCMAKE_POLICY_VERSION_MINIMUM=3.5 lets us configure
         # without forking. -Wno-dev silences developer-mode warnings from minhook.
-        run: cmake -G "Visual Studio 17 2022" -A x64 -B build -S . -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -Wno-dev
+        run: cmake -G "Visual Studio 17 2022" -A x64 -B build -S . -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DWKOPENVR_TRANSLATOR_CUDA=OFF -Wno-dev
 
       - name: Stamp version and build
         shell: pwsh
@@ -186,6 +186,16 @@ jobs:
             & $t.FullName --gtest_brief=1
             if ($LASTEXITCODE -ne 0) { throw "$($t.Name) failed (exit $LASTEXITCODE)" }
           }
+
+      - name: Run translator host self-test
+        shell: pwsh
+        run: |
+          $hostExe = 'build/driver_wkopenvr/resources/translator/host/WKOpenVR.TranslatorHost.exe'
+          if (-not (Test-Path -LiteralPath $hostExe)) {
+            throw "Translator host missing at $hostExe"
+          }
+          & $hostExe --self-test
+          if ($LASTEXITCODE -ne 0) { throw "Translator host self-test failed (exit $LASTEXITCODE)" }
 
       - name: Package umbrella and mirror zips
         id: zips
@@ -275,6 +285,14 @@ jobs:
           if (-not (Test-Path $trHostStageExe)) {
             throw "WKOpenVR.TranslatorHost.exe missing from stage at $trHostStageExe. Check that OPENVR_PAIR_BUILD_TRANSLATOR_HOST is ON and the translator host CMake target built successfully."
           }
+          $trHostOpenVr = "$stage/driver_wkopenvr/resources/translator/host/openvr_api.dll"
+          if (-not (Test-Path $trHostOpenVr)) {
+            throw "openvr_api.dll missing beside TranslatorHost at $trHostOpenVr."
+          }
+          $trPackManifest = "$stage/driver_wkopenvr/resources/translator/host/resources/translator-packs.json"
+          if (-not (Test-Path $trPackManifest)) {
+            throw "Translator pack manifest missing from stage at $trPackManifest."
+          }
 
           New-Item -ItemType Directory -Force -Path "release" | Out-Null
 
@@ -361,7 +379,10 @@ jobs:
             'build/driver_wkopenvr/resources/settings/default.vrsettings',
             'build/driver_wkopenvr/bin/win64/driver_wkopenvr.dll',
             'build/driver_wkopenvr/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe',
-            'build/driver_wkopenvr/resources/translator/host/WKOpenVR.TranslatorHost.exe'
+            'build/driver_wkopenvr/resources/translator/host/WKOpenVR.TranslatorHost.exe',
+            'build/driver_wkopenvr/resources/translator/host/openvr_api.dll',
+            'build/driver_wkopenvr/resources/translator/host/resources/translator-packs.json',
+            'build/driver_wkopenvr/resources/translator/host/resources/install-translator-pack.ps1'
           )
           $missing = @()
           foreach ($p in $required) {

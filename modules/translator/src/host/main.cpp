@@ -23,8 +23,11 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <mutex>
+#include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 // ---------------------------------------------------------------------------
@@ -80,11 +83,9 @@ static FARPROC WINAPI DelayLoadFailureHook(unsigned dliNotify, PDelayLoadInfo pd
         char msg[768];
         _snprintf_s(msg, sizeof msg,
             "[translator-host] FATAL: delay-load failed for '%s' (err=%lu)\n"
-            "  Cause: the CUDA Toolkit bin dir (e.g. C:\\Program Files\\NVIDIA GPU Computing Toolkit"
-            "\\CUDA\\v13.2\\bin\\x64) is not on the system PATH, or this build uses CUDA and the\n"
-            "  toolkit is not installed. Options:\n"
-            "    A) Install CUDA Toolkit v13.2 and add its bin\\x64 to PATH; or\n"
-            "    B) Rebuild the host with -DWKOPENVR_TRANSLATOR_CUDA=OFF\n",
+            "  Cause: an optional translator runtime DLL is missing from the per-user\n"
+            "  translator runtime folder or from PATH. Install the relevant Translator\n"
+            "  pack from the overlay, then restart the host.\n",
             dll, (unsigned long)err);
         WriteEarlyCrashLog(msg);
         ExitProcess(0xCEE0DC00 | (err & 0xFF));
@@ -135,6 +136,74 @@ static void ProbeDll(const wchar_t *dll_name)
         TH_LOG("[translator-host] dll-probe: %ls -> MISSING (err=%lu)",
             dll_name, (unsigned long)err);
     }
+}
+
+static bool FileExistsA(const std::string &path)
+{
+    if (path.empty()) return false;
+    DWORD attr = GetFileAttributesA(path.c_str());
+    return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
+static bool DirectoryExistsA(const std::string &path)
+{
+    if (path.empty()) return false;
+    DWORD attr = GetFileAttributesA(path.c_str());
+    return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+static void EnsureDirectoryTreeA(const std::string &path)
+{
+    if (path.empty()) return;
+    std::string current;
+    current.reserve(path.size());
+    for (size_t i = 0; i < path.size(); ++i) {
+        current.push_back(path[i]);
+        const bool separator = path[i] == '\\' || path[i] == '/';
+        if (!separator && i + 1 != path.size()) continue;
+        if (current.size() <= 3) continue; // skip "C:\" prefix
+        while (!current.empty() &&
+               (current.back() == '\\' || current.back() == '/')) {
+            current.pop_back();
+        }
+        if (!current.empty()) CreateDirectoryA(current.c_str(), nullptr);
+        if (separator) current.push_back('\\');
+    }
+}
+
+static std::string TranslatorDataDir()
+{
+    PWSTR raw = nullptr;
+    if (S_OK != SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &raw)) {
+        if (raw) CoTaskMemFree(raw);
+        return {};
+    }
+    std::wstring root(raw);
+    CoTaskMemFree(raw);
+    root += L"\\WKOpenVR\\translator";
+
+    int n = WideCharToMultiByte(CP_UTF8, 0, root.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (n <= 0) return {};
+    std::string utf8(n, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, root.c_str(), -1, utf8.data(), n, nullptr, nullptr);
+    utf8.resize(utf8.size() - 1);
+    return utf8;
+}
+
+static std::string TranslatorRuntimeDir()
+{
+    std::string dir = TranslatorDataDir();
+    if (dir.empty()) return {};
+    return dir + "\\runtime";
+}
+
+static void AddTranslatorRuntimeSearchPath()
+{
+    std::string dir = TranslatorRuntimeDir();
+    if (dir.empty()) return;
+    EnsureDirectoryTreeA(dir);
+    SetDllDirectoryA(dir.c_str());
+    TH_LOG("[translator-host] runtime DLL directory: %s", dir.c_str());
 }
 
 // ---------------------------------------------------------------------------
@@ -257,13 +326,56 @@ static std::string DefaultWhisperModelPath()
 
 static std::string DefaultSileroModelPath()
 {
-    // silero_vad.onnx lives in resources/ next to the host exe.
-    char buf[MAX_PATH] = {};
-    GetModuleFileNameA(nullptr, buf, MAX_PATH);
-    std::string path(buf);
-    auto sep = path.find_last_of("/\\");
-    if (sep != std::string::npos) path = path.substr(0, sep);
-    return path + "\\resources\\silero_vad.onnx";
+    std::string dir = ModelDownloader::DefaultModelDir();
+    if (dir.empty()) return {};
+    return dir + "\\silero_vad.onnx";
+}
+
+static std::string TranslationPair(const std::string &src, const std::string &tgt)
+{
+    if (tgt.empty()) return {};
+    return (src == "auto" || src.empty() ? "en" : src) + "-" + tgt;
+}
+
+static std::string ResolveTranslatorModelDir(const std::string &src, const std::string &tgt)
+{
+    std::string dir = ModelDownloader::DefaultModelDir();
+    std::string pair = TranslationPair(src, tgt);
+    if (dir.empty() || pair.empty()) return {};
+    return dir + "\\ct2-opus-mt-" + pair;
+}
+
+static void UpdatePackStatus(HostStatus &status, const HostConfig &cfg)
+{
+    const bool whisper_model = FileExistsA(cfg.whisper_model_path);
+    const bool vad_model = FileExistsA(cfg.silero_model_path);
+    const bool speech_pack = whisper_model && vad_model;
+    const bool vad_runtime = SileroVad::RuntimeAvailable();
+    const bool translation_runtime = Translator::RuntimeAvailable();
+
+    const std::string pair = TranslationPair(cfg.source_lang, cfg.target_lang);
+    const std::string tr_model_dir = ResolveTranslatorModelDir(cfg.source_lang, cfg.target_lang);
+    const bool tr_pack = pair.empty() ? true : DirectoryExistsA(tr_model_dir);
+
+    status.SetSpeechPackInstalled(speech_pack);
+    status.SetVadRuntimeAvailable(vad_runtime);
+    status.SetTranslationRuntimeAvailable(translation_runtime);
+    status.SetTranslationPackInstalled(tr_pack);
+    status.SetActiveTranslationPair(pair);
+
+    std::ostringstream err;
+    if (!whisper_model) {
+        err << "Whisper model not installed.";
+    } else if (!vad_model) {
+        err << "Speech VAD model not installed.";
+    } else if (!vad_runtime) {
+        err << "Speech detection runtime not installed.";
+    } else if (!pair.empty() && !translation_runtime) {
+        err << "Translation runtime not installed.";
+    } else if (!pair.empty() && !tr_pack) {
+        err << "Translation pack " << pair << " not installed.";
+    }
+    status.SetLastError(err.str());
 }
 
 // ---------------------------------------------------------------------------
@@ -294,17 +406,57 @@ try
     TH_LOG("[startup] phase=logger-open");
     TH_LOG("[main] WKOpenVR.TranslatorHost starting");
 
+    AddTranslatorRuntimeSearchPath();
+
     // Probe native dependencies before any inference library call.
     // These log lines are the first thing to read when the host fails to start.
     TH_LOG("[translator-host] startup-phase=dll-probe");
+#if defined(WKOPENVR_TRANSLATOR_CUDA_ENABLED)
     ProbeDll(L"cudart64_13.dll");
     ProbeDll(L"cublas64_13.dll");
     ProbeDll(L"cublasLt64_13.dll");
     ProbeDll(L"nvcudart_hybrid64.dll");
     ProbeDll(L"nvcuda.dll");
+#else
+    TH_LOG("[translator-host] dll-probe: CUDA backend disabled in this build");
+#endif
     ProbeDll(L"onnxruntime.dll");
     ProbeDll(L"ctranslate2.dll");
     TH_LOG("[translator-host] startup-phase=dll-probe-done");
+
+    bool self_test = false;
+
+    // Parse optional command-line overrides: --model <path> --silero <path>
+    {
+        std::lock_guard<std::mutex> lk(g_config_mutex);
+        g_config.whisper_model_path = DefaultWhisperModelPath();
+        g_config.silero_model_path  = DefaultSileroModelPath();
+        for (int i = 1; i < argc; ++i) {
+            if (strcmp(argv[i], "--self-test") == 0 || strcmp(argv[i], "--healthcheck") == 0) {
+                self_test = true;
+            } else if (i + 1 < argc && strcmp(argv[i], "--model") == 0) {
+                g_config.whisper_model_path = argv[i + 1];
+                ++i;
+            } else if (i + 1 < argc && strcmp(argv[i], "--silero") == 0) {
+                g_config.silero_model_path = argv[i + 1];
+                ++i;
+            }
+        }
+    }
+
+    HostStatus status;
+    {
+        std::lock_guard<std::mutex> lk(g_config_mutex);
+        UpdatePackStatus(status, g_config);
+    }
+    status.SetState(HostStatus::State::Idle);
+    status.Flush();
+
+    if (self_test) {
+        TH_LOG("[startup] self-test complete");
+        TranslatorHostFlushLog();
+        return 0;
+    }
 
     // Layer 1: acquire system-wide singleton mutex before opening any IPC.
     {
@@ -330,17 +482,6 @@ try
     }
     TH_LOG("[startup] phase=singleton-acquired");
 
-    // Parse optional command-line overrides: --model <path> --silero <path>
-    {
-        std::lock_guard<std::mutex> lk(g_config_mutex);
-        g_config.whisper_model_path = DefaultWhisperModelPath();
-        g_config.silero_model_path  = DefaultSileroModelPath();
-        for (int i = 1; i + 1 < argc; ++i) {
-            if (strcmp(argv[i], "--model")  == 0) { g_config.whisper_model_path = argv[i+1]; ++i; }
-            if (strcmp(argv[i], "--silero") == 0) { g_config.silero_model_path  = argv[i+1]; ++i; }
-        }
-    }
-
     TH_LOG("[startup] phase=opening-control-pipe");
     // Start control pipe thread.
     std::thread ctrl_thread(ControlPipeThread);
@@ -356,15 +497,20 @@ try
 
     TH_LOG("[startup] phase=initializing-vad");
     // Load Silero VAD.
-    SileroVad vad;
+    std::unique_ptr<SileroVad> vad;
     {
         std::string silero_path;
         {
             std::lock_guard<std::mutex> lk(g_config_mutex);
             silero_path = g_config.silero_model_path;
         }
-        if (!vad.Load(silero_path)) {
-            TH_LOG("[main] Silero VAD load failed; path='%s'", silero_path.c_str());
+        if (SileroVad::RuntimeAvailable()) {
+            vad = std::make_unique<SileroVad>();
+            if (!vad->Load(silero_path)) {
+                TH_LOG("[main] Silero VAD load failed; path='%s'", silero_path.c_str());
+            }
+        } else {
+            TH_LOG("[main] Silero VAD runtime missing; install the speech pack to enable always-on speech detection");
         }
     }
 
@@ -381,15 +527,6 @@ try
             TH_LOG("[main] Whisper model load failed; path='%s'", model_path.c_str());
         }
     }
-
-    // Resolve the translation model directory from the default model dir.
-    // Convention: models are stored as ct2-opus-mt-<src>-<tgt>/ subdirectories
-    // under the WKOpenVR models directory.
-    auto ResolveTranslatorModelDir = [](const std::string &src, const std::string &tgt) -> std::string {
-        std::string dir = ModelDownloader::DefaultModelDir();
-        if (dir.empty() || tgt.empty()) return {};
-        return dir + "\\ct2-opus-mt-" + src + "-" + tgt;
-    };
 
     // Translation model loaded on demand when target_lang changes.
     Translator translator;
@@ -409,9 +546,6 @@ try
 
     // Chatbox pacer (1.2 s minimum gap).
     ChatboxPacer pacer(1.2);
-
-    // Host status.
-    HostStatus status;
 
     // VAD state machine.
     constexpr float kSpeechThreshold    = 0.5f;
@@ -460,6 +594,7 @@ try
             std::lock_guard<std::mutex> lk(g_config_mutex);
             cfg = g_config;
         }
+        UpdatePackStatus(status, cfg);
 
         // Update whisper language hint.
         whisper.SetLanguage(cfg.source_lang == "auto" ? "" : cfg.source_lang);
@@ -468,9 +603,10 @@ try
         if (cfg.target_lang != loaded_tgt_lang) {
             if (!cfg.target_lang.empty()) {
                 std::string model_dir = ResolveTranslatorModelDir(
-                    cfg.source_lang == "auto" ? "en" : cfg.source_lang,
-                    cfg.target_lang);
-                if (!model_dir.empty()) translator.Load(model_dir);
+                    cfg.source_lang, cfg.target_lang);
+                if (!model_dir.empty() && Translator::RuntimeAvailable()) {
+                    translator.Load(model_dir);
+                }
             } else {
                 translator.Unload();
             }
@@ -481,12 +617,12 @@ try
 
         for (const auto &frame : frames) {
             // VAD gate (PTT mode skips it).
-            if (always_on && vad.IsLoaded()) {
-                float prob = vad.Feed(frame.data(), frame.size());
+            if (always_on && vad && vad->IsLoaded()) {
+                float prob = vad->Feed(frame.data(), frame.size());
                 if (prob >= kSpeechThreshold) {
                     if (!in_speech) {
                         in_speech = true;
-                        vad.Reset();
+                        vad->Reset();
                         speech_buf.clear();
                         status.SetState(HostStatus::State::Listening);
                     }

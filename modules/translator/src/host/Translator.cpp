@@ -6,9 +6,12 @@
 #include <stdexcept>
 #include <vector>
 
-// CTranslate2 is vendored under lib/ctranslate2/. When it is absent the
-// CMakeLists builds the host without HAVE_CT2 defined and the whole
-// implementation collapses to stubs that pass `text` through unchanged.
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
+// CTranslate2 headers/import libs are available from lib/ctranslate2/ or the
+// CMake build cache. The runtime DLL is installed on demand by the selected
+// translation pack.
 #ifdef HAVE_CT2
 #include <ctranslate2/translator.h>
 #endif
@@ -28,6 +31,14 @@ Translator::Translator()
 Translator::~Translator()
 {
     Unload();
+}
+
+bool Translator::RuntimeAvailable()
+{
+    HMODULE h = LoadLibraryW(L"ctranslate2.dll");
+    if (!h) return false;
+    FreeLibrary(h);
+    return true;
 }
 
 bool Translator::Load(const std::string &model_dir)
@@ -111,16 +122,16 @@ struct Translator::Impl {};
 
 Translator::Translator()  : impl_(std::make_unique<Impl>()) {}
 Translator::~Translator() = default;
+bool Translator::RuntimeAvailable() { return false; }
 
 bool Translator::Load(const std::string &)
 {
     static bool logged = false;
     if (!logged) {
-        TH_LOG("[translator] CTranslate2 was not vendored at build time. The "
+        TH_LOG("[translator] CTranslate2 headers/import library were not available at build time. The "
                "translator host built in stub mode -- translation pass-through "
-               "only. Drop the prebuilt ctranslate2 Windows tree into "
-               "lib/ctranslate2/ (headers + lib + dll) and rebuild to enable "
-               "translation.");
+               "only. Reconfigure with WKOPENVR_TRANSLATOR_FETCH_CT2=ON or "
+               "provide lib/ctranslate2/ (headers + import library) and rebuild.");
         logged = true;
     }
     return false;

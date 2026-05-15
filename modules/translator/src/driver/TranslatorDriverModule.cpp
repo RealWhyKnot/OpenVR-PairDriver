@@ -13,6 +13,7 @@
 #include <objbase.h>
 #include <openvr_driver.h>
 
+#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -102,43 +103,24 @@ public:
             TR_LOG_DRV("[translator] host exe missing -- Translator feature will be inert until redeploy");
         }
 
-        // Probe the native DLLs the host will need before attempting spawn.
-        // This surfaces missing-DLL problems in the driver log even if the
-        // host crashes before its own logger opens.
+        // Check launch-time dependencies that must be staged beside the host.
+        // Optional inference runtimes are reported by the host status file
+        // after it starts, so they are not treated as spawn blockers here.
         {
-            struct { const wchar_t *dll; const char *role; } kProbes[] = {
-                { L"cudart64_13.dll",       "CUDA runtime (whisper CUDA)" },
-                { L"cublas64_13.dll",       "cuBLAS (whisper CUDA)" },
-                { L"cublasLt64_13.dll",     "cuBLASLt (whisper CUDA)" },
-                { L"nvcudart_hybrid64.dll", "CUDA hybrid runtime" },
-                { L"nvcuda.dll",            "CUDA driver DLL" },
-                { L"onnxruntime.dll",       "ONNX Runtime (Silero VAD)" },
-                { L"ctranslate2.dll",       "CTranslate2 (translation)" },
-            };
-            int found = 0, total = (int)(sizeof kProbes / sizeof kProbes[0]);
-            TR_LOG_DRV("[translator] driver init: probing native deps for host spawn");
-            for (const auto &p : kProbes) {
-                HMODULE h = LoadLibraryW(p.dll);
-                if (h) {
-                    wchar_t fullpath[MAX_PATH] = {};
-                    GetModuleFileNameW(h, fullpath, MAX_PATH);
-                    FreeLibrary(h);
-                    char narrow[MAX_PATH] = {};
-                    WideCharToMultiByte(CP_UTF8, 0, fullpath, -1,
-                        narrow, MAX_PATH, nullptr, nullptr);
-                    TR_LOG_DRV("[translator]   %-28ls: FOUND   %s  [%s]",
-                        p.dll, narrow, p.role);
-                    ++found;
-                } else {
-                    DWORD err = GetLastError();
-                    TR_LOG_DRV("[translator]   %-28ls: MISSING (err=%lu ERROR_MOD_NOT_FOUND)  [%s]",
-                        p.dll, (unsigned long)err, p.role);
-                }
+            std::string host_dir = host_path;
+            size_t slash = host_dir.find_last_of("\\/");
+            if (slash != std::string::npos) host_dir.resize(slash);
+            std::string openvr_dll = host_dir + "\\openvr_api.dll";
+            DWORD attr = GetFileAttributesA(openvr_dll.c_str());
+            bool openvr_on_disk = attr != INVALID_FILE_ATTRIBUTES &&
+                                  (attr & FILE_ATTRIBUTE_DIRECTORY) == 0;
+            TR_LOG_DRV("[translator] host launch dependency openvr_api.dll: %s (%s)",
+                openvr_on_disk ? "present" : "missing",
+                openvr_dll.c_str());
+            if (!openvr_on_disk) {
+                TR_LOG_DRV("[translator] missing openvr_api.dll beside host; "
+                    "CreateProcess may fail with STATUS_DLL_NOT_FOUND (0xC0000135)");
             }
-            TR_LOG_DRV("[translator] driver init: %d/%d native deps found; "
-                "if any MISSING entries above are required, spawn may fail with "
-                "STATUS_DLL_NOT_FOUND (0xC0000135) or delay-load code 0xCEE0DC7E",
-                found, total);
         }
 
         supervisor_ = std::make_unique<HostSupervisor>(host_path);
@@ -188,6 +170,14 @@ public:
             resp.type = protocol::ResponseTranslatorSupervisorStatus;
             resp.translatorSupervisorStatus.host_halted =
                 (supervisor_ && supervisor_->IsHalted()) ? 1 : 0;
+            resp.translatorSupervisorStatus.last_exit_code =
+                supervisor_ ? supervisor_->LastExitCode() : 0;
+            const std::string desc = supervisor_
+                ? supervisor_->LastExitDescription()
+                : std::string();
+            std::snprintf(resp.translatorSupervisorStatus.last_exit_description,
+                sizeof(resp.translatorSupervisorStatus.last_exit_description),
+                "%s", desc.c_str());
             return true;
         }
         default:

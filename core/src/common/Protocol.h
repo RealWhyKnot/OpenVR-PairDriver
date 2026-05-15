@@ -199,7 +199,12 @@ namespace protocol
 	// two legacy pipe-name prefixes from OpenVR-* to WKOpenVR-* for
 	// consistency; a full paired reinstall is required regardless due to the
 	// version bump.
-	const uint32_t Version = 16;
+	//
+	// v17 (2026-05-15): TranslatorSupervisorStatus grows last_exit_code
+	// (uint32_t) and last_exit_description (char[128]) so the overlay can
+	// surface a halted host's exit reason in the Translator tab instead of
+	// just showing the halt flag. _pad shrinks from 7 to 3 bytes.
+	const uint32_t Version = 17;
 
 	// Maximum length of a tracking-system-name string (e.g., "lighthouse", "oculus",
 	// "Pimax Crystal HMD"). 32 bytes is more than enough for known systems and keeps
@@ -759,7 +764,9 @@ namespace protocol
 		// 0 otherwise. When 1, the host will not be respawned until the
 		// driver module is restarted or Restart is explicitly requested.
 		uint8_t host_halted;
-		uint8_t _pad[7];
+		uint8_t _pad[3];
+		uint32_t last_exit_code;
+		char last_exit_description[128];
 	};
 
 	struct Request

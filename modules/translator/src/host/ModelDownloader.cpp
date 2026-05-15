@@ -23,7 +23,7 @@ std::string ModelDownloader::DefaultModelDir()
     }
     std::wstring root(raw);
     CoTaskMemFree(raw);
-    root += L"\\WKOpenVR\\models";
+    root += L"\\WKOpenVR\\translator\\models";
 
     // Convert to UTF-8.
     int n = WideCharToMultiByte(CP_UTF8, 0, root.c_str(), -1, nullptr, 0, nullptr, nullptr);

@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "packs": [
+    {
+      "id": "speech-base",
+      "label": "Speech pack: Whisper base",
+      "kind": "speech",
+      "licenses": [
+        "whisper.cpp MIT",
+        "Silero VAD MIT",
+        "ONNX Runtime MIT"
+      ],
+      "files": [
+        {
+          "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
+          "destination": "models/ggml-base.bin",
+          "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+          "size": 147951465
+        },
+        {
+          "url": "https://huggingface.co/onnx-community/silero-vad/resolve/main/onnx/model.onnx",
+          "destination": "models/silero_vad.onnx",
+          "sha256": "a4a068cd6cf1ea8355b84327595838ca748ec29a25bc91fc82e6c299ccdc5808",
+          "size": 2243022
+        },
+        {
+          "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.26.0/onnxruntime-win-x64-1.26.0.zip",
+          "destination": "cache/onnxruntime-win-x64-1.26.0.zip",
+          "sha256": "6ebe99b5564bf4d029b6e93eac9ff423682b6212eade769e9ca3f685eaf500b4",
+          "size": 75675381,
+          "extract": [
+            {
+              "from": "onnxruntime-win-x64-1.26.0/lib/onnxruntime.dll",
+              "to": "runtime/onnxruntime.dll"
+            },
+            {
+              "from": "onnxruntime-win-x64-1.26.0/LICENSE",
+              "to": "licenses/onnxruntime-LICENSE"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "translation-runtime-cpu",
+      "label": "Translation runtime: CTranslate2 CPU",
+      "kind": "runtime",
+      "licenses": [
+        "CTranslate2 MIT",
+        "Intel OpenMP runtime"
+      ],
+      "files": [
+        {
+          "url": "https://files.pythonhosted.org/packages/4a/f4/d23dbfb9c62cb642c114a30f05d753ba61d6ffbfd8a3a4012fe85a073bcb/ctranslate2-4.7.1-cp312-cp312-win_amd64.whl",
+          "destination": "cache/ctranslate2-4.7.1-cp312-cp312-win_amd64.whl",
+          "sha256": "d0f734dc3757118094663bdaaf713f5090c55c1927fb330a76bb8b84173940e8",
+          "size": 18844949,
+          "extract": [
+            {
+              "from": "ctranslate2/ctranslate2.dll",
+              "to": "runtime/ctranslate2.dll"
+            },
+            {
+              "from": "ctranslate2/libiomp5md.dll",
+              "to": "runtime/libiomp5md.dll"
+            },
+            {
+              "from": "ctranslate2-4.7.1.dist-info/METADATA",
+              "to": "licenses/ctranslate2-METADATA"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "translation-en-de",
+      "label": "Translation pack: English to German",
+      "kind": "translation",
+      "dependencies": [ "translation-runtime-cpu" ],
+      "licenses": [ "Helsinki-NLP/opus-mt-en-de model terms" ],
+      "hf_snapshot": {
+        "repo": "gaudi/opus-mt-en-de-ctranslate2",
+        "revision": "main",
+        "destination": "models/ct2-opus-mt-en-de"
+      }
+    },
+    {
+      "id": "translation-en-es",
+      "label": "Translation pack: English to Spanish",
+      "kind": "translation",
+      "dependencies": [ "translation-runtime-cpu" ],
+      "licenses": [ "Helsinki-NLP/opus-mt-en-es model terms" ],
+      "hf_snapshot": {
+        "repo": "gaudi/opus-mt-en-es-ctranslate2",
+        "revision": "main",
+        "destination": "models/ct2-opus-mt-en-es"
+      }
+    },
+    {
+      "id": "translation-en-fr",
+      "label": "Translation pack: English to French",
+      "kind": "translation",
+      "dependencies": [ "translation-runtime-cpu" ],
+      "licenses": [ "Helsinki-NLP/opus-mt-en-fr model terms" ],
+      "hf_snapshot": {
+        "repo": "gaudi/opus-mt-en-fr-ctranslate2",
+        "revision": "main",
+        "destination": "models/ct2-opus-mt-en-fr"
+      }
+    },
+    {
+      "id": "translation-en-ru",
+      "label": "Translation pack: English to Russian",
+      "kind": "translation",
+      "dependencies": [ "translation-runtime-cpu" ],
+      "licenses": [ "Helsinki-NLP/opus-mt-en-ru model terms" ],
+      "hf_snapshot": {
+        "repo": "gaudi/opus-mt-en-ru-ctranslate2",
+        "revision": "main",
+        "destination": "models/ct2-opus-mt-en-ru"
+      }
+    },
+    {
+      "id": "translation-en-zh",
+      "label": "Translation pack: English to Chinese",
+      "kind": "translation",
+      "dependencies": [ "translation-runtime-cpu" ],
+      "licenses": [ "Helsinki-NLP/opus-mt-en-zh model terms" ],
+      "hf_snapshot": {
+        "repo": "gaudi/opus-mt-en-zh-ctranslate2",
+        "revision": "main",
+        "destination": "models/ct2-opus-mt-en-zh"
+      }
+    }
+  ]
+}

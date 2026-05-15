@@ -50,7 +50,9 @@ void HostStatus::WritePath()
     }
     std::wstring root(raw);
     CoTaskMemFree(raw);
-    root += L"\\WKOpenVR\\translator";
+    root += L"\\WKOpenVR";
+    CreateDirectoryW(root.c_str(), nullptr);
+    root += L"\\translator";
     CreateDirectoryW(root.c_str(), nullptr);
     status_path_ = root + L"\\host_status.json";
 }
@@ -60,6 +62,11 @@ void HostStatus::SetMicName(const std::string &name) { mic_name_ = name; }
 void HostStatus::SetLastTranscript(const std::string &t) { last_transcript_ = t; }
 void HostStatus::SetLastTranslation(const std::string &t) { last_translation_ = t; }
 void HostStatus::SetLastError(const std::string &e) { last_error_ = e; }
+void HostStatus::SetSpeechPackInstalled(bool installed) noexcept { speech_pack_installed_ = installed; }
+void HostStatus::SetVadRuntimeAvailable(bool available) noexcept { vad_runtime_available_ = available; }
+void HostStatus::SetTranslationRuntimeAvailable(bool available) noexcept { translation_runtime_available_ = available; }
+void HostStatus::SetTranslationPackInstalled(bool installed) noexcept { translation_pack_installed_ = installed; }
+void HostStatus::SetActiveTranslationPair(const std::string &pair) { active_translation_pair_ = pair; }
 void HostStatus::IncrementPacketsSent() noexcept { ++packets_sent_; }
 
 void HostStatus::MaybeFlush()
@@ -89,6 +96,11 @@ void HostStatus::DoFlush()
     o << "  \"last_transcript\": \"" << EscapeJson(last_transcript_) << "\",\n";
     o << "  \"last_translation\": \"" << EscapeJson(last_translation_) << "\",\n";
     o << "  \"last_error\": \"" << EscapeJson(last_error_) << "\",\n";
+    o << "  \"speech_pack_installed\": " << (speech_pack_installed_ ? "true" : "false") << ",\n";
+    o << "  \"vad_runtime_available\": " << (vad_runtime_available_ ? "true" : "false") << ",\n";
+    o << "  \"translation_runtime_available\": " << (translation_runtime_available_ ? "true" : "false") << ",\n";
+    o << "  \"translation_pack_installed\": " << (translation_pack_installed_ ? "true" : "false") << ",\n";
+    o << "  \"active_translation_pair\": \"" << EscapeJson(active_translation_pair_) << "\",\n";
     o << "  \"packets_sent\": " << packets_sent_ << "\n";
     o << "}\n";
     std::string json = o.str();

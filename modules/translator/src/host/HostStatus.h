@@ -25,6 +25,11 @@ public:
     void SetLastTranscript(const std::string &t);
     void SetLastTranslation(const std::string &t);
     void SetLastError(const std::string &e);
+    void SetSpeechPackInstalled(bool installed) noexcept;
+    void SetVadRuntimeAvailable(bool available) noexcept;
+    void SetTranslationRuntimeAvailable(bool available) noexcept;
+    void SetTranslationPackInstalled(bool installed) noexcept;
+    void SetActiveTranslationPair(const std::string &pair);
     void IncrementPacketsSent() noexcept;
 
     // Write the JSON file to disk if at least 1 s has elapsed since the
@@ -41,6 +46,11 @@ private:
     std::string  last_transcript_;
     std::string  last_translation_;
     std::string  last_error_;
+    bool         speech_pack_installed_ = false;
+    bool         vad_runtime_available_ = false;
+    bool         translation_runtime_available_ = false;
+    bool         translation_pack_installed_ = false;
+    std::string  active_translation_pair_;
     long long    packets_sent_     = 0;
 
     void WritePath();

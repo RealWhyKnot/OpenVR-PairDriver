@@ -21,7 +21,7 @@ public:
                          std::string *error_out = nullptr);
 
     // Returns the default model storage directory:
-    //   %LocalAppDataLow%/WKOpenVR/models
+    //   %LocalAppDataLow%/WKOpenVR/translator/models
     // (forward slashes used in the comment to avoid a trailing-backslash
     // line-continuation that would eat the declaration below).
     static std::string DefaultModelDir();

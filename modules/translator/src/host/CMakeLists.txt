@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.15)
 
 # Translator host sidecar (WKOpenVR.TranslatorHost.exe).
-# Depends on: whisper.cpp (FetchContent), ONNX Runtime (vendored or prebuilt),
-# CTranslate2 (vendored or prebuilt), OpenVR, WinHTTP, WASAPI.
+# Depends on: whisper.cpp (FetchContent), optional ONNX Runtime import headers/libs,
+# optional CTranslate2 (vendored or prebuilt), OpenVR, WinHTTP, WASAPI.
 #
 # All three inference libraries are gated by CMake options so a contributor
-# without the prebuilt DLLs can still build the driver+overlay with stub stubs.
+# without the prebuilt DLLs can still build the driver+overlay with stubs.
 
 option(OPENVR_PAIR_BUILD_TRANSLATOR_HOST
     "Build the native translator host sidecar. Off lets a C++-only contributor build without the inference library dependencies."
@@ -48,10 +48,28 @@ FetchContent_MakeAvailable(whisper_cpp)
 
 # ---------------------------------------------------------------------------
 # ONNX Runtime (prebuilt DLL -- Microsoft, MIT)
-# Location: lib/onnxruntime/ with onnxruntime.lib and onnxruntime.dll
-# If not present the build silently stubs out Silero VAD.
+# Build uses headers/import library from lib/onnxruntime when present, or from
+# a downloaded build-cache copy. The runtime DLL itself is delay-loaded and is
+# installed later by the translator speech pack, so the default installer stays
+# small and the host still starts without the pack.
 # ---------------------------------------------------------------------------
 set(ORT_ROOT "${CMAKE_SOURCE_DIR}/lib/onnxruntime")
+option(WKOPENVR_TRANSLATOR_FETCH_ORT
+    "Fetch ONNX Runtime headers/import library into the build tree for Silero VAD support."
+    ON)
+
+if(NOT EXISTS "${ORT_ROOT}/include/onnxruntime_c_api.h" AND WKOPENVR_TRANSLATOR_FETCH_ORT)
+    FetchContent_Declare(
+        onnxruntime_win_x64
+        URL "https://github.com/microsoft/onnxruntime/releases/download/v1.26.0/onnxruntime-win-x64-1.26.0.zip"
+        URL_HASH SHA256=6ebe99b5564bf4d029b6e93eac9ff423682b6212eade769e9ca3f685eaf500b4)
+    FetchContent_GetProperties(onnxruntime_win_x64)
+    if(NOT onnxruntime_win_x64_POPULATED)
+        FetchContent_Populate(onnxruntime_win_x64)
+    endif()
+    set(ORT_ROOT "${onnxruntime_win_x64_SOURCE_DIR}")
+endif()
+
 if(EXISTS "${ORT_ROOT}/include/onnxruntime_c_api.h")
     set(HAVE_ORT ON)
     message(STATUS "ONNX Runtime found at ${ORT_ROOT}")
@@ -61,10 +79,108 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# CTranslate2 (prebuilt -- OpenNMT, MIT)
-# Location: lib/ctranslate2/ with ctranslate2.lib and ctranslate2.dll
+# CTranslate2 (OpenNMT, MIT)
+# Build uses headers/import library from lib/ctranslate2 when present, or a
+# generated build-cache import library from the official Windows wheel. The
+# runtime DLL itself is installed later by the selected translation pack.
 # ---------------------------------------------------------------------------
 set(CT2_ROOT "${CMAKE_SOURCE_DIR}/lib/ctranslate2")
+option(WKOPENVR_TRANSLATOR_FETCH_CT2
+    "Fetch CTranslate2 headers/import library into the build tree for translation support."
+    ON)
+
+if(NOT EXISTS "${CT2_ROOT}/include/ctranslate2/translator.h" AND
+   WKOPENVR_TRANSLATOR_FETCH_CT2 AND MSVC)
+    FetchContent_Declare(
+        ctranslate2_source
+        GIT_REPOSITORY https://github.com/OpenNMT/CTranslate2.git
+        GIT_TAG        v4.7.1
+        GIT_SHALLOW    TRUE)
+    FetchContent_GetProperties(ctranslate2_source)
+    if(NOT ctranslate2_source_POPULATED)
+        FetchContent_Populate(ctranslate2_source)
+    endif()
+
+    set(CT2_WHEEL_URL
+        "https://files.pythonhosted.org/packages/4a/f4/d23dbfb9c62cb642c114a30f05d753ba61d6ffbfd8a3a4012fe85a073bcb/ctranslate2-4.7.1-cp312-cp312-win_amd64.whl")
+    set(CT2_WHEEL_SHA256
+        "d0f734dc3757118094663bdaaf713f5090c55c1927fb330a76bb8b84173940e8")
+    set(CT2_WHEEL_ROOT "${CMAKE_BINARY_DIR}/_deps/ctranslate2_wheel")
+    set(CT2_WHEEL_PATH "${CT2_WHEEL_ROOT}/ctranslate2-4.7.1-cp312-cp312-win_amd64.whl")
+    set(CT2_WHEEL_DLL "${CT2_WHEEL_ROOT}/ctranslate2/ctranslate2.dll")
+    file(MAKE_DIRECTORY "${CT2_WHEEL_ROOT}")
+    if(NOT EXISTS "${CT2_WHEEL_DLL}")
+        if(NOT EXISTS "${CT2_WHEEL_PATH}")
+            file(DOWNLOAD "${CT2_WHEEL_URL}" "${CT2_WHEEL_PATH}"
+                EXPECTED_HASH "SHA256=${CT2_WHEEL_SHA256}"
+                STATUS CT2_DOWNLOAD_STATUS
+                SHOW_PROGRESS)
+            list(GET CT2_DOWNLOAD_STATUS 0 CT2_DOWNLOAD_CODE)
+            list(GET CT2_DOWNLOAD_STATUS 1 CT2_DOWNLOAD_MESSAGE)
+            if(NOT CT2_DOWNLOAD_CODE EQUAL 0)
+                message(WARNING "CTranslate2 wheel download failed: ${CT2_DOWNLOAD_MESSAGE}")
+            endif()
+        endif()
+        if(EXISTS "${CT2_WHEEL_PATH}")
+            execute_process(
+                COMMAND ${CMAKE_COMMAND} -E tar xf "${CT2_WHEEL_PATH}"
+                WORKING_DIRECTORY "${CT2_WHEEL_ROOT}"
+                RESULT_VARIABLE CT2_EXTRACT_RESULT)
+            if(NOT CT2_EXTRACT_RESULT EQUAL 0)
+                message(WARNING "CTranslate2 wheel extraction failed: ${CT2_EXTRACT_RESULT}")
+            endif()
+        endif()
+    endif()
+
+    set(CT2_DEV_ROOT "${CMAKE_BINARY_DIR}/translator-ct2-dev")
+    set(CT2_GEN_LIB "${CT2_DEV_ROOT}/lib/ctranslate2.lib")
+    if(EXISTS "${ctranslate2_source_SOURCE_DIR}/include/ctranslate2/translator.h" AND
+       EXISTS "${CT2_WHEEL_DLL}")
+        file(MAKE_DIRECTORY
+            "${CT2_DEV_ROOT}/include"
+            "${CT2_DEV_ROOT}/bin"
+            "${CT2_DEV_ROOT}/lib")
+        file(COPY "${ctranslate2_source_SOURCE_DIR}/include/"
+            DESTINATION "${CT2_DEV_ROOT}/include")
+        file(COPY "${CT2_WHEEL_DLL}"
+            DESTINATION "${CT2_DEV_ROOT}/bin")
+
+        if(NOT EXISTS "${CT2_GEN_LIB}")
+            set(CT2_DEF "${CT2_DEV_ROOT}/lib/ctranslate2.def")
+            execute_process(
+                COMMAND "${CMAKE_LINKER}" /dump /exports "${CT2_WHEEL_DLL}"
+                OUTPUT_VARIABLE CT2_EXPORTS
+                RESULT_VARIABLE CT2_DUMP_RESULT)
+            if(CT2_DUMP_RESULT EQUAL 0)
+                string(REGEX MATCHALL
+                    "\n[ \t]*[0-9]+[ \t]+[0-9A-Fa-f]+[ \t]+[0-9A-Fa-f]+[ \t]+[^ \t\r\n]+"
+                    CT2_EXPORT_LINES "${CT2_EXPORTS}")
+                file(WRITE "${CT2_DEF}" "LIBRARY ctranslate2.dll\nEXPORTS\n")
+                foreach(CT2_EXPORT_LINE IN LISTS CT2_EXPORT_LINES)
+                    string(REGEX REPLACE
+                        "^[ \t\r\n]*[0-9]+[ \t]+[0-9A-Fa-f]+[ \t]+[0-9A-Fa-f]+[ \t]+([^ \t\r\n]+).*$"
+                        "\\1"
+                        CT2_SYMBOL
+                        "${CT2_EXPORT_LINE}")
+                    file(APPEND "${CT2_DEF}" "  ${CT2_SYMBOL}\n")
+                endforeach()
+                execute_process(
+                    COMMAND "${CMAKE_AR}" "/def:${CT2_DEF}" /machine:x64 "/out:${CT2_GEN_LIB}"
+                    RESULT_VARIABLE CT2_LIB_RESULT)
+                if(NOT CT2_LIB_RESULT EQUAL 0)
+                    message(WARNING "CTranslate2 import library generation failed: ${CT2_LIB_RESULT}")
+                endif()
+            else()
+                message(WARNING "Could not read exports from CTranslate2 DLL: ${CT2_DUMP_RESULT}")
+            endif()
+        endif()
+
+        if(EXISTS "${CT2_GEN_LIB}")
+            set(CT2_ROOT "${CT2_DEV_ROOT}")
+        endif()
+    endif()
+endif()
+
 if(EXISTS "${CT2_ROOT}/include/ctranslate2/translator.h")
     set(HAVE_CT2 ON)
     message(STATUS "CTranslate2 found at ${CT2_ROOT}")
@@ -116,6 +232,10 @@ set_target_properties(WKOpenVRTranslatorHost PROPERTIES
 target_compile_definitions(WKOpenVRTranslatorHost PRIVATE
     NOMINMAX
     UNICODE)
+if(WKOPENVR_TRANSLATOR_CUDA)
+    target_compile_definitions(WKOpenVRTranslatorHost PRIVATE
+        WKOPENVR_TRANSLATOR_CUDA_ENABLED=1)
+endif()
 
 target_compile_features(WKOpenVRTranslatorHost PRIVATE cxx_std_17)
 
@@ -124,19 +244,23 @@ target_compile_features(WKOpenVRTranslatorHost PRIVATE cxx_std_17)
 if(MSVC)
     target_link_options(WKOpenVRTranslatorHost PRIVATE /ENTRY:mainCRTStartup)
 
-    # Delay-load the CUDA runtime DLLs so the host process can reach main()
-    # even when the CUDA toolkit is not installed. Missing DLLs are caught by
-    # the __pfnDliFailureHook2 in main.cpp which logs the offending name and
-    # exits with code 0xCEE0DC00 + (GetLastError() & 0xFF) so the supervisor
-    # can distinguish this class of failure from generic crashes.
+    # Delay-load optional inference DLLs so the host can still report setup
+    # status when a runtime pack has not been installed yet.
+    set(TRANSLATOR_DELAYLOAD_DLLS
+        /DELAYLOAD:onnxruntime.dll
+        /DELAYLOAD:ctranslate2.dll)
+    if(WKOPENVR_TRANSLATOR_CUDA)
+        list(APPEND TRANSLATOR_DELAYLOAD_DLLS
+            /DELAYLOAD:cublas64_13.dll
+            /DELAYLOAD:cublasLt64_13.dll
+            /DELAYLOAD:cudart64_13.dll
+            /DELAYLOAD:nvcudart_hybrid64.dll
+            /DELAYLOAD:nvcuda.dll)
+    endif()
     target_link_options(WKOpenVRTranslatorHost PRIVATE
         /NODEFAULTLIB:LIBCMT
         /IGNORE:4199
-        /DELAYLOAD:cublas64_13.dll
-        /DELAYLOAD:cublasLt64_13.dll
-        /DELAYLOAD:cudart64_13.dll
-        /DELAYLOAD:nvcudart_hybrid64.dll
-        /DELAYLOAD:nvcuda.dll)
+        ${TRANSLATOR_DELAYLOAD_DLLS})
     target_link_libraries(WKOpenVRTranslatorHost PRIVATE delayimp)
 endif()
 
@@ -188,6 +312,9 @@ add_custom_command(TARGET WKOpenVRTranslatorHost POST_BUILD
         "$<TARGET_FILE:WKOpenVRTranslatorHost>"
         "${TRANSLATOR_HOST_STAGE_DIR}/WKOpenVR.TranslatorHost.exe"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${OPENVR_LIB_DIR}/bin/win64/openvr_api.dll"
+        "${TRANSLATOR_HOST_STAGE_DIR}/openvr_api.dll"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_LIST_DIR}/actions.json"
         "${TRANSLATOR_HOST_STAGE_DIR}/actions.json"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -199,6 +326,12 @@ add_custom_command(TARGET WKOpenVRTranslatorHost POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_LIST_DIR}/bindings_vive.json"
         "${TRANSLATOR_HOST_STAGE_DIR}/bindings_vive.json"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_LIST_DIR}/resources/translator-packs.json"
+        "${TRANSLATOR_HOST_STAGE_DIR}/resources/translator-packs.json"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_LIST_DIR}/resources/install-translator-pack.ps1"
+        "${TRANSLATOR_HOST_STAGE_DIR}/resources/install-translator-pack.ps1"
     COMMENT "Staging WKOpenVR.TranslatorHost")
 
 # Copy silero_vad.onnx if it exists in the source tree.

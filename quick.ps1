@@ -594,7 +594,10 @@ $required = @(
 	@("default.vrsettings", (Join-Path $driverSourceDir "resources\settings\default.vrsettings")),
 	@("driver_wkopenvr.dll", (Join-Path $driverSourceDir "bin\win64\driver_wkopenvr.dll")),
 	@("OpenVRPair.FaceModuleHost.exe", (Join-Path $driverSourceDir "resources\facetracking\host\OpenVRPair.FaceModuleHost.exe")),
-	@("WKOpenVR.TranslatorHost.exe", (Join-Path $driverSourceDir "resources\translator\host\WKOpenVR.TranslatorHost.exe"))
+	@("WKOpenVR.TranslatorHost.exe", (Join-Path $driverSourceDir "resources\translator\host\WKOpenVR.TranslatorHost.exe")),
+	@("translator host openvr_api.dll", (Join-Path $driverSourceDir "resources\translator\host\openvr_api.dll")),
+	@("translator-packs.json", (Join-Path $driverSourceDir "resources\translator\host\resources\translator-packs.json")),
+	@("install-translator-pack.ps1", (Join-Path $driverSourceDir "resources\translator\host\resources\install-translator-pack.ps1"))
 )
 
 Write-Step "Checking artifacts"
@@ -614,7 +617,6 @@ $plan = [ordered]@{
 	OverlayFiles          = @(
 		[ordered]@{ Label = "WKOpenVR.exe";       Source = $srcExe;        Destination = (Join-Path $InstallDir "WKOpenVR.exe") },
 		[ordered]@{ Label = "openvr_api.dll";    Source = $srcOpenVR;     Destination = (Join-Path $InstallDir "openvr_api.dll") },
-		[ordered]@{ Label = "discord-rpc.dll";   Source = $srcDiscordRpc; Destination = (Join-Path $InstallDir "discord-rpc.dll") },
 		[ordered]@{ Label = "manifest.vrmanifest"; Source = $srcManifest; Destination = (Join-Path $InstallDir "manifest.vrmanifest") },
 		[ordered]@{ Label = "dashboard_icon.png"; Source = $srcIcon;      Destination = (Join-Path $InstallDir "dashboard_icon.png") }
 	)

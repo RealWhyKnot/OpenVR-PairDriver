@@ -8,6 +8,9 @@
 #include <string>
 #include <vector>
 
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
 // ONNX Runtime is vendored under lib/onnxruntime/. When it is absent the
 // CMakeLists builds the host without HAVE_ORT defined; the whole
 // implementation collapses to stubs that log a clear "not vendored" error
@@ -42,6 +45,14 @@ SileroVad::~SileroVad()
         ort_api_->ReleaseEnv(env_);
         env_ = nullptr;
     }
+}
+
+bool SileroVad::RuntimeAvailable()
+{
+    HMODULE h = LoadLibraryW(L"onnxruntime.dll");
+    if (!h) return false;
+    FreeLibrary(h);
+    return true;
 }
 
 bool SileroVad::Load(const std::string &model_path)
@@ -187,6 +198,7 @@ float SileroVad::Feed(const float *samples, size_t count)
 // looking at the log how to get the real implementation.
 SileroVad::SileroVad()  = default;
 SileroVad::~SileroVad() = default;
+bool SileroVad::RuntimeAvailable() { return false; }
 bool SileroVad::Load(const std::string &)
 {
     static bool logged = false;

@@ -9,9 +9,11 @@
 #include <imgui/imgui.h>
 
 #include <algorithm>
+#include <cfloat>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -132,6 +134,142 @@ static const char *StateLabel(int state)
     }
 }
 
+static bool IsSetupStatus(const std::string &message)
+{
+    return message == "Speech pack not installed." ||
+           message == "Whisper model not installed." ||
+           message == "Speech VAD model not installed." ||
+           message == "Speech detection runtime not installed." ||
+           message == "Translation runtime not installed." ||
+           message.rfind("Translation pack ", 0) == 0;
+}
+
+static void PackActionTooltip(const char *text)
+{
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("%s", text);
+    }
+}
+
+static void DrawPackActionButton(
+    const char *label,
+    const char *id,
+    bool disabled,
+    const char *tooltip,
+    const std::function<void()> &action)
+{
+    openvr_pair::overlay::ui::DisabledSection gate(disabled, "A translator pack action is already running.");
+    std::string button = std::string(label) + "##" + id;
+    if (ImGui::SmallButton(button.c_str())) {
+        action();
+    }
+    if (disabled) {
+        gate.AttachReasonTooltip();
+    } else {
+        PackActionTooltip(tooltip);
+    }
+}
+
+static const char *SpeechPackStatus(const translator::HostStatusSnapshot &snap)
+{
+    if (!snap.valid) return "Unknown";
+    if (!snap.speech_pack_installed) return "Not installed";
+    if (!snap.vad_runtime_available) return "Runtime missing";
+    return "Installed";
+}
+
+static const char *TranslationPackStatus(
+    const translator::HostStatusSnapshot &snap,
+    const std::string &pack_id)
+{
+    if (pack_id.empty()) return "Unavailable";
+    if (!snap.valid) return "Unknown";
+
+    constexpr const char *kPrefix = "translation-";
+    std::string expected_pair = pack_id;
+    if (expected_pair.rfind(kPrefix, 0) == 0) {
+        expected_pair = expected_pair.substr(strlen(kPrefix));
+    }
+    if (!expected_pair.empty() && !snap.active_translation_pair.empty() &&
+        snap.active_translation_pair != expected_pair) {
+        return "Updating";
+    }
+    if (!snap.translation_pack_installed) return "Not installed";
+    if (!snap.translation_runtime_available) return "Runtime missing";
+    return "Installed";
+}
+
+static void DrawSetup(TranslatorPlugin &plugin, const translator::HostStatusSnapshot &snap)
+{
+    openvr_pair::overlay::ui::DrawSectionHeading("Setup");
+
+    const bool busy = plugin.IsPackActionRunning();
+    const std::string translation_pack = plugin.CurrentTranslationPackId();
+
+    if (ImGui::BeginTable("translator_setup", 4,
+            ImGuiTableFlags_BordersOuter |
+            ImGuiTableFlags_RowBg |
+            ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("Pack", ImGuiTableColumnFlags_WidthStretch, 2.0f);
+        ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthStretch, 1.2f);
+        ImGui::TableSetupColumn("Install", ImGuiTableColumnFlags_WidthFixed, 98.0f);
+        ImGui::TableSetupColumn("Remove", ImGuiTableColumnFlags_WidthFixed, 98.0f);
+        ImGui::TableHeadersRow();
+
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted("Speech");
+        openvr_pair::overlay::ui::TooltipOnHover(
+            "Whisper base model, Silero VAD model, and ONNX Runtime.\n"
+            "Stored under %LocalAppDataLow%\\WKOpenVR\\translator.");
+        ImGui::TableSetColumnIndex(1);
+        ImGui::TextUnformatted(SpeechPackStatus(snap));
+        ImGui::TableSetColumnIndex(2);
+        DrawPackActionButton("Install", "speech_install", busy,
+            "Download and verify the speech pack.", [&]() { plugin.InstallSpeechPack(); });
+        ImGui::TableSetColumnIndex(3);
+        DrawPackActionButton("Uninstall", "speech_uninstall", busy,
+            "Remove speech models and runtime files from this PC.", [&]() { plugin.UninstallSpeechPack(); });
+
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted("Translation");
+        openvr_pair::overlay::ui::TooltipOnHover(
+            "CTranslate2 CPU runtime plus the model for the selected language pair.\n"
+            "Runtime files are removed when the last translation pack is uninstalled.");
+        ImGui::TableSetColumnIndex(1);
+        if (plugin.GetTargetLang().empty()) {
+            ImGui::TextDisabled("Transcribe only");
+        } else if (translation_pack.empty()) {
+            ImGui::TextDisabled("No pack");
+            openvr_pair::overlay::ui::TooltipOnHover(
+                "Managed packs currently cover English to German, Spanish, French, Russian, and Chinese.");
+        } else {
+            ImGui::TextUnformatted(TranslationPackStatus(snap, translation_pack));
+        }
+        ImGui::TableSetColumnIndex(2);
+        {
+            const bool disabled = busy || translation_pack.empty();
+            DrawPackActionButton("Install", "translation_install", disabled,
+                "Download and verify the selected translation pack.",
+                [&]() { plugin.InstallTranslationPack(); });
+        }
+        ImGui::TableSetColumnIndex(3);
+        {
+            const bool disabled = busy || translation_pack.empty();
+            DrawPackActionButton("Uninstall", "translation_uninstall", disabled,
+                "Remove this language-pair model. Shared runtime files stay until no installed translation pack needs them.",
+                [&]() { plugin.UninstallTranslationPack(); });
+        }
+
+        ImGui::EndTable();
+    }
+
+    if (!plugin.PackActionStatus().empty()) {
+        ImGui::TextDisabled("%s", plugin.PackActionStatus().c_str());
+    }
+}
+
 void DrawTranslatorTab(TranslatorPlugin &plugin)
 {
     const auto &snap = plugin.HostStatus().Snapshot();
@@ -182,25 +320,28 @@ void DrawTranslatorTab(TranslatorPlugin &plugin)
             ImGui::Text("Transcript: %s", snap.last_transcript.c_str());
         if (!snap.last_translation.empty())
             ImGui::Text("Translation: %s", snap.last_translation.c_str());
-        if (!snap.last_error.empty())
-            openvr_pair::overlay::ui::DrawErrorBanner("Host error", snap.last_error.c_str());
+        if (!snap.last_error.empty()) {
+            if (IsSetupStatus(snap.last_error)) {
+                openvr_pair::overlay::ui::DrawWaitingBanner(snap.last_error.c_str());
+            } else {
+                openvr_pair::overlay::ui::DrawErrorBanner("Host error", snap.last_error.c_str());
+            }
+        }
     } else if (snap.host_halted) {
+        char detail[512];
+        if (!snap.last_exit_description.empty()) {
+            std::snprintf(detail, sizeof(detail),
+                "%s\nExit code: 0x%08X. Open diagnostics for the latest host log.",
+                snap.last_exit_description.c_str(),
+                (unsigned)snap.last_exit_code);
+        } else {
+            std::snprintf(detail, sizeof(detail),
+                "The host exited repeatedly before reporting status.\n"
+                "Open diagnostics for the latest host log and crash note.");
+        }
         openvr_pair::overlay::ui::DrawErrorBanner(
             "Translator host failed to start",
-            "The host crashed or exited immediately on each of 5 consecutive\n"
-            "launch attempts. The most likely cause is missing native runtime DLLs.\n"
-            "\n"
-            "CUDA runtime (if built with CUDA support):\n"
-            "  Install NVIDIA CUDA Toolkit v13.2 and ensure its bin\\x64 folder\n"
-            "  is on the system PATH, or rebuild with -DWKOPENVR_TRANSLATOR_CUDA=OFF.\n"
-            "\n"
-            "Inference libraries (ONNX Runtime / CTranslate2):\n"
-            "  These were not vendored in this build. Without them the host starts\n"
-            "  but VAD and translation are inert. If the host itself will not launch,\n"
-            "  check that all DLLs from lib/onnxruntime and lib/ctranslate2 are\n"
-            "  alongside WKOpenVR.TranslatorHost.exe in the install directory.\n"
-            "\n"
-            "Use the Restart host button below to retry after fixing the missing files.");
+            detail);
 
         // Diagnostics collapsible: shows log tail + crash dump on demand.
         // The driver translator log contains the DLL probe lines from Init().
@@ -234,6 +375,8 @@ void DrawTranslatorTab(TranslatorPlugin &plugin)
         ImGui::TextDisabled("Host not running");
     }
 
+    ImGui::Separator();
+    DrawSetup(plugin, snap);
     ImGui::Separator();
 
     // -----------------------------------------------------------------------
@@ -363,7 +506,7 @@ void DrawTranslatorTab(TranslatorPlugin &plugin)
         plugin.SendRestartHost();
         // Optimistically clear the halted indicator; PollSupervisorStatus will
         // confirm the new state on the next tick.
-        plugin.HostStatus().SetHostHalted(false);
+        plugin.HostStatus().SetSupervisorStatus(false, 0, {});
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Terminate and respawn the translator sidecar process.\nUse when the host appears stuck or crashed.");

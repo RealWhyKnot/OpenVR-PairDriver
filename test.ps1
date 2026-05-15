@@ -56,5 +56,16 @@ foreach ($test in $tests) {
 	}
 }
 
+$translatorHost = Join-Path $PSScriptRoot "build\driver_wkopenvr\resources\translator\host\WKOpenVR.TranslatorHost.exe"
+if (-not (Test-Path -LiteralPath $translatorHost)) {
+	throw "Translator host missing at $translatorHost"
+}
+Write-Host ""
+Write-Host "== Running WKOpenVR.TranslatorHost.exe --self-test =="
+Invoke-NativeQuiet { & $translatorHost --self-test }
+if ($LASTEXITCODE -ne 0) {
+	throw "Translator host self-test failed (exit $LASTEXITCODE)"
+}
+
 Write-Host ""
 Write-Host ("All {0} test binaries passed." -f $tests.Count)

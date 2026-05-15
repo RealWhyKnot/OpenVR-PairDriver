@@ -19,7 +19,7 @@ class TranslatorPlugin final : public openvr_pair::overlay::FeaturePlugin
 public:
     TranslatorPlugin();
 
-    const char *Name()         const override { return "Translator and Transcriber"; }
+    const char *Name()         const override { return "Translator"; }
     const char *FlagFileName() const override { return "enable_translator.flag"; }
     const char *PipeName()     const override { return OPENVR_PAIRDRIVER_TRANSLATOR_PIPE_NAME; }
 
@@ -34,6 +34,15 @@ public:
 
     // Send a restart-host request to the driver.
     void SendRestartHost();
+
+    void InstallSpeechPack();
+    void UninstallSpeechPack();
+    void InstallTranslationPack();
+    void UninstallTranslationPack();
+    bool IsPackActionRunning() const { return pack_process_ != nullptr; }
+    const std::string &PackActionStatus() const { return pack_status_; }
+    std::string CurrentTranslationPackId() const;
+    bool HasManagedTranslationPack() const;
 
     // Query the driver supervisor state and propagate host_halted to the
     // host status snapshot so the tab can show appropriate guidance.
@@ -72,10 +81,17 @@ private:
     bool        notify_sound_        = false;
 
     std::string last_error_;
+    std::string pack_status_;
+    void       *pack_process_ = nullptr;
+    std::wstring pack_script_path_;
+    std::wstring pack_manifest_path_;
     uint64_t    observed_ipc_generation_ = 0;
 
     std::chrono::steady_clock::time_point last_connection_check_{};
 
     void MaintainDriverConnection();
     void DrawStatusBanner();
+    void RefreshPackResourcePaths(const openvr_pair::overlay::ShellContext &ctx);
+    void StartPackAction(const std::string &pack_id, bool uninstall);
+    void PollPackAction();
 };

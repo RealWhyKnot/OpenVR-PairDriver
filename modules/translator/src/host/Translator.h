@@ -15,6 +15,8 @@ public:
     Translator();
     ~Translator();
 
+    static bool RuntimeAvailable();
+
     // Load model directory. Returns false on failure.
     bool Load(const std::string &model_dir);
 

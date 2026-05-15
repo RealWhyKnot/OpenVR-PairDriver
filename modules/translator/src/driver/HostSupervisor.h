@@ -30,6 +30,8 @@ public:
     // True if the circuit breaker has tripped (5 consecutive fast exits).
     // Cleared by Stop() / Start() so a redeployment attempt is not blocked.
     bool IsHalted() const;
+    uint32_t LastExitCode() const;
+    std::string LastExitDescription() const;
 
 private:
     std::string       host_exe_path_;
@@ -48,6 +50,8 @@ private:
     static constexpr int  kCircuitBreakerThreshold  = 5;
     int  consecutive_fast_exits_ = 0;
     bool halted_                 = false;
+    uint32_t last_exit_code_     = 0;
+    std::string last_exit_description_;
 
     // True if the host's control pipe is responsive within timeout_ms.
     bool CanConnectToHost(int timeout_ms) const;

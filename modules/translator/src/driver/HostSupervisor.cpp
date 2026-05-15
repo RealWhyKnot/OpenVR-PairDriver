@@ -17,7 +17,7 @@ static const char *DescribeExitCode(DWORD code)
 {
     // Windows loader failures.
     if (code == 0xC0000135) return "STATUS_DLL_NOT_FOUND -- a hard-import DLL is missing; "
-        "check CUDA toolkit PATH or rebuild with -DWKOPENVR_TRANSLATOR_CUDA=OFF";
+        "check openvr_api.dll and VC runtime staging beside WKOpenVR.TranslatorHost.exe";
     if (code == 0xC0000005) return "STATUS_ACCESS_VIOLATION -- crash inside native lib; "
         "see translator_host_crash_<pid>.txt in %LocalAppDataLow%\\WKOpenVR\\Logs";
     if (code == 0xC000007B) return "STATUS_INVALID_IMAGE_FORMAT -- 32/64-bit mismatch";
@@ -29,11 +29,10 @@ static const char *DescribeExitCode(DWORD code)
         DWORD winerr = code & 0xFF;
         if (winerr == 126) {
             return "delay-load failed: ERROR_MOD_NOT_FOUND (126) -- "
-                "CUDA runtime DLL not on PATH; install CUDA Toolkit v13.2 or "
-                "rebuild with -DWKOPENVR_TRANSLATOR_CUDA=OFF; "
+                "optional translator runtime DLL missing; install the relevant Translator pack; "
                 "see translator_host_crash_<pid>.txt for the exact DLL name";
         }
-        return "delay-load failed -- CUDA DLL not found; "
+        return "delay-load failed -- optional translator runtime DLL missing; "
             "see translator_host_crash_<pid>.txt for details";
     }
 
@@ -114,6 +113,18 @@ bool HostSupervisor::IsHalted() const
 {
     std::lock_guard<std::mutex> lk(process_mutex_);
     return halted_;
+}
+
+uint32_t HostSupervisor::LastExitCode() const
+{
+    std::lock_guard<std::mutex> lk(process_mutex_);
+    return last_exit_code_;
+}
+
+std::string HostSupervisor::LastExitDescription() const
+{
+    std::lock_guard<std::mutex> lk(process_mutex_);
+    return last_exit_description_;
 }
 
 // -----------------------------------------------------------------------
@@ -291,6 +302,11 @@ void HostSupervisor::MonitorLoop()
             TR_LOG_DRV("[translator-supervisor] host process exited "
                 "code=0x%08lx uptime_ms=%lld -- %s",
                 (unsigned long)code, uptime_ms, DescribeExitCode(code));
+            {
+                std::lock_guard<std::mutex> lk(process_mutex_);
+                last_exit_code_ = code;
+                last_exit_description_ = DescribeExitCode(code);
+            }
 
             bool should_halt = false;
             if (!IsCleanSingletonExit(code)) {

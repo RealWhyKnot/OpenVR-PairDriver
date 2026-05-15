@@ -23,6 +23,8 @@ public:
     SileroVad();
     ~SileroVad();
 
+    static bool RuntimeAvailable();
+
     // Load the ONNX model at `model_path`. Returns false on failure.
     bool Load(const std::string &model_path);
 

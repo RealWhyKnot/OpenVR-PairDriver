@@ -11,7 +11,11 @@ param(
 	# Produce a release zip + per-file manifest TSV under release/. Required
 	# by .github/workflows/release.yml; set automatically by it. A local dev
 	# build can pass this too if you want to test the packaging step.
-	[switch]$Release
+	[switch]$Release,
+
+	# Developer opt-in for the CUDA whisper backend. Public/local builds force
+	# CPU-only unless this switch or WKOPENVR_TRANSLATOR_CUDA=ON is explicit.
+	[switch]$TranslatorCuda
 )
 
 $ErrorActionPreference = "Stop"
@@ -157,7 +161,19 @@ function Invoke-NativeQuiet {
 
 if (-not $SkipConfigure) {
 	Clear-StaleCMakeGeneratorInstance -BuildDir "build"
-	Invoke-NativeQuiet { cmake -S . -B build -A x64 "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" -Wno-dev }
+	$translatorCudaValue = "OFF"
+	if ($TranslatorCuda -or $env:WKOPENVR_TRANSLATOR_CUDA -eq "ON") {
+		$translatorCudaValue = "ON"
+	}
+	$configureArgs = @(
+		"-S", ".",
+		"-B", "build",
+		"-A", "x64",
+		"-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+		"-DWKOPENVR_TRANSLATOR_CUDA=$translatorCudaValue",
+		"-Wno-dev"
+	)
+	Invoke-NativeQuiet { cmake @configureArgs }
 	if ($LASTEXITCODE -ne 0) { throw "CMake configure failed (exit $LASTEXITCODE)" }
 }
 
