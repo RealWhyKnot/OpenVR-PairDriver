@@ -2,17 +2,119 @@
 #include "TranslatorPlugin.h"
 #include "HostStatusPoller.h"
 #include "UiHelpers.h"
+#include "Win32Paths.h"
 
+// Win32Paths.h pulls in windows.h with WIN32_LEAN_AND_MEAN already set.
+// imgui comes after to avoid any Windows header order conflicts.
 #include <imgui/imgui.h>
 
+#include <algorithm>
+#include <chrono>
 #include <cstring>
+#include <fstream>
+#include <sstream>
 #include <string>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // Consent dialog state (per-session; persisted in the plugin's profile).
 // ---------------------------------------------------------------------------
 
 static bool s_consent_pending = false;
+
+// ---------------------------------------------------------------------------
+// Diagnostics: read last N lines from the newest translator log file.
+// Rate-limited to at most once per 2 s to avoid constant directory scans.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct DiagState
+{
+    bool   expanded     = false;
+    std::string log_tail;           // last 20 lines, joined with \n
+    std::chrono::steady_clock::time_point last_refresh{};
+    static constexpr int kLines = 20;
+    static constexpr auto kRefreshInterval = std::chrono::seconds(2);
+};
+
+static DiagState s_diag;
+
+// Find the newest file in dir matching prefix (wide strings).
+static std::wstring FindNewestLogFile(const std::wstring &dir,
+                                      const std::wstring &prefix)
+{
+    std::wstring pat = dir + L"\\" + prefix + L"*";
+    WIN32_FIND_DATAW fd{};
+    HANDLE h = FindFirstFileW(pat.c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return {};
+
+    std::wstring best_name;
+    FILETIME     best_ft{};
+    do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        // Compare by last-write time.
+        if (best_name.empty() ||
+            CompareFileTime(&fd.ftLastWriteTime, &best_ft) > 0) {
+            best_name = fd.cFileName;
+            best_ft   = fd.ftLastWriteTime;
+        }
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+
+    if (best_name.empty()) return {};
+    return dir + L"\\" + best_name;
+}
+
+static void RefreshDiagnostics()
+{
+    auto now = std::chrono::steady_clock::now();
+    if (now - s_diag.last_refresh < DiagState::kRefreshInterval) return;
+    s_diag.last_refresh = now;
+
+    std::wstring logs_dir = openvr_pair::common::WkOpenVrLogsPath(false);
+    if (logs_dir.empty()) {
+        s_diag.log_tail = "(could not resolve log directory)";
+        return;
+    }
+
+    // Prefer the host log; also look for crash dumps.
+    std::wstring host_log = FindNewestLogFile(logs_dir, L"translator_host_log.");
+    std::wstring crash_log = FindNewestLogFile(logs_dir, L"translator_host_crash_");
+
+    std::string tail;
+
+    // Crash dump takes priority if newer than the host log.
+    if (!crash_log.empty()) {
+        std::ifstream cf(crash_log);
+        if (cf) {
+            std::ostringstream ss;
+            ss << cf.rdbuf();
+            tail = "--- crash dump ---\n" + ss.str();
+        }
+    }
+
+    if (!host_log.empty()) {
+        std::ifstream lf(host_log);
+        if (lf) {
+            std::vector<std::string> lines;
+            std::string ln;
+            while (std::getline(lf, ln)) lines.push_back(ln);
+            int start = std::max(0, (int)lines.size() - DiagState::kLines);
+            std::ostringstream ss;
+            for (int i = start; i < (int)lines.size(); ++i) {
+                ss << lines[i] << "\n";
+            }
+            if (!tail.empty()) tail += "\n--- host log (last 20 lines) ---\n";
+            tail += ss.str();
+        }
+    }
+
+    if (tail.empty()) tail = "(no log files found yet)";
+    s_diag.log_tail = std::move(tail);
+}
+
+} // namespace
 
 namespace translator::ui {
 
@@ -98,6 +200,35 @@ void DrawTranslatorTab(TranslatorPlugin &plugin)
             "  alongside WKOpenVR.TranslatorHost.exe in the install directory.\n"
             "\n"
             "Use the Restart host button below to retry after fixing the missing files.");
+
+        // Diagnostics collapsible: shows log tail + crash dump on demand.
+        // The driver translator log contains the DLL probe lines from Init().
+        // The host crash dump (if any) names the specific DLL that failed.
+        if (ImGui::TreeNode("Show diagnostics")) {
+            s_diag.expanded = true;
+            RefreshDiagnostics();
+
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.75f, 0.75f, 1.f));
+            ImGui::TextWrapped("Logs: %%LocalAppDataLow%%\\WKOpenVR\\Logs\\");
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+
+            if (!s_diag.log_tail.empty()) {
+                // InputTextMultiline gives a scrollable read-only text area.
+                ImGui::InputTextMultiline("##diag_log",
+                    const_cast<char *>(s_diag.log_tail.c_str()),
+                    s_diag.log_tail.size() + 1,
+                    ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 12),
+                    ImGuiInputTextFlags_ReadOnly);
+            }
+
+            if (ImGui::Button("Refresh")) {
+                s_diag.last_refresh = {};  // force re-read on next frame
+            }
+            ImGui::TreePop();
+        } else {
+            s_diag.expanded = false;
+        }
     } else {
         ImGui::TextDisabled("Host not running");
     }
