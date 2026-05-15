@@ -3,6 +3,7 @@
 #include "InterfaceHookInjector.h"
 #include "IsometryTransform.h"
 #include "Logging.h"
+#include "inputhealth/PathClassifier.h"
 #include "inputhealth/SerialHash.h"
 #include "MotionGate.h"  // ClassifyCorrection / StillFloor -- option 3 per user 2026-05-04
 
@@ -1035,6 +1036,15 @@ void ServerTrackedDeviceProvider::SetInputHealthCompensation(const protocol::Inp
 	const std::string path = InputHealthPathString(entry.path);
 	if (entry.device_serial_hash == 0 || path.empty()) return;
 
+	// Reject paths that should never carry compensation. The overlay's learning
+	// engine applies the same classifier so this is a belt-and-suspenders guard
+	// against stale entries arriving from an older overlay build.
+	if (!inputhealth::IsCompensationPath(inputhealth::ClassifyInputPath(path))) {
+		LOG("[inputhealth] SetInputHealthCompensation: rejected unsupported path serial_hash=0x%016llx path='%s'",
+			(unsigned long long)entry.device_serial_hash, path.c_str());
+		return;
+	}
+
 	std::unique_lock<std::shared_mutex> lk(inputHealthCompMutex);
 	auto serialIt = inputHealthComp.find(entry.device_serial_hash);
 	if (!entry.enabled) {
@@ -1048,11 +1058,14 @@ void ServerTrackedDeviceProvider::SetInputHealthCompensation(const protocol::Inp
 	}
 
 	inputHealthComp[entry.device_serial_hash][path] = entry;
-	LOG("[inputhealth] SetInputHealthCompensation: serial_hash=0x%016llx path='%s' enabled=1 kind=%u offset=%.5f dead=%.5f debounce_us=%u",
+	LOG("[inputhealth] SetInputHealthCompensation: serial_hash=0x%016llx path='%s' enabled=1 kind=%u"
+		" offset=%.5f trig_min=%.5f trig_max=%.5f dead=%.5f debounce_us=%u",
 		(unsigned long long)entry.device_serial_hash,
 		path.c_str(),
 		(unsigned)entry.kind,
 		entry.learned_rest_offset,
+		entry.learned_trigger_min,
+		entry.learned_trigger_max,
 		entry.learned_deadzone_radius,
 		(unsigned)entry.learned_debounce_us);
 }

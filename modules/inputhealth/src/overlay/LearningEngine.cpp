@@ -5,6 +5,8 @@
 #include "Profiles.h"
 #include "SnapshotReader.h"
 
+#include "inputhealth/PathClassifier.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -198,6 +200,17 @@ void LearningEngine::Tick(const SnapshotReader &reader)
 		if (!b.is_boolean || b.device_serial_hash == 0) continue;
 		const std::string path = PathFromBody(b);
 		if (path.empty()) continue;
+
+		const inputhealth::PathClass pathClass = inputhealth::ClassifyInputPath(path);
+		if (pathClass == inputhealth::PathClass::Unsupported) {
+			LOG("[inputhealth] unsupported path ignored (boolean): '%s'", path.c_str());
+			continue;
+		}
+		if (!inputhealth::IsCompensationPath(pathClass)) {
+			// DiagnosticsOnly: observable in the UI but not learned into compensation.
+			continue;
+		}
+
 		auto &state = StateFor(b.device_serial_hash, path);
 		state.kind = protocol::InputHealthCompBoolean;
 		if (b.press_count > state.last_press_count) {
@@ -237,6 +250,16 @@ void LearningEngine::Tick(const SnapshotReader &reader)
 		if (!b.is_scalar || b.device_serial_hash == 0) continue;
 		const std::string path = PathFromBody(b);
 		if (path.empty()) continue;
+
+		const inputhealth::PathClass pathClass = inputhealth::ClassifyInputPath(path);
+		if (pathClass == inputhealth::PathClass::Unsupported) {
+			LOG("[inputhealth] unsupported path ignored (scalar): '%s'", path.c_str());
+			continue;
+		}
+		if (!inputhealth::IsCompensationPath(pathClass)) {
+			// DiagnosticsOnly: visible in diagnostics UI but not pushed into compensation.
+			continue;
+		}
 
 		auto &state = StateFor(b.device_serial_hash, path);
 		state.kind = KindForBody(b);

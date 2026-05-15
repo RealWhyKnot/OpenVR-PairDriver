@@ -58,6 +58,7 @@ add_subdirectory(core/src)
 # Unit tests (not pulled in by any core CMakeLists).
 add_subdirectory(modules/calibration/tests)
 add_subdirectory(modules/facetracking/tests)
+add_subdirectory(modules/inputhealth/tests)
 add_subdirectory(modules/oscrouter/tests)
 add_subdirectory(modules/translator/tests)
 

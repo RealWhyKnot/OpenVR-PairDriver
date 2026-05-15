@@ -17,6 +17,7 @@ void DrawSettingsTab(InputHealthPlugin &ui)
 			"that have enough clean samples. Off = observe without applying this\n"
 			"compensation family.")) {
 		ui.PushConfigToDriver();
+		ui.SaveGlobalConfig();
 	}
 
 	if (openvr_pair::overlay::ui::CheckboxWithTooltip(
@@ -24,6 +25,7 @@ void DrawSettingsTab(InputHealthPlugin &ui)
 			"Enables learned trigger min/max remapping for paths that have enough\n"
 			"range data. Off = observe without applying this compensation family.")) {
 		ui.PushConfigToDriver();
+		ui.SaveGlobalConfig();
 	}
 }
 

@@ -1,5 +1,6 @@
 #include "InputHealthPlugin.h"
 
+#include "Config.h"
 #include "DebugTab.h"
 #include "DiagnosticsTab.h"
 #include "IPCClient.h"
@@ -22,10 +23,11 @@ using Clock = std::chrono::steady_clock;
 InputHealthPlugin::InputHealthPlugin()
 	: engine_(ipc_, profiles_)
 {
-	pending_config_.master_enabled            = true;
-	pending_config_.diagnostics_only          = false;
-	pending_config_.enable_rest_recenter      = true;
-	pending_config_.enable_trigger_remap      = true;
+	const InputHealthGlobalConfig saved = LoadInputHealthConfig();
+	pending_config_.master_enabled       = saved.master_enabled;
+	pending_config_.diagnostics_only     = saved.diagnostics_only;
+	pending_config_.enable_rest_recenter = saved.enable_rest_recenter;
+	pending_config_.enable_trigger_remap = saved.enable_trigger_remap;
 	observed_ipc_generation_ = ipc_.ConnectionGeneration();
 }
 
@@ -97,6 +99,19 @@ void InputHealthPlugin::PushConfigToDriver()
 		last_error_ = std::string("IPC error: ") + e.what();
 		LOG("[ui] PushConfigToDriver failed: %s", e.what());
 	}
+}
+
+void InputHealthPlugin::SaveGlobalConfig()
+{
+	InputHealthGlobalConfig cfg;
+	cfg.master_enabled       = pending_config_.master_enabled;
+	cfg.diagnostics_only     = pending_config_.diagnostics_only;
+	cfg.enable_rest_recenter = pending_config_.enable_rest_recenter;
+	cfg.enable_trigger_remap = pending_config_.enable_trigger_remap;
+	SaveInputHealthConfig(cfg);
+	LOG("[ui] global config saved: master=%d diag_only=%d rest=%d trig=%d",
+		(int)cfg.master_enabled, (int)cfg.diagnostics_only,
+		(int)cfg.enable_rest_recenter, (int)cfg.enable_trigger_remap);
 }
 
 void InputHealthPlugin::MaintainDriverConnection()

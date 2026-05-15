@@ -6,6 +6,7 @@
 #include "Win32Paths.h"
 #include "Win32Text.h"
 
+#include "inputhealth/PathClassifier.h"
 #include "inputhealth/SerialHash.h"
 #include "picojson.h"
 
@@ -14,6 +15,7 @@
 #endif
 #include <windows.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -122,6 +124,28 @@ DeviceProfile Decode(const picojson::value &v)
 	if (p.serial_hash == 0 && !p.serial.empty()) {
 		p.serial_hash = inputhealth::Fnv1a64(p.serial);
 	}
+
+	// Drop records whose paths are unsupported by the current classifier.
+	// This prunes legacy eye/pupil entries that accumulated before the
+	// classifier was introduced and would otherwise persist forever.
+	{
+		size_t before = p.learned_paths.size();
+		p.learned_paths.erase(
+			std::remove_if(p.learned_paths.begin(), p.learned_paths.end(),
+				[](const LearnedPathRecord &r) {
+					const inputhealth::PathClass cls =
+						inputhealth::ClassifyInputPath(r.path);
+					return cls == inputhealth::PathClass::Unsupported ||
+					       cls == inputhealth::PathClass::DiagnosticsOnly;
+				}),
+			p.learned_paths.end());
+		size_t after = p.learned_paths.size();
+		if (before != after) {
+			LOG("[profiles] pruned %zu legacy path record(s) from serial_hash=0x%016llx",
+				before - after, (unsigned long long)p.serial_hash);
+		}
+	}
+
 	return p;
 }
 
@@ -191,7 +215,7 @@ void ProfileStore::LoadAll()
 	} while (FindNextFileW(h, &find_data));
 	FindClose(h);
 
-	LOG("[profiles] loaded %zu profile(s) from disk", profiles_.size());
+	LOG("[profiles] loaded %zu profile(s) from disk (checkpoint)", profiles_.size());
 }
 
 bool ProfileStore::Save(const DeviceProfile &profile)
@@ -242,6 +266,8 @@ bool ProfileStore::Save(const DeviceProfile &profile)
 	}
 
 	profiles_[profile.serial_hash] = profile;
+	LOG("[profiles] saved profile checkpoint: serial_hash=0x%016llx paths=%zu",
+		(unsigned long long)profile.serial_hash, profile.learned_paths.size());
 	return true;
 }
 

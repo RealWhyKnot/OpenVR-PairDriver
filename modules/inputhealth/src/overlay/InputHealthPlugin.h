@@ -40,6 +40,9 @@ public:
 	// success; logs and surfaces a banner on failure.
 	void PushConfigToDriver();
 
+	// Persist the current global toggle state to disk so it survives restarts.
+	void SaveGlobalConfig();
+
 	// Send a per-device RequestResetInputHealthStats (or all-devices if
 	// serial_hash == 0). Logs the outcome; surfaces a banner on failure.
 	void SendReset(uint64_t serial_hash, bool reset_passive, bool reset_active, bool reset_curves);

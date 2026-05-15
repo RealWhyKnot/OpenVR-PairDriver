@@ -23,6 +23,7 @@ void DrawAdvancedTab(InputHealthPlugin &ui)
 			"Driver collects stats but never rewrites input values.\n"
 			"Useful to verify detection logic before allowing corrections.")) {
 		ui.PushConfigToDriver();
+		ui.SaveGlobalConfig();
 	}
 
 	openvr_pair::overlay::ui::DrawSectionHeading("Reset");

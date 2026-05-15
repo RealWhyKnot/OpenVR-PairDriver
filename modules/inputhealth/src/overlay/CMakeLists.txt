@@ -4,6 +4,8 @@ cmake_minimum_required(VERSION 3.15)
 set(INPUTHEALTH_PAIRDRIVER_ROOT "${CMAKE_SOURCE_DIR}")
 
 add_library(openvr_pair_feature_inputhealth_overlay STATIC
+	Config.cpp
+	Config.h
 	DebugTab.cpp
 	DebugTab.h
 	DiagnosticsTab.cpp
