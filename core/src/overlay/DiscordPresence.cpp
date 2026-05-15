@@ -1,6 +1,7 @@
 #include "DiscordPresence.h"
 
-#define DISCORD_DYNAMIC_LIB
+// pair_discord_rpc links statically; do not define DISCORD_DYNAMIC_LIB so the
+// header decls fall through to plain external linkage rather than dllimport.
 #include <discord_rpc.h>
 
 #include <chrono>
@@ -134,13 +135,5 @@ void DiscordPresence_SetState(const char* state, const char* details)
     }
 }
 
-void DiscordPresence_SetActiveModule(const char* moduleName)
-{
-    if (moduleName && moduleName[0] != '\0') {
-        DiscordPresence_SetState(moduleName, "WKOpenVR");
-    } else {
-        DiscordPresence_SetState("Idle", "WKOpenVR");
-    }
-}
 
 } // namespace WKOpenVR

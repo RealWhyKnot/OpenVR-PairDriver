@@ -34,6 +34,7 @@ public:
 	void Tick(openvr_pair::overlay::ShellContext &context) override;
 	void DrawTab(openvr_pair::overlay::ShellContext &context) override;
 	void DrawLogsSection(openvr_pair::overlay::ShellContext &context) override;
+	void ProvidePresence(WKOpenVR::PresenceComposer &composer) override;
 
 	// Push the in-memory config to the driver via IPC. Called after the
 	// user toggles a switch in the Diagnostics or Settings tab. Quiet on

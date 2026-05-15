@@ -20,6 +20,7 @@ public:
 
     void Tick(openvr_pair::overlay::ShellContext &ctx) override;
     void DrawTab(openvr_pair::overlay::ShellContext &ctx) override;
+    void ProvidePresence(WKOpenVR::PresenceComposer &composer) override;
 
 private:
     RouterTab tab_;

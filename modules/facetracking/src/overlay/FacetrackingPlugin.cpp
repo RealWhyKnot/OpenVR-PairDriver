@@ -3,6 +3,7 @@
 #include "AdvancedTab.h"
 #include "CalibrationTab.h"
 #include "DebugLogging.h"
+#include "DiscordPresenceComposer.h"
 #include "IPCClient.h"
 #include "Logging.h"
 #include "LogsSection.h"
@@ -362,6 +363,28 @@ void FacetrackingPlugin::DrawLogsSection(openvr_pair::overlay::ShellContext &)
 void FacetrackingPlugin::OnDebugLoggingChanged(bool enabled)
 {
     FtOverlayVerbose.store(enabled, std::memory_order_relaxed);
+}
+
+void FacetrackingPlugin::ProvidePresence(WKOpenVR::PresenceComposer &composer)
+{
+    // Count warm (receiving data) shapes from the telemetry snapshot.
+    // shape_warm has 65 entries; we count all that are true.
+    const auto &snap = driver_telemetry_.Snapshot();
+    int warmShapes = 0;
+    if (snap.valid) {
+        for (bool w : snap.shape_warm) {
+            if (w) ++warmShapes;
+        }
+    }
+
+    const bool oscOn = profile_.current.output_osc_enabled;
+
+    WKOpenVR::PresenceUpdate u;
+    u.priority = 50;
+    u.details  = "Tracking facial expressions";
+    u.state    = std::to_string(warmShapes) + " shapes | osc " + (oscOn ? "on" : "off");
+
+    composer.Submit("Face Tracking", std::move(u));
 }
 
 namespace openvr_pair::overlay {

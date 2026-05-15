@@ -38,6 +38,7 @@ public:
     void DrawTab(openvr_pair::overlay::ShellContext &ctx) override;
     void DrawLogsSection(openvr_pair::overlay::ShellContext &ctx) override;
     void OnDebugLoggingChanged(bool enabled) override;
+    void ProvidePresence(WKOpenVR::PresenceComposer &composer) override;
 
     // Build and push the current profile settings to the driver over IPC.
     // Quiet on success; sets last_error_ and logs on failure.

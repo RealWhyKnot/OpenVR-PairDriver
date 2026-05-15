@@ -1320,6 +1320,26 @@ void TextWithWidth(const char *label, const char *text, float width)
 	ImGui::EndChild();
 }
 
+CCalPresenceSnapshot CCal_GetPresenceSnapshot()
+{
+	CCalPresenceSnapshot snap{};
+	snap.state                = static_cast<int>(CalCtx.state);
+	snap.validProfile         = CalCtx.validProfile;
+	snap.referencePoseOk      = CalCtx.ReferencePoseIsValidSimple();
+	snap.targetPoseOk         = CalCtx.TargetPoseIsValidSimple();
+	snap.sampleProgress       = 0;
+	snap.sampleTarget         = 1;
+	// Pull progress from the most recent Progress message, if any.
+	for (const auto &msg : CalCtx.messages) {
+		if (msg.type == CalibrationContext::Message::Progress) {
+			snap.sampleProgress = msg.progress;
+			snap.sampleTarget   = msg.target > 0 ? msg.target : 1;
+		}
+	}
+	snap.targetTrackingSystem = CalCtx.targetTrackingSystem;
+	return snap;
+}
+
 // SendFingerSmoothingConfig + CCal_DrawFingerSmoothing relocated to the
 // Smoothing overlay's SmoothingFingers sub-tab on 2026-05-11 (Protocol v12
 // migration). The Smoothing plugin owns the on-disk config and the

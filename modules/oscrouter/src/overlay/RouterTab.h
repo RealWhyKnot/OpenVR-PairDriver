@@ -16,6 +16,8 @@ public:
     void Tick(openvr_pair::overlay::ShellContext &ctx);
     void Draw(openvr_pair::overlay::ShellContext &ctx);
 
+    const protocol::OscRouterStats &LastStats() const { return lastStats_; }
+
 private:
     OscRouterStatsReader statsReader_;
     RouterIpcClient      ipc_;

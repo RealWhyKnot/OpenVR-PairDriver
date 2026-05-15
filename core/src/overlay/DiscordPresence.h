@@ -13,10 +13,7 @@ void DiscordPresence_Shutdown();
 void DiscordPresence_Tick();
 
 // Update the presence state/details strings directly.
+// Called by PresenceComposer; not normally called from plugin code.
 void DiscordPresence_SetState(const char* state, const char* details);
-
-// Convenience: set the active module name shown in the presence state.
-// Pass nullptr or "" to revert to the idle state.
-void DiscordPresence_SetActiveModule(const char* moduleName);
 
 } // namespace WKOpenVR

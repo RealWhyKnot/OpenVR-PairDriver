@@ -1,4 +1,5 @@
 #include "DiscordPresence.h"
+#include "DiscordPresenceComposer.h"
 #include "FeaturePlugin.h"
 #include "ManifestRegistration.h"
 #include "Migration.h"
@@ -471,6 +472,8 @@ int main(int argc, char **argv)
 
 	WKOpenVR::DiscordPresence_Init();
 
+	WKOpenVR::PresenceComposer presenceComposer;
+
 	auto vrOverlay = std::make_unique<VrOverlayHost>();
 
 	while (!glfwWindowShouldClose(window) && !vrOverlay->QuitRequested()) {
@@ -481,6 +484,15 @@ int main(int argc, char **argv)
 		}
 
 		WKOpenVR::DiscordPresence_Tick();
+
+		// Collect presence updates from all installed plugins and push the
+		// winner to Discord. BeginFrame clears last tick's submissions so
+		// plugins that are disabled do not continue to hold priority.
+		presenceComposer.BeginFrame();
+		for (auto &plugin : plugins) {
+			if (plugin->IsInstalled(context)) plugin->ProvidePresence(presenceComposer);
+		}
+		presenceComposer.Tick();
 
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();

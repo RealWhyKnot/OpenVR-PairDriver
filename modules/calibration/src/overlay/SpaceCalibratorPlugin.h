@@ -16,4 +16,5 @@ public:
 	void DrawTab(openvr_pair::overlay::ShellContext &context) override;
 	void DrawLogsSection(openvr_pair::overlay::ShellContext &context) override;
 	void OnDebugLoggingChanged(bool enabled) override;
+	void ProvidePresence(WKOpenVR::PresenceComposer &composer) override;
 };

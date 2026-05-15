@@ -28,3 +28,18 @@ bool IsVRReady();
 // attempt; never reset to empty after that (we just overwrite on each
 // retry).
 const std::string& LastVRConnectError();
+
+// Presence snapshot: POD summary of CalibrationContext state, safe to call
+// from SpaceCalibratorPlugin.cpp without including Calibration.h (which pulls
+// in openvr_driver.h and conflicts with openvr.h in the plugin translation unit).
+struct CCalPresenceSnapshot
+{
+    int  state;           // CalibrationState enum value (0=None..6=ContinuousStandby)
+    bool validProfile;
+    bool referencePoseOk;
+    bool targetPoseOk;
+    int  sampleProgress;  // most recent progress counter from CalibrationContext::messages
+    int  sampleTarget;    // corresponding target
+    std::string targetTrackingSystem; // safe to copy; no VR types
+};
+CCalPresenceSnapshot CCal_GetPresenceSnapshot();

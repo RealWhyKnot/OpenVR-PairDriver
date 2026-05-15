@@ -1,4 +1,5 @@
 #include "TranslatorPlugin.h"
+#include "DiscordPresenceComposer.h"
 #include "ShellContext.h"
 #include "TranslatorIpcClient.h"
 #include "TranslatorTab.h"
@@ -155,6 +156,31 @@ void TranslatorPlugin::DrawStatusBanner()
         openvr_pair::overlay::ui::DrawErrorBanner(
             "Translator driver problem", last_error_.c_str());
     }
+}
+
+void TranslatorPlugin::ProvidePresence(WKOpenVR::PresenceComposer &composer)
+{
+    const auto &snap = host_status_.Snapshot();
+
+    // Map HostStatus::State int to a short display label.
+    // 0=Idle 1=Listening 2=Transcribing 3=Translating 4=Sending
+    static const char *const kStateLabels[] = {
+        "idle", "listening", "transcribing", "translating", "sending"
+    };
+    const int stateIdx = snap.state;
+    const char *stateLabel = (stateIdx >= 0 && stateIdx < 5)
+        ? kStateLabels[stateIdx]
+        : "idle";
+
+    std::string state = std::string(stateLabel) +
+                        " | " + std::to_string(snap.packets_sent) + " sent";
+
+    WKOpenVR::PresenceUpdate u;
+    u.priority = 50;
+    u.details  = "Local speech pipeline";
+    u.state    = std::move(state);
+
+    composer.Submit("Translator", std::move(u));
 }
 
 namespace openvr_pair::overlay {

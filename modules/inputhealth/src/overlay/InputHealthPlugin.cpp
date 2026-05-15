@@ -3,6 +3,7 @@
 #include "Config.h"
 #include "DebugTab.h"
 #include "DiagnosticsTab.h"
+#include "DiscordPresenceComposer.h"
 #include "IPCClient.h"
 #include "LearningEngine.h"
 #include "Logging.h"
@@ -240,6 +241,42 @@ void InputHealthPlugin::DrawLogsSection(openvr_pair::overlay::ShellContext &)
 	// wraps each plugin in a collapsing header so the section reads with no
 	// duplicate plugin-name heading.
 	DrawLogsTab();
+}
+
+void InputHealthPlugin::ProvidePresence(WKOpenVR::PresenceComposer &composer)
+{
+	const auto &entries = reader_.EntriesByHandle();
+
+	int controllers = 0;
+	int paths       = 0;
+	int warnings    = 0;
+
+	// Count distinct devices via unique serial hashes, total watched paths,
+	// and paths with a Page-Hinkley drift alarm active.
+	uint64_t last_serial = 0;
+	for (const auto &kv : entries) {
+		const auto &body = kv.second.body;
+		if (body.handle == 0) continue;
+		++paths;
+		if (body.ph_triggered) ++warnings;
+		if (body.device_serial_hash != last_serial) {
+			++controllers;
+			last_serial = body.device_serial_hash;
+		}
+	}
+
+	WKOpenVR::PresenceUpdate u;
+	u.priority = (warnings > 0) ? 100 : 50;
+	u.details  = "Watching controller inputs";
+
+	std::string s = std::to_string(controllers) + " controllers | " +
+	                std::to_string(paths) + " paths";
+	if (warnings > 0) {
+		s += " | " + std::to_string(warnings) + " warnings";
+	}
+	u.state = std::move(s);
+
+	composer.Submit("Input Health", std::move(u));
 }
 
 namespace openvr_pair::overlay {

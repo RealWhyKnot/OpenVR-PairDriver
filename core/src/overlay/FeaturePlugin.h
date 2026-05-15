@@ -1,5 +1,7 @@
 #pragma once
 
+namespace WKOpenVR { class PresenceComposer; }
+
 namespace openvr_pair::overlay {
 
 struct ShellContext;
@@ -16,6 +18,11 @@ public:
 	virtual void OnShutdown(ShellContext &) {}
 	virtual void Tick(ShellContext &) {}
 	virtual void DrawTab(ShellContext &) = 0;
+
+	// Called once per shell tick. Let the plugin submit one PresenceUpdate
+	// describing its current activity. Default is a no-op so plugins that
+	// do not override contribute nothing; the composer skips absent entries.
+	virtual void ProvidePresence(WKOpenVR::PresenceComposer &) {}
 
 	// Optional: per-plugin contents for the umbrella's global Logs tab.
 	// Default no-op so a plugin without log surface area doesn't need to

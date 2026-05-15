@@ -8,6 +8,7 @@
 
 #include "CalibrationAnchor.h"
 #include "DebugLogging.h"
+#include "DiscordPresenceComposer.h"
 #include "DeviceFilters.h"
 #include "Logging.h"
 #include "Protocol.h"
@@ -258,6 +259,39 @@ void SmoothingPlugin::DrawLogsSection(openvr_pair::overlay::ShellContext &)
 	// in a collapsing header so the section heading + file paths render
 	// cleanly alongside the other modules' log sections.
 	DrawLogsTab();
+}
+
+void SmoothingPlugin::ProvidePresence(WKOpenVR::PresenceComposer &composer)
+{
+	WKOpenVR::PresenceUpdate u;
+
+	if (externalSmoothingDetected_) {
+		u.priority = 100;
+		u.details  = "Smoothing trackers";
+		u.state    = "external smoothing detected";
+	} else {
+		// Count trackers configured with prediction smoothness (non-zero map
+		// entries). Count active finger curves: any bit in finger_mask where
+		// the global smoothness or per-finger override is non-zero.
+		const int trackers = static_cast<int>(cfg_.trackerSmoothness.size());
+
+		int fingerCurves = 0;
+		for (int i = 0; i < 10; ++i) {
+			if ((cfg_.finger_mask >> i) & 1) {
+				const int strength = cfg_.per_finger_smoothness[i] > 0
+				    ? cfg_.per_finger_smoothness[i]
+				    : cfg_.smoothness;
+				if (strength > 0) ++fingerCurves;
+			}
+		}
+
+		u.priority = 50;
+		u.details  = "Smoothing trackers";
+		u.state    = std::to_string(trackers) + " trackers | " +
+		             std::to_string(fingerCurves) + " finger curves";
+	}
+
+	composer.Submit("Smoothing", std::move(u));
 }
 
 namespace openvr_pair::overlay {

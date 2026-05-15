@@ -49,6 +49,8 @@ add_executable(OpenVRPairOverlay WIN32
 	DeviceFilters.h
 	DiscordPresence.cpp
 	DiscordPresence.h
+	DiscordPresenceComposer.cpp
+	DiscordPresenceComposer.h
 	FeaturePlugin.cpp
 	FeaturePlugin.h
 	IpcClientBase.cpp
