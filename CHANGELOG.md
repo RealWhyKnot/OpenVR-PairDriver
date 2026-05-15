@@ -9,6 +9,9 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 ### Added
 - **diagnostics:** Add OSC + translator + host-supervisor instrumentation (b0fa13d)
 - **hosts:** Singleton mutex + connect-first spawn for face and translator hosts (cd69dac)
+- **translator/overlay:** Diagnostics drawer on host-failed banner (d93a654)
+- **translator/driver:** Native-dep probe + symbolic exit-code logging (d6ea090)
+- **translator-host:** Delay-load CUDA imports + early-crash logger (f832345)
 
 ### Changed
 - host(facetracking): extend shmem to v2 with head data (2813401)
