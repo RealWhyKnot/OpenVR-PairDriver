@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 
 add_library(openvr_pair_common STATIC
+	DriverMemoryProbe.cpp
+	DriverMemoryProbe.h
 	JsonUtil.cpp
 	JsonUtil.h
 	LogPaths.cpp

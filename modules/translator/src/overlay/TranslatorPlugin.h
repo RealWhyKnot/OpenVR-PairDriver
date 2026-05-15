@@ -19,7 +19,7 @@ class TranslatorPlugin final : public openvr_pair::overlay::FeaturePlugin
 public:
     TranslatorPlugin();
 
-    const char *Name()         const override { return "Translator"; }
+    const char *Name()         const override { return "Translator and Transcriber"; }
     const char *FlagFileName() const override { return "enable_translator.flag"; }
     const char *PipeName()     const override { return OPENVR_PAIRDRIVER_TRANSLATOR_PIPE_NAME; }
 

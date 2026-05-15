@@ -273,7 +273,7 @@ const wchar_t *ShortcutLabelFor(const char *flagFileName)
 		{ "enable_inputhealth.flag",  L"Input Health"     },
 		{ "enable_facetracking.flag", L"Face Tracking"    },
 		{ "enable_oscrouter.flag",    L"OSC Router"       },
-		{ "enable_translator.flag",   L"Translator"       },
+		{ "enable_translator.flag",   L"Translator and Transcriber" },
 	};
 	for (const auto &e : kEntries) {
 		if (strcmp(e.flag, flagFileName) == 0) return e.label;

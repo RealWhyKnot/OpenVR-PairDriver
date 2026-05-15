@@ -21,6 +21,10 @@ ipch
 # Release artifacts produced by build.ps1 -Release. Generated, not committed.
 /release/
 
+# Local command logs and scratch state.
+/*.log
+/.local/
+
 # Changelog stash captured by .github/workflows/release.yml during a CI build.
 /.changelog-stash/
 

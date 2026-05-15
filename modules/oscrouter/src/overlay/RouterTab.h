@@ -29,6 +29,7 @@ private:
     // Last known global stats for display.
     protocol::OscRouterStats lastStats_ = {};
 
+    void DrawConnectedModules(openvr_pair::overlay::ShellContext &ctx);
     void DrawRouteTable();
     void DrawTestPublish();
     void TrySendTestPublish();

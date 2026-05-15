@@ -210,12 +210,30 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 			// Column 2: enabled checkbox, far right. When a UAC toggle is
 			// in flight, disable the checkbox and surface the reason on
 			// hover so the user is not staring at an unresponsive control.
+			// Also block disabling the OSC Router while Face Tracking or
+			// Translator are enabled: those features publish OSC through the
+			// router, so turning it off would silently kill their output to
+			// VRChat.
 			ImGui::TableNextColumn();
 			ImGui::PushID(key.c_str());
 			const std::string pendingReason =
 				"Waiting for the elevated helper to finish. Reopens after SteamVR picks up the change.";
+			const bool isRouterRow = (key == "enable_oscrouter.flag");
+			const bool routerDependentOn = isRouterRow && displayState &&
+				(context.IsFlagPresent("enable_facetracking.flag") ||
+				 context.IsFlagPresent("enable_translator.flag"));
+			const char *blockReason = nullptr;
+			bool blocked = isPending;
+			if (isPending) {
+				blockReason = pendingReason.c_str();
+			} else if (routerDependentOn) {
+				blocked = true;
+				blockReason =
+					"Face Tracking and Translator publish through the OSC Router. "
+					"Disable those modules first if you really want to turn the router off.";
+			}
 			openvr_pair::overlay::ui::DisabledSection disabled(
-				isPending, isPending ? pendingReason.c_str() : nullptr);
+				blocked, blockReason);
 			bool checkbox = displayState;
 			const std::string tooltip = std::string("Enable or disable ") + plugin->Name() +
 			                            " for this profile. Takes effect next SteamVR launch.";

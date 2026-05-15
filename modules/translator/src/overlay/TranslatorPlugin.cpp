@@ -1,4 +1,5 @@
 #include "TranslatorPlugin.h"
+#include "ShellContext.h"
 #include "TranslatorIpcClient.h"
 #include "TranslatorTab.h"
 #include "UiHelpers.h"
@@ -45,8 +46,14 @@ void TranslatorPlugin::Tick(openvr_pair::overlay::ShellContext &)
     host_status_.Tick();
 }
 
-void TranslatorPlugin::DrawTab(openvr_pair::overlay::ShellContext &)
+void TranslatorPlugin::DrawTab(openvr_pair::overlay::ShellContext &ctx)
 {
+    if (!ctx.IsFlagPresent("enable_oscrouter.flag")) {
+        openvr_pair::overlay::ui::DrawErrorBanner(
+            "OSC Router required",
+            "This feature sends OSC to VRChat through the OSC Router. "
+            "Enable OSC Router on the Modules tab so chatbox text reaches VRChat.");
+    }
     DrawStatusBanner();
     translator::ui::DrawTranslatorTab(*this);
 }

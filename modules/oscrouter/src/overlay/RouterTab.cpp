@@ -54,8 +54,6 @@ void RouterTab::Tick(openvr_pair::overlay::ShellContext &)
 
 void RouterTab::Draw(openvr_pair::overlay::ShellContext &ctx)
 {
-    (void)ctx;
-
     if (!statsReader_.IsOpen()) {
         openvr_pair::overlay::ui::DrawErrorBanner(
             "OSC Router not active",
@@ -74,6 +72,9 @@ void RouterTab::Draw(openvr_pair::overlay::ShellContext &ctx)
     openvr_pair::overlay::ui::TooltipOnHover(
         "Outbound OSC target port. Set via the router profile (oscrouter.json).\n"
         "Migrated from FaceTracking OSC port if non-default on first upgrade.");
+
+    DrawConnectedModules(ctx);
+
     ImGui::Separator();
 
     ImGui::Text("Packets sent: %llu  Bytes: %llu  Dropped: %llu  Routes: %u",
@@ -86,6 +87,52 @@ void RouterTab::Draw(openvr_pair::overlay::ShellContext &ctx)
     DrawRouteTable();
     ImGui::Separator();
     DrawTestPublish();
+}
+
+void RouterTab::DrawConnectedModules(openvr_pair::overlay::ShellContext &ctx)
+{
+    struct Entry {
+        const char *flag;
+        const char *label;
+        const char *summary;
+    };
+    static const Entry kEntries[] = {
+        { "enable_facetracking.flag", "Face Tracking",
+          "legacy and v2 avatar parameters" },
+        { "enable_translator.flag",   "Translator and Transcriber",
+          "chatbox text and transcripts" },
+    };
+
+    ImGui::Spacing();
+    ImGui::Text("Connected modules:");
+    if (ImGui::BeginTable("oscrouter_connected", 3,
+            ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg |
+            ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("Module",  ImGuiTableColumnFlags_WidthStretch, 3.0f);
+        ImGui::TableSetupColumn("Status",  ImGuiTableColumnFlags_WidthStretch, 1.5f);
+        ImGui::TableSetupColumn("Sends",   ImGuiTableColumnFlags_WidthStretch, 4.0f);
+        ImGui::TableHeadersRow();
+
+        const auto &palette = openvr_pair::overlay::ui::GetPalette();
+        for (const auto &e : kEntries) {
+            const bool enabled = ctx.IsFlagPresent(e.flag);
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(e.label);
+            ImGui::TableSetColumnIndex(1);
+            if (enabled) {
+                ImGui::TextColored(palette.statusOk, "enabled");
+            } else {
+                ImGui::TextColored(palette.statusIdle, "disabled");
+            }
+            ImGui::TableSetColumnIndex(2);
+            ImGui::TextUnformatted(e.summary);
+        }
+        ImGui::EndTable();
+    }
+    ImGui::TextDisabled(
+        "These features send OSC through the router, which merges them into\n"
+        "one stable connection to VRChat.");
 }
 
 void RouterTab::DrawRouteTable()

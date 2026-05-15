@@ -160,6 +160,14 @@ vr::EVRInitError ServerTrackedDeviceProvider::Init(vr::IVRDriverContext *pDriver
 		oscRouterServer->Run();
 	}
 
+	if (featureFlags & pairdriver::kFeatureTranslator) {
+		translatorServer = std::make_unique<IPCServer>(
+			this,
+			OPENVR_PAIRDRIVER_TRANSLATOR_PIPE_NAME,
+			pairdriver::kFeatureTranslator);
+		translatorServer->Run();
+	}
+
 	// Hook installation is gated inside the injector by the same feature
 	// flags so the GetGenericInterface detour skips registering the
 	// per-feature inner hooks for subsystems that aren't enabled.
@@ -173,6 +181,8 @@ vr::EVRInitError ServerTrackedDeviceProvider::Init(vr::IVRDriverContext *pDriver
 		if (smoothingServer) smoothingServer->Stop();
 		if (inputHealthServer) inputHealthServer->Stop();
 		if (faceTrackingServer) faceTrackingServer->Stop();
+		if (oscRouterServer) oscRouterServer->Stop();
+		if (translatorServer) translatorServer->Stop();
 		shmem.Close();
 		VR_CLEANUP_SERVER_DRIVER_CONTEXT();
 		return vr::VRInitError_Driver_Failed;
@@ -209,6 +219,7 @@ void ServerTrackedDeviceProvider::Cleanup()
 		(*it)->Shutdown();
 	}
 	activeModules.clear();
+	if (translatorServer) translatorServer->Stop();
 	if (oscRouterServer) oscRouterServer->Stop();
 	if (faceTrackingServer) faceTrackingServer->Stop();
 	if (inputHealthServer) inputHealthServer->Stop();

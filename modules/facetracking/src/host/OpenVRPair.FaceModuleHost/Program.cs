@@ -69,10 +69,14 @@ var status   = new HostStatusWriter(opts.StatusFilePath, loader, logger, opts);
 
 logger.Info($"OpenVRPair.FaceModuleHost starting. shmem={opts.ShmemName} pipe={opts.DriverHandshakePipe}");
 
+var oscQuery = new OscQueryAdvertiser();
+
 try
 {
     await writer.OpenAsync(ct);
     logger.Info("Shmem ring opened for write.");
+
+    await oscQuery.StartAsync(logger, ct);
 
     logger.Info($"[startup] phase=discovering-modules path={opts.ModulesInstallDir}");
     var loadedModules = await loader.LoadAllAsync();
@@ -113,6 +117,7 @@ catch (Exception ex)
 {
     logger.Error($"[crash] Main threw: {ex}");
     logger.Flush();
+    oscQuery.Stop();
     await loader.UnloadAllAsync();
     writer.Dispose();
     logger.Info("Shutdown complete.");
@@ -121,6 +126,7 @@ catch (Exception ex)
     return 1;
 }
 
+oscQuery.Stop();
 await loader.UnloadAllAsync();
 writer.Dispose();
 logger.Info("Shutdown complete.");

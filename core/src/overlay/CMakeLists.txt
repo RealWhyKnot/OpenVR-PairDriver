@@ -126,11 +126,13 @@ add_custom_command(TARGET OpenVRPairOverlay POST_BUILD
 
 # Stage the face-module sync script into resources/ next to the exe.
 # ModuleSyncRunner looks for it at <exe_dir>/resources/face-module-sync.ps1.
+# Source ownership lives with the facetracking module; the deployed resource
+# path stays shell-owned because ModuleSyncRunner resolves it next to WKOpenVR.exe.
 add_custom_command(TARGET OpenVRPairOverlay POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E make_directory
 		"$<TARGET_FILE_DIR:OpenVRPairOverlay>/resources"
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different
-		"${CMAKE_CURRENT_LIST_DIR}/face-module-sync.ps1"
+		"${CMAKE_SOURCE_DIR}/modules/facetracking/src/overlay/face-module-sync.ps1"
 		"$<TARGET_FILE_DIR:OpenVRPairOverlay>/resources/face-module-sync.ps1")
 
 # Stage the Discord Rich Presence runtime DLL next to the exe so the Windows

@@ -1,5 +1,6 @@
 #include "SkeletalHookInjector.h"
 #include "Hooking.h"
+#include "DriverMemoryProbe.h"
 #include "InterfaceHookInjector.h"   // InterfaceHooks::DetourScope -- bracket
                                      // each detour body so DisableHooks can
                                      // drain in-flight callers before the DLL
@@ -299,48 +300,6 @@ static float SmoothnessToAlpha(uint8_t smoothness)
     if (s < 0.0f)   s = 0.0f;
     if (s > 100.0f) s = 100.0f;
     return 1.0f - (s / 100.0f) * 0.95f;
-}
-
-// =============================================================================
-// VirtualQuery-guarded memory probes. Used to safely walk the iface pointer
-// before patching its vtable. Faulting on a stray vtable read would crash
-// vrserver -- these probes turn that into a logged-and-bailed soft failure
-// instead. Used by TryInstallPublicHooks below.
-// =============================================================================
-
-static bool IsAddressReadable(const void *addr, size_t bytes)
-{
-    if (!addr) return false;
-    MEMORY_BASIC_INFORMATION mbi{};
-    if (!VirtualQuery(addr, &mbi, sizeof mbi)) return false;
-    if (mbi.State != MEM_COMMIT) return false;
-    DWORD prot = mbi.Protect & 0xFF;
-    if (prot == 0 || (prot & PAGE_NOACCESS) || (prot & PAGE_GUARD)) return false;
-    auto regionEnd = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
-    auto needEnd   = (uintptr_t)addr + bytes;
-    return needEnd <= regionEnd;
-}
-
-// Log a one-line region descriptor: base, size, state, protection, type. Used
-// post-install to confirm that the patched vtable slots actually point into
-// vrserver's loaded image (.text section, MEM_IMAGE) rather than something
-// non-executable. If we ever see slot 5 or slot 6 land in a heap or mapped
-// region, the iface we hooked wasn't a real interface and the hook patched
-// the wrong target.
-static void LogVirtualQueryRegion(const char *tag, const void *addr)
-{
-    if (!addr) {
-        LOG("[skeletal-probe] %s: addr=NULL", tag);
-        return;
-    }
-    MEMORY_BASIC_INFORMATION mbi{};
-    if (!VirtualQuery(addr, &mbi, sizeof mbi)) {
-        LOG("[skeletal-probe] %s: addr=%p VirtualQuery FAILED (err=%lu)", tag, addr, GetLastError());
-        return;
-    }
-    LOG("[skeletal-probe] %s: addr=%p base=%p size=0x%llx state=0x%lx prot=0x%lx type=0x%lx",
-        tag, addr, mbi.BaseAddress, (unsigned long long)mbi.RegionSize,
-        mbi.State, mbi.Protect, mbi.Type);
 }
 
 // =============================================================================
@@ -694,12 +653,12 @@ void TryInstallPublicHooks(void *iface)
     // dereferenced "vtable" will not be readable for 7 slots, OR slot 0 and
     // slot 6 will be wildly different addresses (not even in the same
     // module). Both checks must pass before we patch anything.
-    if (!IsAddressReadable(iface, sizeof(void *))) {
+    if (!openvr_pair::common::IsReadableMemoryRange(iface, sizeof(void *))) {
         LOG("[skeletal] iface %p not readable; aborting install", iface);
         return;
     }
     void **vtable = *((void ***)iface);
-    if (!IsAddressReadable(vtable, sizeof(void *) * 7)) {
+    if (!openvr_pair::common::IsReadableMemoryRange(vtable, sizeof(void *) * 7)) {
         LOG("[skeletal] vtable %p not readable for 7 slots; aborting install (iface=%p -- likely garbage, e.g. settings memory)",
             (void *)vtable, iface);
         return;
@@ -743,8 +702,10 @@ void TryInstallPublicHooks(void *iface)
             (void *)PublicUpdateSkeletonHook.originalFunc, (void *)&DetourPublicUpdateSkeletonComponent);
     }
 
-    LogVirtualQueryRegion("public_vtable_slot5", vtable[5]);
-    LogVirtualQueryRegion("public_vtable_slot6", vtable[6]);
+    LOG("[skeletal-probe] %s",
+        openvr_pair::common::DescribeVirtualQueryRegion("public_vtable_slot5", vtable[5]).c_str());
+    LOG("[skeletal-probe] %s",
+        openvr_pair::common::DescribeVirtualQueryRegion("public_vtable_slot6", vtable[6]).c_str());
 
     LOG("[skeletal] installed PUBLIC IVRDriverInput hooks: vtable[5]=Create, vtable[6]=Update -- waiting for first calls");
 }

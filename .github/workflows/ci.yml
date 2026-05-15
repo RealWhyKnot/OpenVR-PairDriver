@@ -129,6 +129,7 @@ jobs:
           $required = @(
             'build/artifacts/Release/WKOpenVR.exe',
             'build/artifacts/Release/openvr_api.dll',
+            'build/artifacts/Release/discord-rpc.dll',
             'build/artifacts/Release/manifest.vrmanifest',
             'build/artifacts/Release/dashboard_icon.png',
             'build/artifacts/Release/resources/face-module-sync.ps1',
@@ -136,7 +137,8 @@ jobs:
             'build/driver_wkopenvr/resources/driver.vrresources',
             'build/driver_wkopenvr/resources/settings/default.vrsettings',
             'build/driver_wkopenvr/bin/win64/driver_wkopenvr.dll',
-            'build/driver_wkopenvr/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe'
+            'build/driver_wkopenvr/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe',
+            'build/driver_wkopenvr/resources/translator/host/WKOpenVR.TranslatorHost.exe'
           )
           $missing = @()
           foreach ($p in $required) {

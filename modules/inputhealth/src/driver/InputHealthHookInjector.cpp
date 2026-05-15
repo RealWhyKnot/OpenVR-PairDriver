@@ -1,5 +1,6 @@
 #include "InputHealthHookInjector.h"
 
+#include "DriverMemoryProbe.h"
 #include "Hooking.h"
 #include "InputHealthCompensation.h"
 #include "InputHealthComponentRegistry.h"
@@ -44,39 +45,6 @@ static std::atomic<bool> g_firstCreateBoolLogged{false};
 static std::atomic<bool> g_firstCreateScalarLogged{false};
 static std::atomic<uint64_t> g_hotPathLockSkips{0};
 static std::atomic<uint64_t> g_hotPathObservationErrors{0};
-
-// =============================================================================
-// VirtualQuery-guarded probes (mirror SkeletalHookInjector's pair).
-// =============================================================================
-
-static bool IsAddressReadable(const void *addr, size_t bytes)
-{
-	if (!addr) return false;
-	MEMORY_BASIC_INFORMATION mbi{};
-	if (!VirtualQuery(addr, &mbi, sizeof mbi)) return false;
-	if (mbi.State != MEM_COMMIT) return false;
-	DWORD prot = mbi.Protect & 0xFF;
-	if (prot == 0 || (prot & PAGE_NOACCESS) || (prot & PAGE_GUARD)) return false;
-	auto regionEnd = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
-	auto needEnd   = (uintptr_t)addr + bytes;
-	return needEnd <= regionEnd;
-}
-
-static void LogVirtualQueryRegion(const char *tag, const void *addr)
-{
-	if (!addr) {
-		LOG("[inputhealth-probe] %s: addr=NULL", tag);
-		return;
-	}
-	MEMORY_BASIC_INFORMATION mbi{};
-	if (!VirtualQuery(addr, &mbi, sizeof mbi)) {
-		LOG("[inputhealth-probe] %s: addr=%p VirtualQuery FAILED (err=%lu)", tag, addr, GetLastError());
-		return;
-	}
-	LOG("[inputhealth-probe] %s: addr=%p base=%p size=0x%llx state=0x%lx prot=0x%lx type=0x%lx",
-		tag, addr, mbi.BaseAddress, (unsigned long long)mbi.RegionSize,
-		mbi.State, mbi.Protect, mbi.Type);
-}
 
 // =============================================================================
 // Hook<> instances (slots match IVRDriverInput_003 layout in the bundled SDK).
@@ -377,12 +345,12 @@ void TryInstallScalarBooleanHooks(void *iface)
 		iface, (int)createBoolAlready, (int)updateBoolAlready,
 		(int)createScalarAlready, (int)updateScalarAlready);
 
-	if (!IsAddressReadable(iface, sizeof(void *))) {
+	if (!openvr_pair::common::IsReadableMemoryRange(iface, sizeof(void *))) {
 		LOG("[inputhealth] iface %p not readable; aborting install", iface);
 		return;
 	}
 	void **vtable = *((void ***)iface);
-	if (!IsAddressReadable(vtable, sizeof(void *) * 7)) {
+	if (!openvr_pair::common::IsReadableMemoryRange(vtable, sizeof(void *) * 7)) {
 		LOG("[inputhealth] vtable %p not readable for 7 slots; aborting install (iface=%p)",
 			(void *)vtable, iface);
 		return;
@@ -420,10 +388,14 @@ void TryInstallScalarBooleanHooks(void *iface)
 		if (updateScalarReady) IHook::Register(&UpdateScalarHook);
 	}
 
-	LogVirtualQueryRegion("public_vtable_slot0", vtable[0]);
-	LogVirtualQueryRegion("public_vtable_slot1", vtable[1]);
-	LogVirtualQueryRegion("public_vtable_slot2", vtable[2]);
-	LogVirtualQueryRegion("public_vtable_slot3", vtable[3]);
+	LOG("[inputhealth-probe] %s",
+		openvr_pair::common::DescribeVirtualQueryRegion("public_vtable_slot0", vtable[0]).c_str());
+	LOG("[inputhealth-probe] %s",
+		openvr_pair::common::DescribeVirtualQueryRegion("public_vtable_slot1", vtable[1]).c_str());
+	LOG("[inputhealth-probe] %s",
+		openvr_pair::common::DescribeVirtualQueryRegion("public_vtable_slot2", vtable[2]).c_str());
+	LOG("[inputhealth-probe] %s",
+		openvr_pair::common::DescribeVirtualQueryRegion("public_vtable_slot3", vtable[3]).c_str());
 
 	if (createBoolReady && updateBoolReady && createScalarReady && updateScalarReady) {
 		LOG("[inputhealth] installed PUBLIC IVRDriverInput hooks: vtable[0]=CreateBool vtable[1]=UpdateBool vtable[2]=CreateScalar vtable[3]=UpdateScalar -- waiting for first calls");

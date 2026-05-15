@@ -200,7 +200,7 @@ void SmoothingPlugin::DrawPredictionTab()
 		if (isHmd) {
 			ImGui::TextColored(openvr_pair::overlay::ui::GetPalette().statusInfo, "[HMD, locked]");
 		} else if (isAnchor) {
-			ImGui::TextColored(openvr_pair::overlay::ui::GetPalette().statusInfo, "[calibration anchor, locked]");
+			ImGui::TextColored(openvr_pair::overlay::ui::GetPalette().statusInfo, "[continuous-cal reference, locked]");
 		}
 
 		ImGui::BeginDisabled(isLocked);

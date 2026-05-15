@@ -80,7 +80,35 @@ void CCal_UmbrellaTick()
 
 	if (g_vrReady) {
 		CalibrationTick(SecondsSinceStart());
-		openvr_pair::overlay::SetCalibrationAnchorSerial(CalCtx.referenceStandby.serial);
+
+		// Anchor serial for cross-module locking (Smoothing reads this to grey
+		// out the row of whichever tracker is currently acting as the
+		// calibration reference). Prefer the live resolved referenceID's
+		// serial -- the standby record's serial is what's persisted in the
+		// profile and may be stale or, in the default wizard flow, redundant
+		// with the HMD (Wizard.cpp seeds referenceStandby.serial = hmd.serial).
+		// Reading the live serial from OpenVR captures non-HMD reference
+		// configurations correctly: the head-mounted Vive tracker that some
+		// users mount to the HMD as a trusted anchor is one of these.
+		std::string anchorSerial;
+		if (CalCtx.referenceID >= 0 &&
+			CalCtx.referenceID < (int32_t)vr::k_unMaxTrackedDeviceCount) {
+			if (auto *vrSystem = vr::VRSystem()) {
+				char buf[vr::k_unMaxPropertyStringSize] = {};
+				vr::ETrackedPropertyError err = vr::TrackedProp_Success;
+				vrSystem->GetStringTrackedDeviceProperty(
+					CalCtx.referenceID,
+					vr::Prop_SerialNumber_String,
+					buf, sizeof buf, &err);
+				if (err == vr::TrackedProp_Success && buf[0] != '\0') {
+					anchorSerial = buf;
+				}
+			}
+		}
+		if (anchorSerial.empty()) {
+			anchorSerial = CalCtx.referenceStandby.serial;
+		}
+		openvr_pair::overlay::SetCalibrationAnchorSerial(anchorSerial);
 	} else {
 		openvr_pair::overlay::SetCalibrationAnchorSerial({});
 	}
