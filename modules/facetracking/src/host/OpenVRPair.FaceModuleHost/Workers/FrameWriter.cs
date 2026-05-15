@@ -132,14 +132,7 @@ public sealed class FrameWriter(string shmemName, HostLogger logger) : IDisposab
         bool eyeValid,
         bool exprValid,
         ulong moduleUuidHash,
-        CancellationToken ct,
-        float headYaw   = 0f,
-        float headPitch = 0f,
-        float headRoll  = 0f,
-        float headPosX  = 0f,
-        float headPosY  = 0f,
-        float headPosZ  = 0f,
-        uint  headFlags = 0u)
+        CancellationToken ct)
     {
         if (_view is null) return ValueTask.CompletedTask;
 
@@ -156,13 +149,7 @@ public sealed class FrameWriter(string shmemName, HostLogger logger) : IDisposab
             eye_confidence_l        = eye.Left.Confidence,
             eye_confidence_r        = eye.Right.Confidence,
             flags                   = (eyeValid ? 1u : 0u) | (exprValid ? 2u : 0u),
-            head_yaw                = headYaw,
-            head_pitch              = headPitch,
-            head_roll               = headRoll,
-            head_pos_x              = headPosX,
-            head_pos_y              = headPosY,
-            head_pos_z              = headPosZ,
-            head_flags              = headFlags,
+            _reserved               = 0u,
         };
 
         body.eye_origin_l[0] = eye.Left.OriginHmd.X;
