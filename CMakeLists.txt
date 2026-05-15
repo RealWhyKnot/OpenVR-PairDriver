@@ -4,6 +4,28 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 project("OpenVR-WKPair")
 
+# ---------------------------------------------------------------------------
+# Compiler cache (sccache preferred, ccache fallback).
+# Set CMAKE_C/CXX_COMPILER_LAUNCHER so every C/C++ target benefits.
+# Neither tool changes build outputs; if absent the build is unaffected.
+# ---------------------------------------------------------------------------
+find_program(SCCACHE_BIN sccache)
+find_program(CCACHE_BIN  ccache)
+if(SCCACHE_BIN)
+    set(WKOPENVR_COMPILER_LAUNCHER "${SCCACHE_BIN}")
+    set(WKOPENVR_COMPILER_LAUNCHER_DISPLAY "sccache (${SCCACHE_BIN})")
+elseif(CCACHE_BIN)
+    set(WKOPENVR_COMPILER_LAUNCHER "${CCACHE_BIN}")
+    set(WKOPENVR_COMPILER_LAUNCHER_DISPLAY "ccache (${CCACHE_BIN})")
+else()
+    set(WKOPENVR_COMPILER_LAUNCHER "")
+    set(WKOPENVR_COMPILER_LAUNCHER_DISPLAY "none -- install sccache or ccache to speed up rebuilds")
+endif()
+if(WKOPENVR_COMPILER_LAUNCHER)
+    set(CMAKE_C_COMPILER_LAUNCHER   "${WKOPENVR_COMPILER_LAUNCHER}" CACHE STRING "" FORCE)
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${WKOPENVR_COMPILER_LAUNCHER}" CACHE STRING "" FORCE)
+endif()
+
 # Build artifacts go under build/artifacts so we can find them from build.ps1
 # and the consumer repos' deploy scripts without grepping.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/artifacts)
@@ -46,6 +68,12 @@ add_subdirectory(modules/facetracking/src/host)
 
 # Translator native C++ host sidecar. Toggleable via OPENVR_PAIR_BUILD_TRANSLATOR_HOST.
 add_subdirectory(modules/translator/src/host)
+
+message(STATUS "------ WKOpenVR build configuration ------")
+message(STATUS "  Compiler cache:   ${WKOPENVR_COMPILER_LAUNCHER_DISPLAY}")
+message(STATUS "  Translator CUDA:  ${WKOPENVR_TRANSLATOR_CUDA}")
+message(STATUS "  Translator host:  ${OPENVR_PAIR_BUILD_TRANSLATOR_HOST}")
+message(STATUS "------------------------------------------")
 
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC" OR "${CMAKE_C_COMPILER_ID}" STREQUAL "MSVC")
 	add_compile_options(

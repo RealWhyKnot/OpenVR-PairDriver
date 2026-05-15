@@ -26,9 +26,18 @@ option(WKOPENVR_TRANSLATOR_CUDA "Build whisper.cpp with CUDA backend" OFF)
 
 set(WHISPER_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
 set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(WHISPER_CCACHE         OFF CACHE BOOL "" FORCE)
 set(GGML_CUDA ${WKOPENVR_TRANSLATOR_CUDA} CACHE BOOL "" FORCE)
-set(GGML_CCACHE OFF CACHE BOOL "" FORCE)
+
+# Enable whisper.cpp/ggml ccache integration when a compiler cache was found.
+# WKOPENVR_COMPILER_LAUNCHER is set by the root CMakeLists; leave it empty when
+# neither sccache nor ccache is installed so the build is unaffected.
+if(WKOPENVR_COMPILER_LAUNCHER)
+    set(WHISPER_CCACHE ON  CACHE BOOL "" FORCE)
+    set(GGML_CCACHE    ON  CACHE BOOL "" FORCE)
+else()
+    set(WHISPER_CCACHE OFF CACHE BOOL "" FORCE)
+    set(GGML_CCACHE    OFF CACHE BOOL "" FORCE)
+endif()
 
 FetchContent_Declare(
     whisper_cpp
