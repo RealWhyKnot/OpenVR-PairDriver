@@ -193,7 +193,7 @@ void RouterTab::TrySendTestPublish()
     }
 
     float fval = 0.0f;
-    bool parsed = (sscanf(testValue_, "%f", &fval) == 1);
+    bool parsed = (sscanf_s(testValue_, "%f", &fval) == 1);
     if (!parsed) {
         snprintf(testStatus_, sizeof(testStatus_), "Could not parse value as float.");
         return;

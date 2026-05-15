@@ -7,6 +7,7 @@
 #include "SmoothingPlugin.h"
 
 #include "CalibrationAnchor.h"
+#include "DebugLogging.h"
 #include "Logging.h"
 #include "Protocol.h"
 #include "ShellContext.h"
@@ -15,7 +16,9 @@
 
 #include <imgui.h>
 
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 
 #include <algorithm>
@@ -204,9 +207,11 @@ void SmoothingPlugin::DrawAdvancedTab()
 void SmoothingPlugin::DrawLogsTab()
 {
 	openvr_pair::overlay::ui::DrawSectionHeading("File locations");
+	const bool debugLogging = openvr_pair::common::IsDebugLoggingEnabled();
 	openvr_pair::overlay::ui::DrawTextWrapped(
-		"Smoothing writes a per-session overlay log next to the umbrella's "
-		"other logs. Driver logs are emitted by the shared driver DLL.");
+		debugLogging
+			? "Debug logging is on. New Smoothing events append next to the umbrella's other logs."
+			: "Debug logging is off. Enable it at the top of this Logs tab before reproducing an issue.");
 	ImGui::Spacing();
 	ImGui::TextWrapped("Overlay:  %%LocalAppDataLow%%\\WKOpenVR\\Logs\\smoothing_log.<ts>.txt");
 	ImGui::TextWrapped("Driver:   %%LocalAppDataLow%%\\WKOpenVR\\Logs\\driver_log.<ts>.txt");

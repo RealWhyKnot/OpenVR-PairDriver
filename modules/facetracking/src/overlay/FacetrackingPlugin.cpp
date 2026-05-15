@@ -2,6 +2,7 @@
 
 #include "AdvancedTab.h"
 #include "CalibrationTab.h"
+#include "DebugLogging.h"
 #include "IPCClient.h"
 #include "Logging.h"
 #include "LogsSection.h"
@@ -19,6 +20,7 @@
 #include "picojson.h"
 
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <exception>
@@ -34,6 +36,8 @@ FacetrackingPlugin::FacetrackingPlugin()
 
 void FacetrackingPlugin::OnStart(openvr_pair::overlay::ShellContext &)
 {
+    FtOverlayVerbose.store(openvr_pair::common::IsDebugLoggingEnabled(), std::memory_order_relaxed);
+
     FtOpenLogFile();
     FT_LOG_OVL("FaceTracking overlay plugin starting (build %s channel=%s)",
         FACETRACKING_BUILD_STAMP, FACETRACKING_BUILD_CHANNEL);
@@ -56,10 +60,10 @@ void FacetrackingPlugin::OnStart(openvr_pair::overlay::ShellContext &)
             if (!needsCheck) {
                 // Parse "YYYY-MM-DDTHH:MM:SSZ".
                 struct tm t{};
-                if (sscanf(src.last_checked_at.c_str(),
-                           "%d-%d-%dT%d:%d:%dZ",
-                           &t.tm_year, &t.tm_mon, &t.tm_mday,
-                           &t.tm_hour, &t.tm_min, &t.tm_sec) == 6) {
+                if (sscanf_s(src.last_checked_at.c_str(),
+                             "%d-%d-%dT%d:%d:%dZ",
+                             &t.tm_year, &t.tm_mon, &t.tm_mday,
+                             &t.tm_hour, &t.tm_min, &t.tm_sec) == 6) {
                     t.tm_year -= 1900;
                     t.tm_mon  -= 1;
                     time_t last = _mkgmtime(&t);
@@ -183,9 +187,7 @@ void FacetrackingPlugin::PushConfigToDriver()
         const std::string &primary = p.enabled_module_uuids.empty()
             ? std::string{}
             : p.enabled_module_uuids.front();
-        std::strncpy(cfg.active_module_uuid, primary.c_str(),
-            sizeof(cfg.active_module_uuid) - 1);
-        cfg.active_module_uuid[sizeof(cfg.active_module_uuid) - 1] = '\0';
+        std::snprintf(cfg.active_module_uuid, sizeof(cfg.active_module_uuid), "%s", primary.c_str());
 
         auto resp = ipc_.SendBlocking(req);
         if (resp.type != protocol::ResponseSuccess) {
@@ -248,9 +250,7 @@ void FacetrackingPlugin::SendEnabledModules(const std::vector<std::string> &uuid
     }
     try {
         protocol::Request req(protocol::RequestSetFaceActiveModule);
-        std::strncpy(req.setFaceActiveModule.uuid, primary.c_str(),
-            sizeof(req.setFaceActiveModule.uuid) - 1);
-        req.setFaceActiveModule.uuid[sizeof(req.setFaceActiveModule.uuid) - 1] = '\0';
+        std::snprintf(req.setFaceActiveModule.uuid, sizeof(req.setFaceActiveModule.uuid), "%s", primary.c_str());
         std::memset(req.setFaceActiveModule._reserved, 0,
             sizeof(req.setFaceActiveModule._reserved));
         auto resp = ipc_.SendBlocking(req);
@@ -357,6 +357,11 @@ void FacetrackingPlugin::DrawTab(openvr_pair::overlay::ShellContext &ctx)
 void FacetrackingPlugin::DrawLogsSection(openvr_pair::overlay::ShellContext &)
 {
     facetracking::ui::DrawLogsSection(*this);
+}
+
+void FacetrackingPlugin::OnDebugLoggingChanged(bool enabled)
+{
+    FtOverlayVerbose.store(enabled, std::memory_order_relaxed);
 }
 
 namespace openvr_pair::overlay {

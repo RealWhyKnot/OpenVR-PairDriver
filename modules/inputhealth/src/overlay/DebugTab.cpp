@@ -1,5 +1,6 @@
 #include "DebugTab.h"
 
+#include "DebugLogging.h"
 #include "InputHealthPlugin.h"
 #include "SnapshotReader.h"
 #include "UiHelpers.h"
@@ -54,9 +55,11 @@ void DrawLogsTab(InputHealthPlugin &ui)
 	ImGui::Text("publish_tick: %llu", (unsigned long long)ui.reader_.LastPublishTick());
 
 	openvr_pair::overlay::ui::DrawSectionHeading("File locations");
+	const bool debugLogging = openvr_pair::common::IsDebugLoggingEnabled();
 	openvr_pair::overlay::ui::DrawTextWrapped(
-		"File logging is always on. Paths are listed verbatim so they can be "
-		"copy-pasted into Explorer.");
+		debugLogging
+			? "Debug logging is on. New Input Health events append to the files below."
+			: "Debug logging is off. Enable it at the top of this Logs tab before reproducing an issue.");
 	ImGui::Spacing();
 	ImGui::TextWrapped("Driver:   %%LocalAppDataLow%%\\WKOpenVR\\Logs\\driver_log.<ts>.txt");
 	ImGui::TextWrapped("Overlay:  %%LocalAppDataLow%%\\WKOpenVR\\Logs\\overlay_log.<ts>.txt");

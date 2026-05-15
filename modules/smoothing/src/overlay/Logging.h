@@ -14,6 +14,7 @@ namespace smoothing::logging {
 extern FILE *LogFile;
 
 void OpenLogFile();
+bool EnsureLogFileOpen();
 tm   TimeForLog();
 void LogFlush();
 
@@ -21,9 +22,11 @@ void LogFlush();
 
 #ifndef SM_LOG
 #define SM_LOG(fmt, ...) do { \
-	tm logNow = smoothing::logging::TimeForLog(); \
-	fprintf(smoothing::logging::LogFile, "[%02d:%02d:%02d] " fmt "\n", \
-		logNow.tm_hour, logNow.tm_min, logNow.tm_sec, __VA_ARGS__); \
-	smoothing::logging::LogFlush(); \
+	if (smoothing::logging::EnsureLogFileOpen()) { \
+		tm logNow = smoothing::logging::TimeForLog(); \
+		fprintf(smoothing::logging::LogFile, "[%02d:%02d:%02d] " fmt "\n", \
+			logNow.tm_hour, logNow.tm_min, logNow.tm_sec, ##__VA_ARGS__); \
+		smoothing::logging::LogFlush(); \
+	} \
 } while (0)
 #endif

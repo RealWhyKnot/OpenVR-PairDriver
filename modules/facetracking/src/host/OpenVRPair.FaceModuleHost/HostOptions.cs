@@ -23,6 +23,8 @@ public sealed class HostOptions
     public string StatusFilePath { get; set; } = Path.Combine(
         LocalAppDataLow(), "WKOpenVR", "facetracking", "host_status.json");
 
+    public bool DebugLoggingEnabled { get; set; } = false;
+
     public static HostOptions FromArgs(string[] args)
     {
         var opts = new HostOptions();
@@ -32,6 +34,8 @@ public sealed class HostOptions
             opts.DriverHandshakePipe = envPipe;
         if (Environment.GetEnvironmentVariable("OPENVR_PAIR_FACE_SHMEM") is { } envShmem)
             opts.ShmemName = envShmem;
+        if (Environment.GetEnvironmentVariable("WKOPENVR_DEBUG_LOGGING") is { } envDebug)
+            opts.DebugLoggingEnabled = IsTruthy(envDebug);
 
         // Command-line args override env vars.
         for (int i = 0; i < args.Length - 1; i++)
@@ -41,11 +45,18 @@ public sealed class HostOptions
                 case "--driver-handshake-pipe": opts.DriverHandshakePipe = args[i + 1]; break;
                 case "--shmem-name":            opts.ShmemName           = args[i + 1]; break;
                 case "--modules-dir":           opts.ModulesInstallDir   = args[i + 1]; break;
+                case "--debug-logging":         opts.DebugLoggingEnabled = IsTruthy(args[i + 1]); break;
             }
         }
 
         return opts;
     }
+
+    private static bool IsTruthy(string value) =>
+        value.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+        value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+        value.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+        value.Equals("on", StringComparison.OrdinalIgnoreCase);
 
     private static string LocalAppDataLow()
     {

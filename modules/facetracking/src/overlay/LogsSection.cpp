@@ -1,6 +1,6 @@
 #include "LogsSection.h"
 
-#include "BuildStamp.h"
+#include "DebugLogging.h"
 #include "FacetrackingPlugin.h"
 #include "Logging.h"
 #include "UiHelpers.h"
@@ -65,17 +65,19 @@ void DrawLogsSection(FacetrackingPlugin &plugin)
     // ---- Verbose logging toggle ----
     DrawSectionHeading("Logging");
 
-    const bool isDev = (std::string(FACETRACKING_BUILD_CHANNEL) == "dev");
+    const bool isDev = openvr_pair::common::IsDebugLoggingForcedOn();
 
     if (isDev) {
         FtOverlayVerbose.store(true, std::memory_order_relaxed);
         ImGui::BeginDisabled();
     }
 
-    bool verboseOverlay = FtOverlayVerbose.load(std::memory_order_relaxed);
-    if (CheckboxWithTooltip("Verbose overlay logging", &verboseOverlay,
-            "Write extra trace lines from the overlay side to the\n"
-            "facetracking_log.* file. Enabled and locked in dev builds.")) {
+    bool verboseOverlay = openvr_pair::common::IsDebugLoggingEnabled();
+    if (CheckboxWithTooltip("Enable debug logging", &verboseOverlay,
+            "Write Face Tracking overlay diagnostics to the facetracking_log.* file.\n"
+            "The shared debug toggle also gates driver and host-side logs.")) {
+        openvr_pair::common::SetDebugLoggingEnabled(verboseOverlay);
+        verboseOverlay = openvr_pair::common::IsDebugLoggingEnabled();
         FtOverlayVerbose.store(verboseOverlay, std::memory_order_relaxed);
     }
 

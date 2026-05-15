@@ -7,7 +7,7 @@ var opts = HostOptions.FromArgs(args);
 var cts  = new CancellationTokenSource();
 var ct   = cts.Token;
 
-var logger = new HostLogger();
+var logger = new HostLogger(forceEnabled: opts.DebugLoggingEnabled);
 logger.Info("[startup] phase=logger-open");
 
 AppDomain.CurrentDomain.UnhandledException += (s, e) => {

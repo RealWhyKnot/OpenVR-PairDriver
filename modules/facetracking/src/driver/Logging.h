@@ -9,6 +9,7 @@
 // SHGetKnownFolderPath, etc.).
 inline FILE  *FtDrvLogFile   = nullptr;
 inline void   FtDrvOpenLogFile() {}
+inline bool   FtDrvEnsureLogFileOpen() { return false; }
 inline tm     FtDrvTimeForLog()  { return {}; }
 inline void   FtDrvLogFlush()    {}
 #define FT_LOG_DRV(fmt, ...) do { } while (0)
@@ -17,6 +18,7 @@ inline void   FtDrvLogFlush()    {}
 extern FILE *FtDrvLogFile;
 
 void FtDrvOpenLogFile();
+bool FtDrvEnsureLogFileOpen();
 tm   FtDrvTimeForLog();
 void FtDrvLogFlush();
 
@@ -26,10 +28,12 @@ void FtDrvLogFlush();
 // from inside a feature module's static lib.
 #ifndef FT_LOG_DRV
 #define FT_LOG_DRV(fmt, ...) do { \
-    tm _ftNow = FtDrvTimeForLog(); \
-    fprintf(FtDrvLogFile, "[%02d:%02d:%02d] " fmt "\n", \
-        _ftNow.tm_hour, _ftNow.tm_min, _ftNow.tm_sec, __VA_ARGS__); \
-    FtDrvLogFlush(); \
+    if (FtDrvEnsureLogFileOpen()) { \
+        tm _ftNow = FtDrvTimeForLog(); \
+        fprintf(FtDrvLogFile, "[%02d:%02d:%02d] " fmt "\n", \
+            _ftNow.tm_hour, _ftNow.tm_min, _ftNow.tm_sec, ##__VA_ARGS__); \
+        FtDrvLogFlush(); \
+    } \
 } while (0)
 #endif
 

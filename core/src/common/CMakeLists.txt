@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.15)
 
 add_library(openvr_pair_common STATIC
+	BuildChannel.h
+	DebugLogging.cpp
+	DebugLogging.h
 	DriverMemoryProbe.cpp
 	DriverMemoryProbe.h
 	JsonUtil.cpp
@@ -26,8 +29,7 @@ target_include_directories(openvr_pair_common
 
 target_compile_definitions(openvr_pair_common
 	PUBLIC
-		NOMINMAX
-		WIN32_LEAN_AND_MEAN)
+		NOMINMAX)
 
 if(WIN32)
 	target_link_libraries(openvr_pair_common

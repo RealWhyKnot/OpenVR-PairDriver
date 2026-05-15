@@ -1,14 +1,18 @@
 #define _CRT_SECURE_NO_DEPRECATE
 #include "Logging.h"
 
+#include "DebugLogging.h"
 #include "LogPaths.h"
 
 #include <chrono>
 
-FILE *LogFile;
+FILE *LogFile = nullptr;
 
 void OpenLogFile()
 {
+	if (!openvr_pair::common::IsDebugLoggingEnabled()) return;
+	if (LogFile) return;
+
 	std::wstring path = openvr_pair::common::TimestampedLogPath(L"overlay_log");
 	if (!path.empty()) {
 		LogFile = _wfopen(path.c_str(), L"a");
@@ -18,6 +22,13 @@ void OpenLogFile()
 	if (!LogFile) {
 		LogFile = stderr;
 	}
+}
+
+bool EnsureLogFileOpen()
+{
+	if (!openvr_pair::common::IsDebugLoggingEnabled()) return false;
+	if (!LogFile) OpenLogFile();
+	return LogFile != nullptr;
 }
 
 tm TimeForLog()
@@ -31,5 +42,5 @@ tm TimeForLog()
 
 void LogFlush()
 {
-	fflush(LogFile);
+	if (LogFile) fflush(LogFile);
 }

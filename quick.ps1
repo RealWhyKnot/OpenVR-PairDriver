@@ -147,6 +147,19 @@ function Wait-ForProcessesToExit {
 	return $false
 }
 
+function Test-NamedProcess {
+	param([Parameter(Mandatory=$true)][string[]]$Names)
+
+	$nameSet = @{}
+	foreach ($name in $Names) { $nameSet[$name.ToLowerInvariant()] = $true }
+
+	$process = Get-Process -ErrorAction SilentlyContinue | Where-Object {
+		$nameSet.ContainsKey($_.ProcessName.ToLowerInvariant())
+	} | Select-Object -First 1
+
+	return $null -ne $process
+}
+
 function Stop-NamedProcesses {
 	param(
 		[Parameter(Mandatory=$true)][string]$Label,
@@ -182,6 +195,74 @@ function Stop-NamedProcesses {
 		}
 		[void](Wait-ForProcessesToExit -Ids $ids -Seconds 4)
 	}
+}
+
+function Stop-ProcessList {
+	param(
+		[Parameter(Mandatory=$true)][string]$Label,
+		[Parameter(Mandatory=$true)]$Processes
+	)
+
+	$processes = @($Processes | Where-Object { $_ } | Sort-Object Id -Unique)
+	if ($processes.Count -eq 0) { return }
+
+	Write-Host ("Stopping {0}: {1}" -f $Label, (($processes | Select-Object -ExpandProperty ProcessName -Unique) -join ", "))
+	foreach ($p in @($processes | Where-Object { $_.MainWindowHandle -ne 0 })) {
+		try { [void]$p.CloseMainWindow() } catch { }
+	}
+
+	$ids = @($processes | Select-Object -ExpandProperty Id)
+	if (-not (Wait-ForProcessesToExit -Ids $ids -Seconds 8)) {
+		foreach ($p in $processes) {
+			$live = Get-Process -Id $p.Id -ErrorAction SilentlyContinue
+			if ($live) {
+				try { Stop-Process -Id $p.Id -Force -ErrorAction Stop } catch { }
+			}
+		}
+		[void](Wait-ForProcessesToExit -Ids $ids -Seconds 4)
+	}
+}
+
+function Get-ProcessesUsingModulePath {
+	param([Parameter(Mandatory=$true)][string]$Path)
+
+	$normalized = (Get-NormalizedPath $Path).ToLowerInvariant()
+	$hits = @()
+	foreach ($process in Get-Process -ErrorAction SilentlyContinue) {
+		try {
+			foreach ($module in $process.Modules) {
+				if ((Get-NormalizedPath $module.FileName).ToLowerInvariant() -eq $normalized) {
+					$hits += $process
+					break
+				}
+			}
+		} catch { }
+	}
+
+	return $hits
+}
+
+function Wait-ForNoNamedProcesses {
+	param(
+		[Parameter(Mandatory=$true)][string]$Label,
+		[Parameter(Mandatory=$true)][string[]]$Names,
+		[int]$Seconds = 20
+	)
+
+	$nameSet = @{}
+	foreach ($name in $Names) { $nameSet[$name.ToLowerInvariant()] = $true }
+
+	$deadline = (Get-Date).AddSeconds($Seconds)
+	do {
+		$alive = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+			$nameSet.ContainsKey($_.ProcessName.ToLowerInvariant())
+		})
+		if ($alive.Count -eq 0) { return }
+		Start-Sleep -Milliseconds 500
+	} while ((Get-Date) -lt $deadline)
+
+	$namesAlive = (($alive | Select-Object -ExpandProperty ProcessName -Unique) -join ", ")
+	throw "$Label did not exit after $Seconds seconds: $namesAlive"
 }
 
 function Get-RelativePathFromRoot {
@@ -276,6 +357,30 @@ function Copy-DirectoryFresh {
 	Copy-Item -Path (Join-Path $SourceDir "*") -Destination $DestinationDir -Recurse -Force
 }
 
+function Wait-ForWritableFile {
+	param(
+		[Parameter(Mandatory=$true)][string]$Path,
+		[int]$Seconds = 25
+	)
+
+	if (-not (Test-Path -LiteralPath $Path)) { return }
+
+	$deadline = (Get-Date).AddSeconds($Seconds)
+	$lastError = $null
+	do {
+		try {
+			$stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+			$stream.Dispose()
+			return
+		} catch {
+			$lastError = $_.Exception.Message
+			Start-Sleep -Milliseconds 500
+		}
+	} while ((Get-Date) -lt $deadline)
+
+	throw "Timed out waiting for writable file: $Path ($lastError)"
+}
+
 function Copy-DriverTree {
 	param(
 		[Parameter(Mandatory=$true)]$Plan
@@ -284,6 +389,9 @@ function Copy-DriverTree {
 	$preserveRoot = Join-Path $env:TEMP ("WKOpenVR-preserve-" + [guid]::NewGuid().ToString("N"))
 	$preserved = @()
 	try {
+		$existingDriverDll = Join-Path $Plan.DriverDestDir $Plan.DriverDestDllRel
+		Wait-ForWritableFile -Path $existingDriverDll
+
 		New-Item -ItemType Directory -Force -Path $preserveRoot | Out-Null
 
 		$resourcesDir = Join-Path $Plan.DriverDestDir "resources"
@@ -349,6 +457,7 @@ try {
 
 	New-Item -ItemType Directory -Force -Path $plan.InstallDir | Out-Null
 	foreach ($file in $plan.OverlayFiles) {
+		Wait-ForWritableFile -Path $file.Destination
 		New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file.Destination) | Out-Null
 		Copy-Item -LiteralPath $file.Source -Destination $file.Destination -Force
 	}
@@ -381,7 +490,16 @@ try {
 		throw "Elevated helper produced no result file at $resultPath."
 	}
 
-	$resultLines = Get-Content -LiteralPath $resultPath
+	$resultLines = @()
+	$resultDeadline = (Get-Date).AddSeconds(60)
+	do {
+		$resultLines = @(Get-Content -LiteralPath $resultPath -ErrorAction SilentlyContinue)
+		if ($resultLines.Count -ge 1 -and ($resultLines[0] -eq "OK" -or $resultLines[0] -eq "ERR")) {
+			break
+		}
+		Start-Sleep -Milliseconds 250
+	} while ((Get-Date) -lt $resultDeadline)
+
 	if ($resultLines.Count -lt 1 -or $resultLines[0] -ne "OK") {
 		$msg = if ($resultLines.Count -ge 2) { $resultLines[1] } else { "(empty)" }
 		throw "Elevated helper failed: $msg"
@@ -395,18 +513,23 @@ try {
 }
 
 function Restart-SteamVR {
-	param([string]$ResolvedSteamExe)
+	param(
+		[string]$ResolvedSteamExe,
+		[bool]$ShouldRestart
+	)
 
 	if ($NoRestart) {
 		Write-Host "Restart skipped."
 		return
 	}
 
+	if (-not $ShouldRestart) {
+		Write-Host "SteamVR was not running with Steam at script start; restart skipped."
+		return
+	}
+
 	Write-Step "Restarting SteamVR"
 	if ($ResolvedSteamExe -and (Test-Path -LiteralPath $ResolvedSteamExe)) {
-		Write-Host "Starting Steam..."
-		Start-Process -FilePath $ResolvedSteamExe | Out-Null
-		Start-Sleep -Seconds 2
 		Write-Host "Starting SteamVR..."
 		Start-Process -FilePath $ResolvedSteamExe -ArgumentList @("-applaunch", "250820") | Out-Null
 		return
@@ -420,10 +543,29 @@ $steamExeResolved = Resolve-SteamExe -Override $SteamExe
 $driversDirResolved = Resolve-SteamVRDriversDir -Override $SteamVRDriversDir -ResolvedSteamExe $steamExeResolved
 $driverDestDir = Join-Path $driversDirResolved "01wkopenvr"
 
+$steamProcessNames = @("steam", "steamwebhelper", "GameOverlayUI")
+$steamVrProcessNames = @(
+	"vrmonitor",
+	"vrserver",
+	"vrcompositor",
+	"vrdashboard",
+	"vrwebhelper",
+	"vrstartup",
+	"vrpathreg",
+	"WKOpenVR",
+	"OpenVRPair.FaceModuleHost",
+	"WKOpenVR.FaceModuleProcess",
+	"WKOpenVR.TranslatorHost"
+)
+$steamWasRunning = Test-NamedProcess -Names $steamProcessNames
+$steamVrWasRunning = Test-NamedProcess -Names $steamVrProcessNames
+$restartSteamVrAfterDeploy = $steamWasRunning -and $steamVrWasRunning
+$deployedDriverDll = Join-Path $driverDestDir "bin\win64\driver_01wkopenvr.dll"
+
 if (-not $SkipBuild) {
 	Write-Step "Building"
-	$buildArgs = @()
-	if ($SkipConfigure) { $buildArgs += "-SkipConfigure" }
+	$buildArgs = @{}
+	if ($SkipConfigure) { $buildArgs["SkipConfigure"] = $true }
 	& "$PSScriptRoot\build.ps1" @buildArgs
 	if ($LASTEXITCODE -ne 0) { throw "build.ps1 failed (exit $LASTEXITCODE)" }
 } else {
@@ -492,6 +634,9 @@ Write-Host ("Steam exe:          {0}" -f ($(if ($steamExeResolved) { $steamExeRe
 Write-Host ("SteamVR drivers:    {0}" -f $driversDirResolved)
 Write-Host ("Driver destination: {0}" -f $driverDestDir)
 Write-Host ("Build version:      {0}" -f (Resolve-Version $srcExe))
+Write-Host ("Steam was running:  {0}" -f $steamWasRunning)
+Write-Host ("SteamVR was running:{0}" -f $steamVrWasRunning)
+Write-Host ("Restart SteamVR:    {0}" -f ($restartSteamVrAfterDeploy -and -not $NoRestart))
 
 if ($DryRun) {
 	$entries = @(Get-DeployEntries -Plan ([pscustomobject]$plan))
@@ -501,32 +646,48 @@ if ($DryRun) {
 
 if (-not $Yes) {
 	Write-Host ""
-	$reply = Read-Host "This will close Steam/SteamVR, copy into Program Files, and restart SteamVR. Continue? [y/N]"
+	if ($restartSteamVrAfterDeploy -and -not $NoRestart) {
+		$prompt = "This will stop SteamVR, copy into Program Files, and restart SteamVR through Steam. Continue? [y/N]"
+	} elseif ($steamVrWasRunning) {
+		$prompt = "This will stop SteamVR and copy into Program Files. SteamVR will not restart because Steam was not running at script start. Continue? [y/N]"
+	} else {
+		$prompt = "This will copy into Program Files without stopping or starting SteamVR. Continue? [y/N]"
+	}
+	$reply = Read-Host $prompt
 	if ($reply -notmatch "^(y|yes)$") {
 		Write-Host "Aborted."
 		exit 1
 	}
 }
 
-Write-Step "Stopping SteamVR and Steam"
-Stop-NamedProcesses -Label "SteamVR/WKOpenVR processes" -Names @(
-	"vrmonitor",
-	"vrserver",
-	"vrcompositor",
-	"vrdashboard",
-	"vrwebhelper",
-	"vrstartup",
-	"vrpathreg",
-	"WKOpenVR",
-	"OpenVRPair.FaceModuleHost",
-	"WKOpenVR.FaceModuleProcess",
-	"WKOpenVR.TranslatorHost"
-)
-Stop-NamedProcesses -Label "Steam processes" -Names @(
-	"steam",
-	"steamwebhelper",
-	"GameOverlayUI"
-)
+if ($steamVrWasRunning) {
+	Write-Step "Stopping SteamVR"
+	Stop-NamedProcesses -Label "SteamVR/WKOpenVR processes" -Names $steamVrProcessNames
+	Wait-ForNoNamedProcesses -Label "SteamVR/WKOpenVR processes" -Names $steamVrProcessNames
+} else {
+	Write-Step "SteamVR not running"
+	Write-Host "Skipping SteamVR stop."
+}
+
+$overlayLockers = @(Get-ProcessesUsingModulePath -Path $plan.OverlayExeDest)
+if ($overlayLockers.Count -gt 0) {
+	Write-Step "Stopping WKOpenVR"
+	Stop-ProcessList -Label "WKOpenVR processes holding the installed executable" -Processes $overlayLockers
+}
+
+$driverLockers = @(Get-ProcessesUsingModulePath -Path $deployedDriverDll)
+if ($driverLockers.Count -gt 0) {
+	$lockNames = (($driverLockers | Select-Object -ExpandProperty ProcessName -Unique) -join ", ")
+	Write-Host "Driver DLL is still loaded by: $lockNames"
+	$steamLockers = @($driverLockers | Where-Object { $_.ProcessName -in $steamProcessNames })
+	if ($steamLockers.Count -gt 0) {
+		Write-Step "Stopping Steam"
+		Stop-NamedProcesses -Label "Steam processes holding the driver DLL" -Names $steamProcessNames
+		Wait-ForNoNamedProcesses -Label "Steam processes holding the driver DLL" -Names $steamProcessNames
+	} else {
+		throw "Driver DLL is still loaded by non-Steam process(es): $lockNames"
+	}
+}
 
 Write-Step "Deploying"
 Invoke-ElevatedDeployCopy -Plan $plan
@@ -550,7 +711,7 @@ if ($mismatches.Count -gt 0) {
 
 Write-Host ("Verified {0} deployed files." -f $entries.Count)
 
-Restart-SteamVR -ResolvedSteamExe $steamExeResolved
+Restart-SteamVR -ResolvedSteamExe $steamExeResolved -ShouldRestart $restartSteamVrAfterDeploy
 
 Write-Step "Done"
 Write-Host "Deploy verified. Installed build: $(Resolve-Version (Join-Path $InstallDir "WKOpenVR.exe"))"

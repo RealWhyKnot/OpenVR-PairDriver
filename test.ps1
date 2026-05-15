@@ -12,9 +12,26 @@ param(
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
+function Invoke-NativeQuiet {
+	param([scriptblock]$Cmd)
+	$prevEap = $ErrorActionPreference
+	$ErrorActionPreference = "Continue"
+	try {
+		& $Cmd 2>&1 | ForEach-Object {
+			if ($_ -is [System.Management.Automation.ErrorRecord]) {
+				Write-Host $_.Exception.Message
+			} else {
+				Write-Host $_
+			}
+		}
+	} finally {
+		$ErrorActionPreference = $prevEap
+	}
+}
+
 if (-not $SkipBuild) {
-	$buildArgs = @()
-	if ($SkipConfigure) { $buildArgs += "-SkipConfigure" }
+	$buildArgs = @{}
+	if ($SkipConfigure) { $buildArgs["SkipConfigure"] = $true }
 	& "$PSScriptRoot\build.ps1" @buildArgs
 	if ($LASTEXITCODE -ne 0) { throw "build.ps1 failed (exit $LASTEXITCODE)" }
 }
@@ -25,15 +42,15 @@ if ($tests.Count -eq 0) {
 	throw "No test binaries found under $testDir. Run build.ps1 first."
 }
 
-$args = @("--gtest_brief=1")
+$testArgs = @("--gtest_brief=1")
 if ($Filter) {
-	$args += "--gtest_filter=$Filter"
+	$testArgs += "--gtest_filter=$Filter"
 }
 
 foreach ($test in $tests) {
 	Write-Host ""
 	Write-Host ("== Running {0} ==" -f $test.Name)
-	& $test.FullName @args
+	Invoke-NativeQuiet { & $test.FullName @testArgs }
 	if ($LASTEXITCODE -ne 0) {
 		throw "$($test.Name) failed (exit $LASTEXITCODE)"
 	}

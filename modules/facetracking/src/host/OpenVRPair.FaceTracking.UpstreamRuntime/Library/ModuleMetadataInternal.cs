@@ -6,7 +6,7 @@ namespace VRCFaceTracking;
 // Internal version of ModuleMetadata, done to not break compat
 public class ModuleMetadataInternal : INotifyPropertyChanged
 {
-    public event PropertyChangedEventHandler PropertyChanged;
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public ModuleMetadata.ActiveChange OnActiveChange;
 

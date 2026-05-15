@@ -7,6 +7,7 @@
 #include "UiHelpers.h"
 #include "UpdateNotice.h"
 #include "VrOverlayHost.h"
+#include "DebugLogging.h"
 
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
@@ -112,6 +113,38 @@ void DrawGlobalLogs(openvr_pair::overlay::ShellContext &context,
 		"Per-module logs. All overlay-side logs land in "
 		"%LocalAppDataLow%\\WKOpenVR\\Logs\\; driver-side logs land in "
 		"%LocalAppDataLow%\\WKOpenVR\\Logs\\.");
+	ImGui::Spacing();
+
+	openvr_pair::overlay::ui::DrawSectionHeading("Debug logging");
+	const bool forced = openvr_pair::common::IsDebugLoggingForcedOn();
+	bool debugLogging = openvr_pair::common::IsDebugLoggingEnabled();
+	if (forced) {
+		debugLogging = true;
+		ImGui::BeginDisabled();
+	}
+	if (openvr_pair::overlay::ui::CheckboxWithTooltip(
+			"Enable debug logging", &debugLogging,
+			"Release builds stay quiet until this is enabled.\n"
+			"Dev builds keep it on so repro sessions leave a diagnostic trail.\n"
+			"State is shared by the overlay, driver, and host sidecars.")) {
+		openvr_pair::common::SetDebugLoggingEnabled(debugLogging);
+	}
+	if (forced) {
+		ImGui::EndDisabled();
+		ImGui::SameLine();
+		ImGui::TextDisabled("(dev build: always on)");
+	} else {
+		ImGui::SameLine();
+		ImGui::TextDisabled(debugLogging ? "(on)" : "(off)");
+	}
+
+	const bool effectiveDebugLogging = openvr_pair::common::IsDebugLoggingEnabled();
+	for (auto &plugin : plugins) {
+		plugin->OnDebugLoggingChanged(effectiveDebugLogging);
+	}
+
+	ImGui::Spacing();
+	ImGui::Separator();
 	ImGui::Spacing();
 
 	bool anyDrawn = false;

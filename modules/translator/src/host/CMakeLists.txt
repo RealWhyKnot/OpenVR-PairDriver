@@ -26,7 +26,9 @@ option(WKOPENVR_TRANSLATOR_CUDA "Build whisper.cpp with CUDA backend" OFF)
 
 set(WHISPER_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
 set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(WHISPER_CCACHE         OFF CACHE BOOL "" FORCE)
 set(GGML_CUDA ${WKOPENVR_TRANSLATOR_CUDA} CACHE BOOL "" FORCE)
+set(GGML_CCACHE OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
     whisper_cpp
@@ -46,7 +48,7 @@ if(EXISTS "${ORT_ROOT}/include/onnxruntime_c_api.h")
     message(STATUS "ONNX Runtime found at ${ORT_ROOT}")
 else()
     set(HAVE_ORT OFF)
-    message(WARNING "ONNX Runtime not found at ${ORT_ROOT}; Silero VAD will be stubbed.")
+    message(STATUS "ONNX Runtime not found at ${ORT_ROOT}; Silero VAD will be stubbed.")
 endif()
 
 # ---------------------------------------------------------------------------
@@ -59,7 +61,7 @@ if(EXISTS "${CT2_ROOT}/include/ctranslate2/translator.h")
     message(STATUS "CTranslate2 found at ${CT2_ROOT}")
 else()
     set(HAVE_CT2 OFF)
-    message(WARNING "CTranslate2 not found at ${CT2_ROOT}; translation will be stubbed.")
+    message(STATUS "CTranslate2 not found at ${CT2_ROOT}; translation will be stubbed.")
 endif()
 
 # ---------------------------------------------------------------------------
@@ -104,8 +106,7 @@ set_target_properties(WKOpenVRTranslatorHost PROPERTIES
 
 target_compile_definitions(WKOpenVRTranslatorHost PRIVATE
     NOMINMAX
-    UNICODE
-    WIN32_LEAN_AND_MEAN)
+    UNICODE)
 
 target_compile_features(WKOpenVRTranslatorHost PRIVATE cxx_std_17)
 
@@ -120,6 +121,8 @@ if(MSVC)
     # exits with code 0xCEE0DC00 + (GetLastError() & 0xFF) so the supervisor
     # can distinguish this class of failure from generic crashes.
     target_link_options(WKOpenVRTranslatorHost PRIVATE
+        /NODEFAULTLIB:LIBCMT
+        /IGNORE:4199
         /DELAYLOAD:cublas64_13.dll
         /DELAYLOAD:cublasLt64_13.dll
         /DELAYLOAD:cudart64_13.dll
@@ -130,10 +133,12 @@ endif()
 
 target_include_directories(WKOpenVRTranslatorHost PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
+    ${TRANSLATOR_PAIRDRIVER_ROOT}/core/src/common
     ${OPENVR_LIB_DIR}/headers
     ${TRANSLATOR_PAIRDRIVER_ROOT}/lib)
 
 target_link_libraries(WKOpenVRTranslatorHost PRIVATE
+    openvr_pair_common
     whisper
     ${OPENVR_LIBRARIES}
     ole32

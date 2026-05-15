@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -337,8 +338,7 @@ void DrawTranslatorTab(TranslatorPlugin &plugin)
 
         if (preset == 1) {
             char addr_buf[64];
-            strncpy(addr_buf, addr.c_str(), sizeof(addr_buf) - 1);
-            addr_buf[sizeof(addr_buf) - 1] = '\0';
+            std::snprintf(addr_buf, sizeof(addr_buf), "%s", addr.c_str());
             if (ImGui::InputText("OSC address", addr_buf, sizeof(addr_buf))) {
                 plugin.SetChatboxAddress(addr_buf);
                 plugin.PushConfigToDriver();

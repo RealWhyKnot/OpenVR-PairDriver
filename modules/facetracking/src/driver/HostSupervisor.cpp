@@ -1,5 +1,6 @@
 #define _CRT_SECURE_NO_DEPRECATE
 #include "HostSupervisor.h"
+#include "DebugLogging.h"
 #include "Logging.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -146,12 +147,17 @@ bool HostSupervisor::Spawn()
             if (wlen > 0) {
                 std::wstring wpath(wlen, L'\0');
                 MultiByteToWideChar(CP_UTF8, 0, host_exe_path_.c_str(), -1, wpath.data(), wlen);
+                if (!wpath.empty() && wpath.back() == L'\0') wpath.pop_back();
+                std::wstring commandLine = L"\"" + wpath + L"\"";
+                if (openvr_pair::common::IsDebugLoggingForcedOn()) {
+                    commandLine += L" --debug-logging 1";
+                }
 
                 STARTUPINFOW si{};
                 si.cb = sizeof(si);
                 PROCESS_INFORMATION pi{};
 
-                if (!CreateProcessW(wpath.c_str(), nullptr, nullptr, nullptr, FALSE,
+                if (!CreateProcessW(wpath.c_str(), commandLine.data(), nullptr, nullptr, FALSE,
                         CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
                     DWORD cpErr = GetLastError();
                     char errMsg[256] = {};

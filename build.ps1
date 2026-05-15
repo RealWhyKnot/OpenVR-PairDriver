@@ -74,6 +74,19 @@ if ($Version -eq "") {
 Set-Content -Path "version.txt" -Value $Version -NoNewline
 Write-Host "Build version: $Version"
 
+# Stamp the common build channel header consumed by shared diagnostics code.
+$CommonBuildChannel = Join-Path $PSScriptRoot "core/src/common/BuildChannel.h"
+if (Test-Path (Split-Path -Parent $CommonBuildChannel)) {
+	Set-Content -Path $CommonBuildChannel -Value @"
+// Overwritten by WKOpenVR/build.ps1 with the umbrella binary's
+// per-build stamp so every process uses the same debug-logging policy.
+#pragma once
+
+#define WKOPENVR_BUILD_STAMP "$Version"
+#define WKOPENVR_BUILD_CHANNEL "dev"
+"@
+}
+
 # Stamp the SpaceCalibrator feature plugin's BuildStamp.h with the same
 # version. Without this, the standalone SC fallback ("0.0.0.0-DEV") shows up
 # in the calibration UI's version line even though the umbrella binary

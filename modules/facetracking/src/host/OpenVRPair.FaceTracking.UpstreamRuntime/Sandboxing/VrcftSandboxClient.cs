@@ -22,7 +22,7 @@ public class VrcftSandboxClient : UdpFullDuplex
     private IPEndPoint                              _serverEndpoint;
     private readonly ILoggerFactory                 _loggerFactory;
     private readonly ILogger<VrcftSandboxClient>    _logger;
-    private bool                                    _isConnected;
+    private bool                                    _handshakeConnected;
     private int                                     _maxPacketSizeBytes;
 
     public OnPacketReceivedCallback OnPacketReceivedCallback = null;
@@ -30,7 +30,7 @@ public class VrcftSandboxClient : UdpFullDuplex
         ILoggerFactory factory
         ) : base(0, null, new IPEndPoint(IPAddress.Loopback, portNumber)) // 0 is reserved for the OS to pick for us
     {
-        _isConnected = false;
+        _handshakeConnected = false;
         // Init loggers
         _loggerFactory = factory;
         _logger = factory.CreateLogger<VrcftSandboxClient>();
@@ -88,7 +88,7 @@ public class VrcftSandboxClient : UdpFullDuplex
                 if ( handshakePacket.IsValid )
                 {
                     _logger.LogInformation($"Received ACK from host on port {endpoint.Port}. Handshake done.");
-                    _isConnected = true;
+                    _handshakeConnected = true;
                     SendAllPendingPackets();
                 }
             }
@@ -102,7 +102,7 @@ public class VrcftSandboxClient : UdpFullDuplex
     }
     public void SendData(in IpcPacket packet)
     {
-        if ( _isConnected || packet.GetPacketType() == IpcPacket.PacketType.Handshake)
+        if ( _handshakeConnected || packet.GetPacketType() == IpcPacket.PacketType.Handshake)
         {
             byte[] packetData = packet.GetBytes();
             if ( packetData.Length > MTU )
@@ -128,7 +128,7 @@ public class VrcftSandboxClient : UdpFullDuplex
 
     public void SendAllPendingPackets()
     {
-        if ( _isConnected )
+        if ( _handshakeConnected )
         {
             if ( _eventBus.Count > 0 )
             {

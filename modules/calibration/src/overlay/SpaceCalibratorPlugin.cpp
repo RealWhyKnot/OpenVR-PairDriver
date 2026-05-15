@@ -1,5 +1,7 @@
 #include "SpaceCalibratorPlugin.h"
 
+#include "CalibrationMetrics.h"
+#include "DebugLogging.h"
 #include "EmbeddedFiles.h"
 #include "Protocol.h"
 #include "ShellContext.h"
@@ -17,6 +19,8 @@ void CCal_DrawLogsPanel();
 
 void SpaceCalibratorPlugin::OnStart(openvr_pair::overlay::ShellContext &)
 {
+	Metrics::enableLogs = openvr_pair::common::IsDebugLoggingEnabled();
+
 	// Match the standalone SpaceCalibrator binary's typography so the
 	// calibration UI looks the way long-time users expect. The umbrella
 	// shell otherwise falls through to ImGui's default ProggyClean, which
@@ -56,6 +60,11 @@ void SpaceCalibratorPlugin::DrawLogsSection(openvr_pair::overlay::ShellContext &
 	// Surfaces the existing SC Logs panel (file list, enable toggle, drift
 	// state dump, Explorer button) inside the umbrella's global Logs tab.
 	CCal_DrawLogsPanel();
+}
+
+void SpaceCalibratorPlugin::OnDebugLoggingChanged(bool enabled)
+{
+	Metrics::enableLogs = enabled;
 }
 
 namespace openvr_pair::overlay {

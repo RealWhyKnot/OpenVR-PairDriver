@@ -24,6 +24,12 @@ public:
 	// list / toggle / debug controls without its own heading.
 	virtual void DrawLogsSection(ShellContext &) {}
 
+	// Called by the umbrella Logs tab when the shared debug-logging toggle is
+	// drawn or changed. Plugins that still own an internal logging flag mirror
+	// the shared state here; file-backed loggers can simply consult the common
+	// DebugLogging gate and keep the default no-op.
+	virtual void OnDebugLoggingChanged(bool) {}
+
 	virtual bool IsInstalled(ShellContext &) const;
 };
 

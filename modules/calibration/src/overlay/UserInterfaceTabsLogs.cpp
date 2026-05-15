@@ -1,7 +1,7 @@
 #include "stdafx.h"
-#include "BuildStamp.h"
 #include "Calibration.h"
 #include "CalibrationMetrics.h"
+#include "DebugLogging.h"
 #include "MotionRecording.h"
 
 #include <string>
@@ -136,12 +136,17 @@ void CCal_DrawLogsPanel() {
 	// session always has a CSV trail without anyone having to remember to
 	// flip the toggle. Release builds keep the toggle live; default-off boots
 	// are handled by Metrics::enableLogs's initializer.
-	const bool isDevBuild = (std::string(SPACECAL_BUILD_CHANNEL) == "dev");
+	const bool isDevBuild = openvr_pair::common::IsDebugLoggingForcedOn();
+	Metrics::enableLogs = openvr_pair::common::IsDebugLoggingEnabled();
 	if (isDevBuild) {
 		Metrics::enableLogs = true;
 		ImGui::BeginDisabled();
 	}
-	ImGui::Checkbox("Enable debug logging", &Metrics::enableLogs);
+	bool enableLogs = Metrics::enableLogs;
+	if (ImGui::Checkbox("Enable debug logging", &enableLogs)) {
+		openvr_pair::common::SetDebugLoggingEnabled(enableLogs);
+		Metrics::enableLogs = openvr_pair::common::IsDebugLoggingEnabled();
+	}
 	if (ImGui::IsItemHovered()) {
 		ImGui::SetTooltip("Write a per-tick CSV of calibration state to %%LocalAppDataLow%%\\WKOpenVR\\Logs\\\n"
 		                  "while this is on. The new log shows up in the list below as soon as the next calibration tick fires.");

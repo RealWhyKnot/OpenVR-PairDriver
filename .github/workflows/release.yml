@@ -136,6 +136,17 @@ jobs:
           # Stamp version.txt and BuildStamp.h (same logic as build.ps1).
           Set-Content -Path version.txt -Value $version -NoNewline
 
+          $CommonBuildChannel = "core/src/common/BuildChannel.h"
+          if (Test-Path (Split-Path -Parent $CommonBuildChannel)) {
+            Set-Content -Path $CommonBuildChannel -Value @"
+          // Overwritten by release.yml with the umbrella binary's per-build stamp.
+          #pragma once
+
+          #define WKOPENVR_BUILD_STAMP "$version"
+          #define WKOPENVR_BUILD_CHANNEL "release"
+          "@
+          }
+
           $ScBuildStamp = "modules/calibration/src/overlay/BuildStamp.h"
           if (Test-Path (Split-Path -Parent $ScBuildStamp)) {
             # Indent the here-string contents to match the surrounding YAML

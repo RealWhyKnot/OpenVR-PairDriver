@@ -7,6 +7,7 @@
 #include <imgui/imgui.h>
 
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <exception>
 #include <string>
@@ -74,13 +75,9 @@ void TranslatorPlugin::PushConfigToDriver()
         cfg.notify_sound   = notify_sound_ ? 1 : 0;
         cfg.chatbox_port   = 9000;
 
-        strncpy(cfg.source_lang, source_lang_.c_str(),
-            sizeof(cfg.source_lang) - 1);
-        strncpy(cfg.target_lang, target_lang_.c_str(),
-            sizeof(cfg.target_lang) - 1);
-        strncpy(cfg.chatbox_address, chatbox_address_.c_str(),
-            sizeof(cfg.chatbox_address) - 1);
-        cfg.chatbox_address[sizeof(cfg.chatbox_address) - 1] = '\0';
+        std::snprintf(cfg.source_lang, sizeof(cfg.source_lang), "%s", source_lang_.c_str());
+        std::snprintf(cfg.target_lang, sizeof(cfg.target_lang), "%s", target_lang_.c_str());
+        std::snprintf(cfg.chatbox_address, sizeof(cfg.chatbox_address), "%s", chatbox_address_.c_str());
 
         auto resp = ipc_.SendBlocking(req);
         if (resp.type != protocol::ResponseSuccess) {

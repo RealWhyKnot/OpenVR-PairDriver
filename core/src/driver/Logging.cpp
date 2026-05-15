@@ -1,14 +1,18 @@
 #define _CRT_SECURE_NO_DEPRECATE
 #include "Logging.h"
 
+#include "DebugLogging.h"
 #include "LogPaths.h"
 
 #include <chrono>
 
-FILE *LogFile;
+FILE *LogFile = nullptr;
 
 void OpenLogFile()
 {
+	if (!openvr_pair::common::IsDebugLoggingEnabled()) return;
+	if (LogFile) return;
+
 	// Prefer the LocalAppDataLow path so the user's diagnostic flow ("diff
 	// overlay log + driver log side-by-side") works without having to hunt
 	// for the driver log under whatever cwd vrserver happened to inherit
@@ -29,6 +33,13 @@ void OpenLogFile()
 	}
 }
 
+bool EnsureLogFileOpen()
+{
+	if (!openvr_pair::common::IsDebugLoggingEnabled()) return false;
+	if (!LogFile) OpenLogFile();
+	return LogFile != nullptr;
+}
+
 tm TimeForLog()
 {
 	auto now = std::chrono::system_clock::now();
@@ -40,5 +51,5 @@ tm TimeForLog()
 
 void LogFlush()
 {
-	fflush(LogFile);
+	if (LogFile) fflush(LogFile);
 }
