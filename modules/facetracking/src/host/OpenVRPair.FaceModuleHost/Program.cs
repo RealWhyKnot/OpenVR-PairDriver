@@ -2,7 +2,6 @@ using OpenVRPair.FaceModuleHost;
 using OpenVRPair.FaceModuleHost.Logging;
 using OpenVRPair.FaceModuleHost.Workers;
 using OpenVRPair.FaceTracking.Registry;
-using OpenVRPair.FaceTracking.VrcftCompat;
 
 var opts = HostOptions.FromArgs(args);
 var cts  = new CancellationTokenSource();
@@ -10,12 +9,6 @@ var ct   = cts.Token;
 
 var logger = new HostLogger();
 logger.Info("[startup] phase=logger-open");
-
-ReflectingLegacyBridge.SinkLine = line => logger.Info(line);
-ReflectingExtTrackingModuleAdapter.SinkLine = line => logger.Info(line);
-_ = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance.GetType();
-bool _melaLoaded = AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name == "Microsoft.Extensions.Logging.Abstractions");
-logger.Info($"[bridge-probe] SinkLine wired; bridge type hash=0x{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(typeof(ReflectingLegacyBridge)):X} adapter type hash=0x{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(typeof(ReflectingExtTrackingModuleAdapter)):X} mela_loaded={_melaLoaded}");
 
 AppDomain.CurrentDomain.UnhandledException += (s, e) => {
     try { logger.Error($"[crash] AppDomain.UnhandledException: {e.ExceptionObject}"); logger.Flush(); } catch { }
@@ -49,12 +42,23 @@ else
 }
 logger.Info("[startup] phase=singleton-acquired");
 
+// Verify the subprocess EXE is present before opening any IPC.
+var hostDir      = Path.GetDirectoryName(typeof(Program).Assembly.Location) ?? AppContext.BaseDirectory;
+var subprocessExe = Path.Combine(hostDir, "WKOpenVR.FaceModuleProcess.exe");
+logger.Info($"[startup] subprocess-exe-path={subprocessExe} (exists={File.Exists(subprocessExe)})");
+if (!File.Exists(subprocessExe))
+{
+    logger.Error("[startup] FATAL: subprocess EXE missing; aborting");
+    logger.Flush();
+    Environment.Exit(5);
+}
+
 // Wire SIGINT / SIGTERM -> graceful shutdown.
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 AppDomain.CurrentDomain.ProcessExit += (_, _) => cts.Cancel();
 
 var registry = RegistryClient.Create();
-var loader   = new ModuleLoader(opts, logger);
+var loader   = new SubprocessManager(opts, logger);
 var writer   = new FrameWriter(opts.ShmemName, logger);
 
 logger.Info($"[startup] phase=opening-ipc-pipe pipe={opts.DriverHandshakePipe}");
@@ -73,6 +77,7 @@ try
     logger.Info($"[startup] phase=discovering-modules path={opts.ModulesInstallDir}");
     var loadedModules = await loader.LoadAllAsync();
     logger.Info($"[startup] phase=modules-loaded count={loadedModules.Count}");
+    UpstreamExpressionMap.LogTo(logger.Info);
 
     logger.Info("[startup] phase=starting-workers");
     // Start I/O workers concurrently.
@@ -84,7 +89,6 @@ try
         status.RunAsync(ct),
     };
 
-    logger.Info($"[startup] shared-assemblies=[{string.Join(", ", ModuleLoader.SharedAssemblyNamesSnapshot())}]");
     logger.Info("[startup] phase=running");
 
     // Surface any worker fault rather than silently discarding it.

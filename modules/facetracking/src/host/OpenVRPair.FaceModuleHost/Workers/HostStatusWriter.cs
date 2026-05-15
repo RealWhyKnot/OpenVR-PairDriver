@@ -24,7 +24,7 @@ namespace OpenVRPair.FaceModuleHost.Workers;
 
 public sealed class HostStatusWriter(
     string statusFilePath,
-    ModuleLoader loader,
+    SubprocessManager loader,
     HostLogger logger,
     HostOptions options)
 {

@@ -10,7 +10,7 @@ namespace OpenVRPair.FaceModuleHost.Workers;
 /// </summary>
 public sealed class HostControlPipeServer(
     string pipeName,
-    ModuleLoader loader,
+    SubprocessManager loader,
     HostLogger logger,
     CancellationTokenSource shutdownCts)
 {

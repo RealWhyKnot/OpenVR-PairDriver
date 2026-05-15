@@ -111,10 +111,6 @@ public sealed class SubprocessManager : IDisposable
             await TryDiscoverModuleAsync(versionDir);
         }
 
-        var (mapped, dropped, droppedNames) = UpstreamExpressionMap.Stats;
-        _logger.Info($"[map] built upstream->ours: {mapped} mapped, {dropped} dropped" +
-                     (dropped > 0 ? $": {string.Join(", ", droppedNames)}" : ""));
-
         return _loaded;
     }
 
@@ -422,10 +418,34 @@ public sealed class SubprocessManager : IDisposable
                                  $"jawOpen={jawOpen2:F3} leftEyeLid={eyeSink.LeftOpenness:F3} nonZeroShapes={nonZero}/{s.Length}");
                 }
 
+                // Head data. The sentinel 0xFFFFFFFF (reinterpreted as float) means "not provided".
+                const uint kSentinelBits = 0xFFFFFFFF;
+                float headYaw   = decoded.GetHeadYaw();
+                float headPitch = decoded.GetHeadPitch();
+                float headRoll  = decoded.GetHeadRoll();
+                float headPosX  = decoded.GetHeadPosX();
+                float headPosY  = decoded.GetHeadPosY();
+                float headPosZ  = decoded.GetHeadPosZ();
+                // Set head_flags bit 0 when head values are not all sentinel.
+                bool headValid =
+                    BitConverter.SingleToUInt32Bits(headYaw)   != kSentinelBits ||
+                    BitConverter.SingleToUInt32Bits(headPitch) != kSentinelBits ||
+                    BitConverter.SingleToUInt32Bits(headRoll)  != kSentinelBits;
+                // Replace sentinel values with 0f before writing to shmem.
+                if (BitConverter.SingleToUInt32Bits(headYaw)   == kSentinelBits) headYaw   = 0f;
+                if (BitConverter.SingleToUInt32Bits(headPitch) == kSentinelBits) headPitch = 0f;
+                if (BitConverter.SingleToUInt32Bits(headRoll)  == kSentinelBits) headRoll  = 0f;
+                if (BitConverter.SingleToUInt32Bits(headPosX)  == kSentinelBits) headPosX  = 0f;
+                if (BitConverter.SingleToUInt32Bits(headPosY)  == kSentinelBits) headPosY  = 0f;
+                if (BitConverter.SingleToUInt32Bits(headPosZ)  == kSentinelBits) headPosZ  = 0f;
+
                 await writer.PublishAsync(
                     eyeSink, exprSink,
                     initReply.eyeSuccess, initReply.expressionSuccess,
-                    module.UuidHash, ct);
+                    module.UuidHash, ct,
+                    headYaw, headPitch, headRoll,
+                    headPosX, headPosY, headPosZ,
+                    headValid ? 1u : 0u);
             }
         }
         catch (OperationCanceledException)
