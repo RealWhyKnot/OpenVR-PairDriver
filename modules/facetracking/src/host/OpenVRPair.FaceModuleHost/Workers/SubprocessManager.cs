@@ -65,14 +65,16 @@ public sealed class SubprocessManager : IDisposable
     private const int CrashHaltThreshold = 3;
     private static readonly TimeSpan FastExitThreshold = TimeSpan.FromSeconds(5);
 
-    // Decode symbolic names from ModuleProcessExitCodes constants.
+    // Decode symbolic names mirroring WKOpenVR.FaceModuleProcess.ModuleProcessExitCodes.
+    // Inlined (not a project reference) because the subprocess EXE is not a managed
+    // reference of the host -- it's a runtime-spawned process.
     private static readonly IReadOnlyDictionary<int, string> ExitCodeNames =
         new Dictionary<int, string>
         {
-            [ WKOpenVR.FaceModuleProcess.ModuleProcessExitCodes.OK              ] = "OK",
-            [ WKOpenVR.FaceModuleProcess.ModuleProcessExitCodes.INVALID_ARGS    ] = "INVALID_ARGS",
-            [ WKOpenVR.FaceModuleProcess.ModuleProcessExitCodes.NETWORK_CONNECTION_TIMED_OUT ] = "NETWORK_CONNECTION_TIMED_OUT",
-            [ WKOpenVR.FaceModuleProcess.ModuleProcessExitCodes.EXCEPTION_CRASH ] = "EXCEPTION_CRASH",
+            [  0 ] = "OK",
+            [ -1 ] = "INVALID_ARGS",
+            [ -2 ] = "NETWORK_CONNECTION_TIMED_OUT",
+            [ -3 ] = "EXCEPTION_CRASH",
         };
 
     // Minimal logger factory for VrcftSandboxServer.

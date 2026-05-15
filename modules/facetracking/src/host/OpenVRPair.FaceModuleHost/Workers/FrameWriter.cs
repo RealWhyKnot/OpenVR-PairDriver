@@ -37,7 +37,17 @@ internal struct FaceTrackingFrameBodyNative
     public float   eye_confidence_r;
     public Float63 expressions;
     public uint    flags;
-    public uint    _reserved;
+
+    // v2 head pose fields. head_flags bit 0 = head valid this frame.
+    // SubprocessManager will populate these when head data flows from the
+    // upstream ReplyUpdate packet; default zero means "no head data".
+    public float   head_yaw;
+    public float   head_pitch;
+    public float   head_roll;
+    public float   head_pos_x;
+    public float   head_pos_y;
+    public float   head_pos_z;
+    public uint    head_flags;
 }
 
 // Per-slot seqlock layout. generation precedes body; offset validated by static_assert below.
@@ -56,7 +66,7 @@ internal struct FaceTrackingFrameSlotNative
 public sealed class FrameWriter(string shmemName, HostLogger logger) : IDisposable
 {
     private const uint  Magic        = 0x46544652u; // 'FTFR'
-    private const uint  ShmemVersion = 1;
+    private const uint  ShmemVersion = 2; // v2: added head_yaw/pitch/roll/pos_x/y/z/head_flags
     private const int   RingSize     = 32;
 
     // Byte offset of publish_index within ShmemData.
@@ -149,7 +159,7 @@ public sealed class FrameWriter(string shmemName, HostLogger logger) : IDisposab
             eye_confidence_l        = eye.Left.Confidence,
             eye_confidence_r        = eye.Right.Confidence,
             flags                   = (eyeValid ? 1u : 0u) | (exprValid ? 2u : 0u),
-            _reserved               = 0u,
+            head_flags              = 0u,
         };
 
         body.eye_origin_l[0] = eye.Left.OriginHmd.X;
