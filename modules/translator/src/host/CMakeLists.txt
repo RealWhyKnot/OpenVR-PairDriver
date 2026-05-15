@@ -113,6 +113,19 @@ target_compile_features(WKOpenVRTranslatorHost PRIVATE cxx_std_17)
 # Override the entry point so int main() is used as-is.
 if(MSVC)
     target_link_options(WKOpenVRTranslatorHost PRIVATE /ENTRY:mainCRTStartup)
+
+    # Delay-load the CUDA runtime DLLs so the host process can reach main()
+    # even when the CUDA toolkit is not installed. Missing DLLs are caught by
+    # the __pfnDliFailureHook2 in main.cpp which logs the offending name and
+    # exits with code 0xCEE0DC00 + (GetLastError() & 0xFF) so the supervisor
+    # can distinguish this class of failure from generic crashes.
+    target_link_options(WKOpenVRTranslatorHost PRIVATE
+        /DELAYLOAD:cublas64_13.dll
+        /DELAYLOAD:cublasLt64_13.dll
+        /DELAYLOAD:cudart64_13.dll
+        /DELAYLOAD:nvcudart_hybrid64.dll
+        /DELAYLOAD:nvcuda.dll)
+    target_link_libraries(WKOpenVRTranslatorHost PRIVATE delayimp)
 endif()
 
 target_include_directories(WKOpenVRTranslatorHost PRIVATE

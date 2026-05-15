@@ -1,8 +1,10 @@
 #define _CRT_SECURE_NO_DEPRECATE
-#define WIN32_LEAN_AND_MEAN
+// WIN32_LEAN_AND_MEAN is set by the CMakeLists compile-definitions; no
+// local re-define here to avoid the macro-redefinition warning.
 #include <windows.h>
 #include <shlobj.h>
 #include <objbase.h>
+#include <delayimp.h>
 
 #include "ActionBindings.h"
 #include "ChatboxPacer.h"
@@ -24,6 +26,116 @@
 #include <mutex>
 #include <string>
 #include <vector>
+
+// ---------------------------------------------------------------------------
+// Early-crash helpers: write a one-shot crash record before the logger is up.
+// Uses raw Win32 only -- no C runtime, no statics, no malloc.
+// ---------------------------------------------------------------------------
+
+static void WriteEarlyCrashLog(const char *msg)
+{
+    // Resolve %LocalAppDataLow%\WKOpenVR\Logs\ via SHGetKnownFolderPath.
+    PWSTR raw = nullptr;
+    if (S_OK != SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &raw)) {
+        if (raw) CoTaskMemFree(raw);
+        return;
+    }
+    wchar_t path[MAX_PATH];
+    _snwprintf_s(path, MAX_PATH,
+        L"%s\\WKOpenVR\\Logs", raw);
+    CoTaskMemFree(raw);
+
+    CreateDirectoryW(path, nullptr);  // noop if already exists
+
+    DWORD pid = GetCurrentProcessId();
+    wchar_t fname[MAX_PATH];
+    _snwprintf_s(fname, MAX_PATH,
+        L"%s\\translator_host_crash_%lu.txt", path, (unsigned long)pid);
+
+    HANDLE h = CreateFileW(fname,
+        GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return;
+
+    DWORD written = 0;
+    WriteFile(h, msg, (DWORD)strlen(msg), &written, nullptr);
+    CloseHandle(h);
+}
+
+// ---------------------------------------------------------------------------
+// Delay-load failure hook: called when DelayLoadHelper2 cannot resolve a DLL.
+// Runs before any C++ object constructors for the host's own code, so we must
+// not call into any initialised state -- only Win32 + WriteEarlyCrashLog.
+//
+// Exit codes in range 0xCEE0DC00-0xCEE0DCFF are reserved for delay-load
+// failures; the low byte carries the low byte of GetLastError at the time of
+// failure (e.g. 126 = ERROR_MOD_NOT_FOUND). The supervisor decodes this range.
+// ---------------------------------------------------------------------------
+
+static FARPROC WINAPI DelayLoadFailureHook(unsigned dliNotify, PDelayLoadInfo pdli)
+{
+    if (dliNotify == dliFailLoadLib) {
+        const char *dll = (pdli && pdli->szDll) ? pdli->szDll : "<unknown>";
+        DWORD err = pdli ? pdli->dwLastError : GetLastError();
+        char msg[768];
+        _snprintf_s(msg, sizeof msg,
+            "[translator-host] FATAL: delay-load failed for '%s' (err=%lu)\n"
+            "  Cause: the CUDA Toolkit bin dir (e.g. C:\\Program Files\\NVIDIA GPU Computing Toolkit"
+            "\\CUDA\\v13.2\\bin\\x64) is not on the system PATH, or this build uses CUDA and the\n"
+            "  toolkit is not installed. Options:\n"
+            "    A) Install CUDA Toolkit v13.2 and add its bin\\x64 to PATH; or\n"
+            "    B) Rebuild the host with -DWKOPENVR_TRANSLATOR_CUDA=OFF\n",
+            dll, (unsigned long)err);
+        WriteEarlyCrashLog(msg);
+        ExitProcess(0xCEE0DC00 | (err & 0xFF));
+    }
+    return nullptr;
+}
+
+// The MSVC linker resolves this symbol from delayimp.lib. Declaring it
+// extern "C" with the exact name overrides the default null hook.
+extern "C" const PfnDliHook __pfnDliFailureHook2 = DelayLoadFailureHook;
+
+// ---------------------------------------------------------------------------
+// Top-level SEH filter: catches crashes that occur after the loader but before
+// or during main() -- e.g., an access violation in whisper's CUDA init path.
+// ---------------------------------------------------------------------------
+
+static LONG WINAPI TopLevelSehFilter(EXCEPTION_POINTERS *ep)
+{
+    if (!ep) return EXCEPTION_EXECUTE_HANDLER;
+    DWORD code = ep->ExceptionRecord ? ep->ExceptionRecord->ExceptionCode : 0;
+    void *addr = ep->ExceptionRecord ? ep->ExceptionRecord->ExceptionAddress : nullptr;
+    char msg[512];
+    _snprintf_s(msg, sizeof msg,
+        "[translator-host] FATAL SEH: code=0x%08lX addr=%p\n"
+        "  This is likely a crash inside a native inference library (whisper/ORT/CT2).\n"
+        "  Check the translator driver log for 'dll-probe' lines to identify missing DLLs.\n",
+        (unsigned long)code, addr);
+    WriteEarlyCrashLog(msg);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
+// ---------------------------------------------------------------------------
+// DLL probe helper: LoadLibraryW + immediate FreeLibrary to verify presence.
+// Logs to the host log (call after TranslatorHostOpenLogFile).
+// ---------------------------------------------------------------------------
+
+static void ProbeDll(const wchar_t *dll_name)
+{
+    HMODULE h = LoadLibraryW(dll_name);
+    if (h) {
+        wchar_t fullpath[MAX_PATH] = {};
+        GetModuleFileNameW(h, fullpath, MAX_PATH);
+        FreeLibrary(h);
+        TH_LOG("[translator-host] dll-probe: %ls -> FOUND at %ls",
+            dll_name, fullpath[0] ? fullpath : L"(path unavailable)");
+    } else {
+        DWORD err = GetLastError();
+        TH_LOG("[translator-host] dll-probe: %ls -> MISSING (err=%lu)",
+            dll_name, (unsigned long)err);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Config (updated at runtime via the host control pipe)
@@ -175,9 +287,24 @@ static HANDLE g_singletonMutex = nullptr;
 int main(int argc, char **argv)
 try
 {
+    // Install SEH filter first -- catches crashes during early C++ init.
+    SetUnhandledExceptionFilter(TopLevelSehFilter);
+
     TranslatorHostOpenLogFile();
     TH_LOG("[startup] phase=logger-open");
     TH_LOG("[main] WKOpenVR.TranslatorHost starting");
+
+    // Probe native dependencies before any inference library call.
+    // These log lines are the first thing to read when the host fails to start.
+    TH_LOG("[translator-host] startup-phase=dll-probe");
+    ProbeDll(L"cudart64_13.dll");
+    ProbeDll(L"cublas64_13.dll");
+    ProbeDll(L"cublasLt64_13.dll");
+    ProbeDll(L"nvcudart_hybrid64.dll");
+    ProbeDll(L"nvcuda.dll");
+    ProbeDll(L"onnxruntime.dll");
+    ProbeDll(L"ctranslate2.dll");
+    TH_LOG("[translator-host] startup-phase=dll-probe-done");
 
     // Layer 1: acquire system-wide singleton mutex before opening any IPC.
     {
