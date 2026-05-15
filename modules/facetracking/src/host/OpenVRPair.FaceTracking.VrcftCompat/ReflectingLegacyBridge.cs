@@ -25,6 +25,7 @@ public sealed class ReflectingLegacyBridge : IExtTrackingModuleLegacy
     // will appear inert rather than throw).
     private readonly object? _unifiedDataInstance;
     private readonly PropertyInfo? _dataEyeProp;
+    private readonly FieldInfo? _dataEyeField;
     private readonly FieldInfo?    _dataShapesField;  // UnifiedTrackingData.Shapes is a field, not a property
 
     // Name-based mapping: upstream expression index -> our UnifiedExpression int value.
@@ -110,12 +111,17 @@ public sealed class ReflectingLegacyBridge : IExtTrackingModuleLegacy
             if (_unifiedDataInstance is not null)
             {
                 Type dataType = _unifiedDataInstance.GetType();
-                _dataEyeProp    = dataType.GetProperty("Eye",    BindingFlags.Public | BindingFlags.Instance);
-                // Shapes is declared as a field (UnifiedExpressionShape[] Shapes) in upstream.
+                // Eye and Shapes are both fields in upstream (UnifiedData.cs); some
+                // older builds expose Eye as a property -- try both.
+                _dataEyeField   = dataType.GetField("Eye", BindingFlags.Public | BindingFlags.Instance);
+                _dataEyeProp    = _dataEyeField is null
+                    ? dataType.GetProperty("Eye", BindingFlags.Public | BindingFlags.Instance)
+                    : null;
                 _dataShapesField = dataType.GetField("Shapes", BindingFlags.Public | BindingFlags.Instance);
 
+                bool eyeFound = _dataEyeField is not null || _dataEyeProp is not null;
                 Log($"resolved UnifiedTracking type at {trackingType.Assembly.GetName().Name}, " +
-                    $"Data field type={dataType.Name}; eye={_dataEyeProp != null} shapes={_dataShapesField != null}");
+                    $"Data field type={dataType.Name}; eye={eyeFound} (field={_dataEyeField != null} prop={_dataEyeProp != null}) shapes={_dataShapesField != null}");
 
                 // Build upstream-to-ours expression index map.
                 Type? upstreamExprEnum = FindTypeAcrossAssemblies(
@@ -159,12 +165,12 @@ public sealed class ReflectingLegacyBridge : IExtTrackingModuleLegacy
     {
         _update.Invoke(_upstream, null);
 
-        if (_unifiedDataInstance is null || _dataEyeProp is null || _dataShapesField is null)
+        if (_unifiedDataInstance is null || (_dataEyeProp is null && _dataEyeField is null) || _dataShapesField is null)
         {
             return;
         }
 
-        object? upstreamEye = _dataEyeProp.GetValue(_unifiedDataInstance);
+        object? upstreamEye = _dataEyeField?.GetValue(_unifiedDataInstance) ?? _dataEyeProp?.GetValue(_unifiedDataInstance);
         if (upstreamEye is not null)
         {
             CopyEye(upstreamEye, data.Eye);
