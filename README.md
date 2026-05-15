@@ -36,6 +36,8 @@ Output:
 - `build/driver_wkopenvr/bin/win64/driver_wkopenvr.dll`
 - `build/driver_wkopenvr/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe` (when the host build is enabled)
 
+For local SteamVR iteration, run `./quick.ps1`. It builds, closes SteamVR and Steam for the deploy copy, installs the overlay files plus the full driver tree into the local SteamVR install, verifies deployed hashes, then launches SteamVR through Steam. Run `./test.ps1` when you only need a build plus the local test suite.
+
 ## Pipes and shared memory
 
 - `\\.\pipe\OpenVR-Calibration` -- calibration overlay <-> driver

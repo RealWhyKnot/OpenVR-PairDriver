@@ -23,7 +23,14 @@ cd WKOpenVR
 
 ## Incremental builds
 
-`./build.ps1 -SkipConfigure` skips the CMake configure step and just reruns MSBuild. Useful when iterating on a single source file. `./quick.ps1` builds + deploys the driver + overlay + host into the installed SteamVR drivers directory (with the necessary UAC elevation) so the next SteamVR launch picks up the change.
+`./build.ps1 -SkipConfigure` skips the CMake configure step and just reruns MSBuild. Useful when iterating on a single source file.
+
+`./quick.ps1` is the local SteamVR iteration path. It builds first, checks that the overlay, driver, sidecar hosts, and resources exist, then closes SteamVR and Steam for the deploy copy. The elevated copy installs the overlay files, copies the full `build/driver_wkopenvr/` tree into SteamVR as `drivers/01wkopenvr/`, renames the driver DLL to `driver_01wkopenvr.dll`, preserves existing `resources/*.flag` module toggles, verifies hashes, and relaunches SteamVR through Steam. Useful switches:
+
+- `./quick.ps1 -SkipConfigure` -- incremental build, deploy, and restart.
+- `./quick.ps1 -SkipBuild` -- redeploy the current `build/` outputs.
+- `./quick.ps1 -SkipBuild -DryRun` -- validate the deploy file list without stopping or copying.
+- `./quick.ps1 -NoRestart` -- deploy and verify without launching SteamVR.
 
 ## Release packaging
 
@@ -37,12 +44,10 @@ The default Windows shell is PowerShell 5.1, which wraps every stderr line from 
 
 ## Tests
 
-The gtest suite covers calibration, inputhealth, and facetracking math. After a successful build:
+The gtest suite covers calibration, inputhealth, facetracking, OSC routing, and translator logic. Run:
 
 ```
-build/artifacts/Release/spacecal_tests.exe
-build/artifacts/Release/facetracking_tests.exe
-build/artifacts/Release/inputhealth_tests.exe
+./test.ps1
 ```
 
-`release.yml` enumerates every `*_tests.exe` and runs each with `--gtest_brief=1`; any non-zero exit fails the release.
+`test.ps1` builds by default, then enumerates every `build/artifacts/Release/*_tests.exe` and runs each with `--gtest_brief=1`. Pass `-SkipBuild` to run the existing binaries or `-Filter <pattern>` to pass a GoogleTest filter. `release.yml` runs the same `*_tests.exe` set; any non-zero exit fails the release.
