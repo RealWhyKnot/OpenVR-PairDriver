@@ -19,6 +19,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **translator:** Surface circuit-breaker halt state with deps-missing guidance (6a318a0)
 - **facetracking-host:** Pin Microsoft.Extensions.Logging.Abstractions v7.0.0 via PackageReference (0e41705)
 - **facetracking-host:** Route bridge diagnostics through the file logger (a453100)
+- **facetracking-host:** Load VrcftCompat adapter in default ALC; per-module ALC for upstream only (34e72b6)
 
 ---
 
