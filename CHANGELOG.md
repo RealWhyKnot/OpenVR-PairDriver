@@ -18,6 +18,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **facetracking-host:** Wire VRCFT singleton and map upstream expression enum (03e85f0)
 - **translator:** Surface circuit-breaker halt state with deps-missing guidance (6a318a0)
 - **facetracking-host:** Pin Microsoft.Extensions.Logging.Abstractions v7.0.0 via PackageReference (0e41705)
+- **facetracking-host:** Route bridge diagnostics through the file logger (a453100)
 
 ---
 
