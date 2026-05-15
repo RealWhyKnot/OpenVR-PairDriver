@@ -11,7 +11,7 @@ using OpenVRPair.FaceTracking.ModuleSdk;
 
 namespace OpenVRPair.FaceTracking.VrcftCompat;
 
-internal sealed class ReflectingLegacyBridge : IExtTrackingModuleLegacy
+public sealed class ReflectingLegacyBridge : IExtTrackingModuleLegacy
 {
     private readonly object _upstream;
     private readonly MethodInfo _initialize;
@@ -34,10 +34,14 @@ internal sealed class ReflectingLegacyBridge : IExtTrackingModuleLegacy
     // One-shot first-nonzero-shape log guard.
     private bool _firstNonZeroLogged = false;
 
-    // Logger back-channel to facetracking_log via stderr (the host's HostLogger
-    // mirrors stderr to the log file via its stderr-mirror in Write()).
-    private static void Log(string msg) =>
+    public static Action<string>? SinkLine { get; set; }
+
+    private static void Log(string msg)
+    {
+        var sink = SinkLine;
+        if (sink is not null) { sink($"[bridge] {msg}"); return; }
         Console.Error.WriteLine($"[bridge] {msg}");
+    }
 
     public ReflectingLegacyBridge(object upstream)
     {

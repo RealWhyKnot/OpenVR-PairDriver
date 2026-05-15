@@ -2,6 +2,7 @@ using OpenVRPair.FaceModuleHost;
 using OpenVRPair.FaceModuleHost.Logging;
 using OpenVRPair.FaceModuleHost.Workers;
 using OpenVRPair.FaceTracking.Registry;
+using OpenVRPair.FaceTracking.VrcftCompat;
 
 var opts = HostOptions.FromArgs(args);
 var cts  = new CancellationTokenSource();
@@ -9,6 +10,8 @@ var ct   = cts.Token;
 
 var logger = new HostLogger();
 logger.Info("[startup] phase=logger-open");
+
+ReflectingLegacyBridge.SinkLine = line => logger.Info(line);
 
 AppDomain.CurrentDomain.UnhandledException += (s, e) => {
     try { logger.Error($"[crash] AppDomain.UnhandledException: {e.ExceptionObject}"); logger.Flush(); } catch { }
