@@ -25,6 +25,7 @@ target_include_directories(openvr_pair_feature_facetracking_driver PRIVATE
 	${FACETRACKING_PAIRDRIVER_ROOT}/core/src/driver
 	${FACETRACKING_PAIRDRIVER_ROOT}/core/src/common
 	${FACETRACKING_PAIRDRIVER_ROOT}/lib
+	${FACETRACKING_PAIRDRIVER_ROOT}/lib/Eigen
 	${FACETRACKING_PAIRDRIVER_ROOT}/lib/openvr/headers
 	${FACETRACKING_PAIRDRIVER_ROOT}/lib/picojson
 	${FACETRACKING_PAIRDRIVER_ROOT}/modules/oscrouter/src/driver)

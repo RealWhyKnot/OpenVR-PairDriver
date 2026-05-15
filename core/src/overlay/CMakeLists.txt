@@ -82,8 +82,7 @@ target_include_directories(OpenVRPairOverlay PRIVATE
 	${CMAKE_SOURCE_DIR}/lib/imgui
 	${CMAKE_SOURCE_DIR}/lib/imgui/backends
 	${CMAKE_SOURCE_DIR}/lib/implot
-	${CMAKE_SOURCE_DIR}/lib/gl3w/include
-	${CMAKE_SOURCE_DIR}/lib/discord-rpc/include)
+	${CMAKE_SOURCE_DIR}/lib/gl3w/include)
 
 target_link_libraries(OpenVRPairOverlay PRIVATE
 	openvr_pair_common
@@ -96,7 +95,7 @@ target_link_libraries(OpenVRPairOverlay PRIVATE
 	ole32
 	advapi32
 	${OPENVR_PAIR_OVERLAY_FEATURE_LIBS}
-	"${CMAKE_SOURCE_DIR}/lib/discord-rpc/lib/win64/discord-rpc.lib")
+	pair_discord_rpc)
 
 file(READ "${CMAKE_SOURCE_DIR}/version.txt" OPENVR_PAIR_VERSION_RAW)
 string(STRIP "${OPENVR_PAIR_VERSION_RAW}" OPENVR_PAIR_VERSION_STAMP)
@@ -136,10 +135,3 @@ add_custom_command(TARGET OpenVRPairOverlay POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different
 		"${CMAKE_SOURCE_DIR}/modules/facetracking/src/overlay/face-module-sync.ps1"
 		"$<TARGET_FILE_DIR:OpenVRPairOverlay>/resources/face-module-sync.ps1")
-
-# Stage the Discord Rich Presence runtime DLL next to the exe so the Windows
-# loader can find it without PATH manipulation at dev-build time.
-add_custom_command(TARGET OpenVRPairOverlay POST_BUILD
-	COMMAND ${CMAKE_COMMAND} -E copy_if_different
-		"${CMAKE_SOURCE_DIR}/lib/discord-rpc/lib/win64/discord-rpc.dll"
-		"$<TARGET_FILE_DIR:OpenVRPairOverlay>/discord-rpc.dll")

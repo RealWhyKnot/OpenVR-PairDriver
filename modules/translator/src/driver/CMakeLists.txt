@@ -14,6 +14,7 @@ target_include_directories(openvr_pair_feature_translator_driver PRIVATE
     ${TRANSLATOR_PAIRDRIVER_ROOT}/core/src/driver
     ${TRANSLATOR_PAIRDRIVER_ROOT}/core/src/common
     ${TRANSLATOR_PAIRDRIVER_ROOT}/lib
+    ${TRANSLATOR_PAIRDRIVER_ROOT}/lib/Eigen
     ${TRANSLATOR_PAIRDRIVER_ROOT}/lib/openvr/headers)
 
 target_link_libraries(openvr_pair_feature_translator_driver PRIVATE

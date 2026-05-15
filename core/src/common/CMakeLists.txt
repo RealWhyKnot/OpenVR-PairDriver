@@ -37,3 +37,8 @@ if(WIN32)
 			shell32
 			ole32)
 endif()
+
+# Propagate the Eigen include path to every target linking common. The Eigen
+# submodule lays headers under lib/Eigen/Eigen/*, so consumers using
+# <Eigen/Dense> need lib/Eigen on the include path.
+target_link_libraries(openvr_pair_common PUBLIC pair_eigen)

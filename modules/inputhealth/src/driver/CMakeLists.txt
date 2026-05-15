@@ -25,6 +25,7 @@ target_include_directories(openvr_pair_feature_inputhealth_driver PRIVATE
 	${INPUTHEALTH_PAIRDRIVER_ROOT}/core/src/driver
 	${INPUTHEALTH_PAIRDRIVER_ROOT}/core/src/common
 	${INPUTHEALTH_PAIRDRIVER_ROOT}/lib
+	${INPUTHEALTH_PAIRDRIVER_ROOT}/lib/Eigen
 	${INPUTHEALTH_PAIRDRIVER_ROOT}/lib/openvr/headers
 	${INPUTHEALTH_PAIRDRIVER_ROOT}/lib/minhook/include)
 

@@ -129,7 +129,6 @@ jobs:
           $required = @(
             'build/artifacts/Release/WKOpenVR.exe',
             'build/artifacts/Release/openvr_api.dll',
-            'build/artifacts/Release/discord-rpc.dll',
             'build/artifacts/Release/manifest.vrmanifest',
             'build/artifacts/Release/dashboard_icon.png',
             'build/artifacts/Release/resources/face-module-sync.ps1',

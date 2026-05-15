@@ -3,4 +3,25 @@
 	url = https://github.com/ValveSoftware/openvr
 [submodule "lib/minhook"]
 	path = lib/minhook
-	url = https://github.com/bdunderscore/minhook.git
+	url = https://github.com/TsudaKageyu/minhook.git
+[submodule "lib/imgui"]
+	path = lib/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "lib/implot"]
+	path = lib/implot
+	url = https://github.com/epezent/implot.git
+[submodule "lib/glfw"]
+	path = lib/glfw
+	url = https://github.com/glfw/glfw.git
+[submodule "lib/Eigen"]
+	path = lib/Eigen
+	url = https://gitlab.com/libeigen/eigen.git
+[submodule "lib/gl3w"]
+	path = lib/gl3w
+	url = https://github.com/skaslev/gl3w.git
+[submodule "lib/discord-rpc"]
+	path = lib/discord-rpc
+	url = https://github.com/discord/discord-rpc.git
+[submodule "lib/rapidjson"]
+	path = lib/rapidjson
+	url = https://github.com/Tencent/rapidjson.git

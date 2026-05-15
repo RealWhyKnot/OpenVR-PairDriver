@@ -578,14 +578,12 @@ $overlayResourcesSource = Join-Path $artifactsDir "resources"
 
 $srcExe = Join-Path $artifactsDir "WKOpenVR.exe"
 $srcOpenVR = Join-Path $artifactsDir "openvr_api.dll"
-$srcDiscordRpc = Join-Path $artifactsDir "discord-rpc.dll"
 $srcManifest = Join-Path $artifactsDir "manifest.vrmanifest"
 $srcIcon = Join-Path $artifactsDir "dashboard_icon.png"
 
 $required = @(
 	@("WKOpenVR.exe", $srcExe),
 	@("openvr_api.dll", $srcOpenVR),
-	@("discord-rpc.dll", $srcDiscordRpc),
 	@("manifest.vrmanifest", $srcManifest),
 	@("dashboard_icon.png", $srcIcon),
 	@("overlay resources", $overlayResourcesSource),
