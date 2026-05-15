@@ -161,6 +161,7 @@ Section "Install"
     SetOutPath "$INSTDIR"
     File /oname=WKOpenVR.exe "${ARTIFACTS_BASEDIR}\WKOpenVR.exe"
     File "${ARTIFACTS_BASEDIR}\openvr_api.dll"
+    File "${ARTIFACTS_BASEDIR}\discord-rpc.dll"
     ; manifest.vrmanifest sits next to the exe so RegisterApplicationManifest
     ; in WKOpenVR can resolve it via GetModuleFileName + replace_filename
     ; on first launch and register the overlay with SteamVR for auto-start.
@@ -385,6 +386,7 @@ Section "Uninstall"
         ClearErrors
         Delete "$INSTDIR\WKOpenVR.exe"
         Delete "$INSTDIR\openvr_api.dll"
+        Delete "$INSTDIR\discord-rpc.dll"
         Delete "$INSTDIR\manifest.vrmanifest"
         Delete "$INSTDIR\dashboard_icon.png"
         Delete "$INSTDIR\LICENSE"
@@ -394,6 +396,7 @@ Section "Uninstall"
         RMDir /r "$INSTDIR"
         IfFileExists "$INSTDIR\WKOpenVR.exe" instDirLocked deleteDone
         IfFileExists "$INSTDIR\openvr_api.dll" instDirLocked deleteDone
+        IfFileExists "$INSTDIR\discord-rpc.dll" instDirLocked deleteDone
     instDirLocked:
         IntOp $0 $0 + 1
         IntCmp $0 10 deleteRebootOk
@@ -404,6 +407,7 @@ Section "Uninstall"
         DetailPrint "Files still locked after 10 retries -- queuing for reboot."
         Delete /REBOOTOK "$INSTDIR\WKOpenVR.exe"
         Delete /REBOOTOK "$INSTDIR\openvr_api.dll"
+        Delete /REBOOTOK "$INSTDIR\discord-rpc.dll"
         Delete /REBOOTOK "$INSTDIR\manifest.vrmanifest"
         Delete /REBOOTOK "$INSTDIR\dashboard_icon.png"
         Delete /REBOOTOK "$INSTDIR\LICENSE"

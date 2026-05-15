@@ -40,13 +40,14 @@ if (-not $SkipBuild) {
 # Build outputs we care about. The umbrella exe lands here; the driver DLL is
 # emitted under the staged driver tree with its bare name (the loader-renamed
 # "01wkopenvr" prefix is applied only inside the release zip stage dir).
-$srcExe      = Join-Path $PSScriptRoot "build\artifacts\Release\WKOpenVR.exe"
-$srcOpenVR   = Join-Path $PSScriptRoot "build\artifacts\Release\openvr_api.dll"
-$srcDll      = Join-Path $PSScriptRoot "build\driver_wkopenvr\bin\win64\driver_wkopenvr.dll"
-$srcManifest = Join-Path $PSScriptRoot "build\artifacts\Release\manifest.vrmanifest"
-$srcIcon     = Join-Path $PSScriptRoot "build\artifacts\Release\dashboard_icon.png"
+$srcExe        = Join-Path $PSScriptRoot "build\artifacts\Release\WKOpenVR.exe"
+$srcOpenVR     = Join-Path $PSScriptRoot "build\artifacts\Release\openvr_api.dll"
+$srcDiscordRpc = Join-Path $PSScriptRoot "build\artifacts\Release\discord-rpc.dll"
+$srcDll        = Join-Path $PSScriptRoot "build\driver_wkopenvr\bin\win64\driver_wkopenvr.dll"
+$srcManifest   = Join-Path $PSScriptRoot "build\artifacts\Release\manifest.vrmanifest"
+$srcIcon       = Join-Path $PSScriptRoot "build\artifacts\Release\dashboard_icon.png"
 
-foreach ($p in @($srcExe, $srcOpenVR, $srcDll, $srcManifest, $srcIcon)) {
+foreach ($p in @($srcExe, $srcOpenVR, $srcDiscordRpc, $srcDll, $srcManifest, $srcIcon)) {
 	if (-not (Test-Path -LiteralPath $p)) { throw "Build artifact missing: $p" }
 }
 
@@ -75,8 +76,9 @@ $srcSyncScript   = Join-Path $srcResourcesDir "face-module-sync.ps1"
 if (-not (Test-Path -LiteralPath $srcSyncScript)) { throw "Build artifact missing: $srcSyncScript" }
 
 # Deployed copies.
-$dstExe       = Join-Path $InstallDir "WKOpenVR.exe"
-$dstOpenVR    = Join-Path $InstallDir "openvr_api.dll"
+$dstExe        = Join-Path $InstallDir "WKOpenVR.exe"
+$dstOpenVR     = Join-Path $InstallDir "openvr_api.dll"
+$dstDiscordRpc = Join-Path $InstallDir "discord-rpc.dll"
 $dstManifest  = Join-Path $InstallDir "manifest.vrmanifest"
 $dstIcon      = Join-Path $InstallDir "dashboard_icon.png"
 $dstDriverRoot = Join-Path $SteamVRDriversDir "01wkopenvr"
@@ -89,17 +91,19 @@ $dstTrHostExe = Join-Path $dstTrHostDir "WKOpenVR.TranslatorHost.exe"
 $dstResourcesDir = Join-Path $InstallDir "resources"
 $dstSyncScript   = Join-Path $dstResourcesDir "face-module-sync.ps1"
 
-$srcExeSha      = Get-Sha $srcExe
-$srcOpenVRSha   = Get-Sha $srcOpenVR
-$srcDllSha      = Get-Sha $srcDll
+$srcExeSha        = Get-Sha $srcExe
+$srcOpenVRSha     = Get-Sha $srcOpenVR
+$srcDiscordRpcSha = Get-Sha $srcDiscordRpc
+$srcDllSha        = Get-Sha $srcDll
 $srcManifestSha = Get-Sha $srcManifest
 $srcIconSha     = Get-Sha $srcIcon
 $srcHostExeSha   = if ($hostPresent) { Get-Sha $srcHostExe } else { $null }
 $srcTrHostExeSha = if ($trHostPresent) { Get-Sha $srcTrHostExe } else { $null }
 $srcSyncScriptSha = Get-Sha $srcSyncScript
-$dstExeSha       = Get-Sha $dstExe
-$dstOpenVRSha    = Get-Sha $dstOpenVR
-$dstDllSha       = Get-Sha $dstDll
+$dstExeSha        = Get-Sha $dstExe
+$dstOpenVRSha     = Get-Sha $dstOpenVR
+$dstDiscordRpcSha = Get-Sha $dstDiscordRpc
+$dstDllSha        = Get-Sha $dstDll
 $dstManifestSha  = Get-Sha $dstManifest
 $dstIconSha      = Get-Sha $dstIcon
 $dstHostExeSha   = Get-Sha $dstHostExe
@@ -107,10 +111,12 @@ $dstTrHostExeSha = Get-Sha $dstTrHostExe
 $dstSyncScriptSha = Get-Sha $dstSyncScript
 
 Write-Host ""
-Write-Host ("Source exe:         {0}" -f $srcExeSha)
-Write-Host ("Deployed exe:       {0}" -f $dstExeSha)
-Write-Host ("Source openvr_api:  {0}" -f $srcOpenVRSha)
-Write-Host ("Deployed openvr_api:{0}" -f $dstOpenVRSha)
+Write-Host ("Source exe:           {0}" -f $srcExeSha)
+Write-Host ("Deployed exe:         {0}" -f $dstExeSha)
+Write-Host ("Source openvr_api:    {0}" -f $srcOpenVRSha)
+Write-Host ("Deployed openvr_api:  {0}" -f $dstOpenVRSha)
+Write-Host ("Source discord-rpc:   {0}" -f $srcDiscordRpcSha)
+Write-Host ("Deployed discord-rpc: {0}" -f $dstDiscordRpcSha)
 Write-Host ("Source DLL:         {0}" -f $srcDllSha)
 Write-Host ("Deployed DLL:       {0}" -f $dstDllSha)
 Write-Host ("Source manifest:    {0}" -f $srcManifestSha)
@@ -132,9 +138,10 @@ if ($trHostPresent) {
 	Write-Host "Source tr-host:    (not built; OPENVR_PAIR_BUILD_TRANSLATOR_HOST=OFF)"
 }
 
-$exeStale       = ($srcExeSha -ne $dstExeSha)
-$openVRStale    = ($srcOpenVRSha -ne $dstOpenVRSha)
-$driverStale    = ($srcDllSha -ne $dstDllSha)
+$exeStale        = ($srcExeSha -ne $dstExeSha)
+$openVRStale     = ($srcOpenVRSha -ne $dstOpenVRSha)
+$discordRpcStale = ($srcDiscordRpcSha -ne $dstDiscordRpcSha)
+$driverStale     = ($srcDllSha -ne $dstDllSha)
 $manifestStale  = ($srcManifestSha -ne $dstManifestSha)
 $iconStale      = ($srcIconSha -ne $dstIconSha)
 $resourcesStale = ($srcSyncScriptSha -ne $dstSyncScriptSha)
@@ -171,7 +178,7 @@ if (Test-Path -LiteralPath $startMenuDir) {
 	}
 }
 
-if (-not $exeStale -and -not $openVRStale -and -not $driverStale -and -not $manifestStale -and -not $iconStale -and -not $resourcesStale -and -not $hostStale -and -not $trHostStale -and -not $shortcutsStale) {
+if (-not $exeStale -and -not $openVRStale -and -not $discordRpcStale -and -not $driverStale -and -not $manifestStale -and -not $iconStale -and -not $resourcesStale -and -not $hostStale -and -not $trHostStale -and -not $shortcutsStale) {
 	Write-Host ""
 	Write-Host "Already up to date. Deployed build: $(Resolve-Version $dstExe)"
 	exit 0
@@ -180,6 +187,7 @@ if (-not $exeStale -and -not $openVRStale -and -not $driverStale -and -not $mani
 Write-Host ""
 if ($exeStale)        { Write-Host "Overlay exe needs redeploy." }
 if ($openVRStale)     { Write-Host "openvr_api.dll needs redeploy." }
+if ($discordRpcStale) { Write-Host "discord-rpc.dll needs redeploy." }
 if ($driverStale)     { Write-Host "Driver DLL needs redeploy." }
 if ($manifestStale)   { Write-Host "vrmanifest needs redeploy." }
 if ($iconStale)       { Write-Host "Dashboard icon needs redeploy." }
@@ -217,6 +225,8 @@ try {
 	# it from the exe's directory at startup; missing -> "code execution cannot
 	# proceed because openvr_api.dll was not found" before main() ever runs.
 	Copy-Item -LiteralPath '$srcOpenVR' -Destination '$dstOpenVR' -Force
+	# discord-rpc.dll is the Rich Presence runtime; loaded on first Discord_Initialize call.
+	Copy-Item -LiteralPath '$srcDiscordRpc' -Destination '$dstDiscordRpc' -Force
 	New-Item -ItemType Directory -Force -Path '$dstDriverDir' | Out-Null
 
 	# Park the live DLL aside so SteamVR can still load it if it has it open.
@@ -312,9 +322,10 @@ try {
 		}
 	}
 
-	`$exeSha       = (Get-FileHash -LiteralPath '$dstExe' -Algorithm SHA256).Hash
-	`$openVRSha    = (Get-FileHash -LiteralPath '$dstOpenVR' -Algorithm SHA256).Hash
-	`$dllSha       = (Get-FileHash -LiteralPath '$dstDll' -Algorithm SHA256).Hash
+	`$exeSha        = (Get-FileHash -LiteralPath '$dstExe' -Algorithm SHA256).Hash
+	`$openVRSha     = (Get-FileHash -LiteralPath '$dstOpenVR' -Algorithm SHA256).Hash
+	`$discordRpcSha = (Get-FileHash -LiteralPath '$dstDiscordRpc' -Algorithm SHA256).Hash
+	`$dllSha        = (Get-FileHash -LiteralPath '$dstDll' -Algorithm SHA256).Hash
 	`$manifestSha  = (Get-FileHash -LiteralPath '$dstManifest' -Algorithm SHA256).Hash
 	`$iconSha      = (Get-FileHash -LiteralPath '$dstIcon' -Algorithm SHA256).Hash
 	`$syncScriptSha = (Get-FileHash -LiteralPath '$dstSyncScript' -Algorithm SHA256).Hash
@@ -377,6 +388,7 @@ if ($resultLines.Count -lt 1 -or $resultLines[0] -ne "OK") {
 # get caught.
 $postExeSha        = Get-Sha $dstExe
 $postOpenVRSha     = Get-Sha $dstOpenVR
+$postDiscordRpcSha = Get-Sha $dstDiscordRpc
 $postDllSha        = Get-Sha $dstDll
 $postManifestSha   = Get-Sha $dstManifest
 $postIconSha       = Get-Sha $dstIcon
@@ -386,6 +398,7 @@ $postTrHostExeSha  = Get-Sha $dstTrHostExe
 
 $exeOk         = ($postExeSha -eq $srcExeSha)
 $openVROk      = ($postOpenVRSha -eq $srcOpenVRSha)
+$discordRpcOk  = ($postDiscordRpcSha -eq $srcDiscordRpcSha)
 $dllOk         = ($postDllSha -eq $srcDllSha)
 $manifestOk    = ($postManifestSha -eq $srcManifestSha)
 $iconOk        = ($postIconSha -eq $srcIconSha)
@@ -394,9 +407,10 @@ $hostOk        = (-not $hostPresent) -or ($postHostExeSha -eq $srcHostExeSha)
 $trHostOk      = (-not $trHostPresent) -or ($postTrHostExeSha -eq $srcTrHostExeSha)
 
 Write-Host ""
-Write-Host ("Post-copy exe:         {0} {1}" -f $postExeSha,        ($(if ($exeOk)        { "OK" } else { "MISMATCH" })))
-Write-Host ("Post-copy openvr_api:  {0} {1}" -f $postOpenVRSha,     ($(if ($openVROk)     { "OK" } else { "MISMATCH" })))
-Write-Host ("Post-copy DLL:         {0} {1}" -f $postDllSha,        ($(if ($dllOk)        { "OK" } else { "MISMATCH" })))
+Write-Host ("Post-copy exe:          {0} {1}" -f $postExeSha,        ($(if ($exeOk)        { "OK" } else { "MISMATCH" })))
+Write-Host ("Post-copy openvr_api:   {0} {1}" -f $postOpenVRSha,     ($(if ($openVROk)     { "OK" } else { "MISMATCH" })))
+Write-Host ("Post-copy discord-rpc:  {0} {1}" -f $postDiscordRpcSha, ($(if ($discordRpcOk) { "OK" } else { "MISMATCH" })))
+Write-Host ("Post-copy DLL:          {0} {1}" -f $postDllSha,        ($(if ($dllOk)        { "OK" } else { "MISMATCH" })))
 Write-Host ("Post-copy manifest:    {0} {1}" -f $postManifestSha,   ($(if ($manifestOk)   { "OK" } else { "MISMATCH" })))
 Write-Host ("Post-copy icon:        {0} {1}" -f $postIconSha,       ($(if ($iconOk)       { "OK" } else { "MISMATCH" })))
 Write-Host ("Post-copy sync-script: {0} {1}" -f $postSyncScriptSha, ($(if ($syncScriptOk) { "OK" } else { "MISMATCH" })))
@@ -407,10 +421,11 @@ if ($trHostPresent) {
 	Write-Host ("Post-copy tr-host:     {0} {1}" -f $postTrHostExeSha, ($(if ($trHostOk) { "OK" } else { "MISMATCH" })))
 }
 
-if (-not $exeOk -or -not $openVROk -or -not $dllOk -or -not $manifestOk -or -not $iconOk -or -not $syncScriptOk -or -not $hostOk -or -not $trHostOk) {
+if (-not $exeOk -or -not $openVROk -or -not $discordRpcOk -or -not $dllOk -or -not $manifestOk -or -not $iconOk -or -not $syncScriptOk -or -not $hostOk -or -not $trHostOk) {
 	$detail = @()
 	if (-not $exeOk)        { $detail += "exe at $dstExe still does not match source" }
 	if (-not $openVROk)     { $detail += "openvr_api.dll at $dstOpenVR still does not match source" }
+	if (-not $discordRpcOk) { $detail += "discord-rpc.dll at $dstDiscordRpc still does not match source" }
 	if (-not $dllOk)        { $detail += "driver DLL at $dstDll still does not match source" }
 	if (-not $manifestOk)   { $detail += "manifest at $dstManifest still does not match source" }
 	if (-not $iconOk)       { $detail += "icon at $dstIcon still does not match source" }

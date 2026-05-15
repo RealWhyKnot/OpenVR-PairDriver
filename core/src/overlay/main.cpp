@@ -1,3 +1,4 @@
+#include "DiscordPresence.h"
 #include "FeaturePlugin.h"
 #include "ManifestRegistration.h"
 #include "Migration.h"
@@ -417,6 +418,8 @@ int main(int argc, char **argv)
 		plugin->OnStart(context);
 	}
 
+	WKOpenVR::DiscordPresence_Init();
+
 	auto vrOverlay = std::make_unique<VrOverlayHost>();
 
 	while (!glfwWindowShouldClose(window) && !vrOverlay->QuitRequested()) {
@@ -425,6 +428,8 @@ int main(int argc, char **argv)
 		for (auto &plugin : plugins) {
 			if (plugin->IsInstalled(context)) plugin->Tick(context);
 		}
+
+		WKOpenVR::DiscordPresence_Tick();
 
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
@@ -585,6 +590,8 @@ int main(int argc, char **argv)
 	}
 
 	vrOverlay.reset();
+
+	WKOpenVR::DiscordPresence_Shutdown();
 
 	for (auto it = plugins.rbegin(); it != plugins.rend(); ++it) {
 		(*it)->OnShutdown(context);

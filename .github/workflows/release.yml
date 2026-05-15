@@ -228,6 +228,7 @@ jobs:
 
           Copy-Item "$artifacts/WKOpenVR.exe"        "$stage/WKOpenVR.exe"
           Copy-Item "$artifacts/openvr_api.dll"      "$stage/openvr_api.dll"
+          Copy-Item "$artifacts/discord-rpc.dll"     "$stage/discord-rpc.dll"
           # manifest.vrmanifest is what RegisterApplicationManifest in
           # WKOpenVR.exe loads on first launch to register the overlay with
           # SteamVR. Zip-extract users would get no SteamVR autolaunch
@@ -342,6 +343,7 @@ jobs:
           $required = @(
             'build/artifacts/Release/WKOpenVR.exe',
             'build/artifacts/Release/openvr_api.dll',
+            'build/artifacts/Release/discord-rpc.dll',
             'build/artifacts/Release/manifest.vrmanifest',
             'build/artifacts/Release/dashboard_icon.png',
             'build/artifacts/Release/resources/face-module-sync.ps1',
