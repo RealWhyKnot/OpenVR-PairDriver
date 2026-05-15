@@ -8,6 +8,11 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **diagnostics:** Add OSC + translator + host-supervisor instrumentation (b0fa13d)
 - **hosts:** Singleton mutex + connect-first spawn for face and translator hosts (cd69dac)
 
+### Changed
+- host(facetracking): extend shmem to v2 with head data (2813401)
+- host(facetracking): add SubprocessManager skeleton (unused) (5b74cf9)
+- vendor(facetracking-host): bring in upstream VRCFT subprocess runtime + IPC (f908dc9)
+
 ### Fixed
 - **smoothing:** Lock out per-tracker prediction on the calibration anchor (e87f318)
 - **installer:** Include translator host tree in setup-exe and release zip (ca55616)
