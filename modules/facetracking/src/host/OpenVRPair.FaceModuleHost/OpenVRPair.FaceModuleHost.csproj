@@ -28,9 +28,14 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Aliases removes VRCFaceTracking.Core types from the default global namespace in this
+         project. UpstreamRuntime vendors the same types; removing VrcftCore from global avoids
+         CS0433 "type exists in both assemblies". Access VrcftCore types as VrcftCore::T when
+         needed (none of our host sources currently need it). -->
     <Reference Include="VRCFaceTracking.Core">
       <HintPath>lib\VRCFaceTracking.Core.dll</HintPath>
       <Private>true</Private>
+      <Aliases>VrcftCore</Aliases>
     </Reference>
   </ItemGroup>
 </Project>
