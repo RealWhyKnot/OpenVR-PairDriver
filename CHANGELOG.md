@@ -22,6 +22,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **facetracking-host:** Load VrcftCompat adapter in default ALC; per-module ALC for upstream only (34e72b6)
 - **facetracking-host:** Extract ALC names before interpolation (CS1056) (8085b84)
 - **facetracking-host:** Force-load MELA so InjectNullLogger finds it (c5db8c7)
+- **facetracking-host:** Force-load MELA via static member; resolve Eye as field-or-property (1f4435e)
 
 ---
 
