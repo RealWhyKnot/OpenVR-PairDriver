@@ -15,6 +15,9 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - host(facetracking): add SubprocessManager skeleton (unused) (5b74cf9)
 - vendor(facetracking-host): bring in upstream VRCFT subprocess runtime + IPC (f908dc9)
 - host(facetracking): switch active module manager from ModuleLoader to SubprocessManager (ac78c91)
+- host(facetracking): restore v2 shmem (head fields + SHMEM_VERSION=2) (f1427c7)
+- host(facetracking): robustness + diagnostic logging pass on SubprocessManager (70397b0)
+- **facetracking:** Back out v2 shmem extension until driver rebuild (222f83b)
 
 ### Fixed
 - **smoothing:** Lock out per-tracker prediction on the calibration anchor (e87f318)
