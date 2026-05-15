@@ -102,6 +102,45 @@ public:
             TR_LOG_DRV("[translator] host exe missing -- Translator feature will be inert until redeploy");
         }
 
+        // Probe the native DLLs the host will need before attempting spawn.
+        // This surfaces missing-DLL problems in the driver log even if the
+        // host crashes before its own logger opens.
+        {
+            struct { const wchar_t *dll; const char *role; } kProbes[] = {
+                { L"cudart64_13.dll",       "CUDA runtime (whisper CUDA)" },
+                { L"cublas64_13.dll",       "cuBLAS (whisper CUDA)" },
+                { L"cublasLt64_13.dll",     "cuBLASLt (whisper CUDA)" },
+                { L"nvcudart_hybrid64.dll", "CUDA hybrid runtime" },
+                { L"nvcuda.dll",            "CUDA driver DLL" },
+                { L"onnxruntime.dll",       "ONNX Runtime (Silero VAD)" },
+                { L"ctranslate2.dll",       "CTranslate2 (translation)" },
+            };
+            int found = 0, total = (int)(sizeof kProbes / sizeof kProbes[0]);
+            TR_LOG_DRV("[translator] driver init: probing native deps for host spawn");
+            for (const auto &p : kProbes) {
+                HMODULE h = LoadLibraryW(p.dll);
+                if (h) {
+                    wchar_t fullpath[MAX_PATH] = {};
+                    GetModuleFileNameW(h, fullpath, MAX_PATH);
+                    FreeLibrary(h);
+                    char narrow[MAX_PATH] = {};
+                    WideCharToMultiByte(CP_UTF8, 0, fullpath, -1,
+                        narrow, MAX_PATH, nullptr, nullptr);
+                    TR_LOG_DRV("[translator]   %-28ls: FOUND   %s  [%s]",
+                        p.dll, narrow, p.role);
+                    ++found;
+                } else {
+                    DWORD err = GetLastError();
+                    TR_LOG_DRV("[translator]   %-28ls: MISSING (err=%lu ERROR_MOD_NOT_FOUND)  [%s]",
+                        p.dll, (unsigned long)err, p.role);
+                }
+            }
+            TR_LOG_DRV("[translator] driver init: %d/%d native deps found; "
+                "if any MISSING entries above are required, spawn may fail with "
+                "STATUS_DLL_NOT_FOUND (0xC0000135) or delay-load code 0xCEE0DC7E",
+                found, total);
+        }
+
         supervisor_ = std::make_unique<HostSupervisor>(host_path);
         supervisor_->Start();
 

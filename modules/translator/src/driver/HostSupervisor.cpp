@@ -9,6 +9,46 @@
 #include <chrono>
 #include <cstring>
 
+namespace {
+
+// Return a human-readable label + diagnostic hint for known host exit codes.
+// The returned pointer is a string literal (no allocation).
+static const char *DescribeExitCode(DWORD code)
+{
+    // Windows loader failures.
+    if (code == 0xC0000135) return "STATUS_DLL_NOT_FOUND -- a hard-import DLL is missing; "
+        "check CUDA toolkit PATH or rebuild with -DWKOPENVR_TRANSLATOR_CUDA=OFF";
+    if (code == 0xC0000005) return "STATUS_ACCESS_VIOLATION -- crash inside native lib; "
+        "see translator_host_crash_<pid>.txt in %LocalAppDataLow%\\WKOpenVR\\Logs";
+    if (code == 0xC000007B) return "STATUS_INVALID_IMAGE_FORMAT -- 32/64-bit mismatch";
+    if (code == 0xC0000142) return "STATUS_DLL_INIT_FAILED -- DLL DllMain returned FALSE; "
+        "a required dependency of a loaded DLL is itself missing";
+
+    // Our delay-load failure range: 0xCEE0DC00 | (err & 0xFF).
+    if ((code & 0xFFFFFF00u) == 0xCEE0DC00u) {
+        DWORD winerr = code & 0xFF;
+        if (winerr == 126) {
+            return "delay-load failed: ERROR_MOD_NOT_FOUND (126) -- "
+                "CUDA runtime DLL not on PATH; install CUDA Toolkit v13.2 or "
+                "rebuild with -DWKOPENVR_TRANSLATOR_CUDA=OFF; "
+                "see translator_host_crash_<pid>.txt for the exact DLL name";
+        }
+        return "delay-load failed -- CUDA DLL not found; "
+            "see translator_host_crash_<pid>.txt for details";
+    }
+
+    // Clean exits from the host's singleton check.
+    if (code == 3) return "clean singleton exit (another host already running)";
+    if (code == 4) return "clean pipe-busy exit (another host owns the control pipe)";
+
+    // Normal exit.
+    if (code == 0) return "normal exit (code 0)";
+
+    return "unknown";
+}
+
+} // anonymous namespace
+
 // Named pipe the translator host exposes for config messages from the driver.
 #define TR_HOST_CONTROL_PIPE_NAME  "\\\\.\\pipe\\WKOpenVR-Translator.host"
 
@@ -248,14 +288,17 @@ void HostSupervisor::MonitorLoop()
             long long uptime_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 now - spawn_time).count();
 
-            TR_LOG_DRV("[translator-supervisor] host process exited code=0x%08lx uptime_ms=%lld",
-                (unsigned long)code, uptime_ms);
+            TR_LOG_DRV("[translator-supervisor] host process exited "
+                "code=0x%08lx uptime_ms=%lld -- %s",
+                (unsigned long)code, uptime_ms, DescribeExitCode(code));
 
             bool should_halt = false;
             if (!IsCleanSingletonExit(code)) {
                 std::lock_guard<std::mutex> lk(process_mutex_);
                 if (uptime_ms < kFastExitThresholdMs) {
                     consecutive_fast_exits_++;
+                    TR_LOG_DRV("[translator-supervisor] fast exit count: %d/%d",
+                        consecutive_fast_exits_, kCircuitBreakerThreshold);
                 } else {
                     consecutive_fast_exits_ = 0;
                 }
@@ -264,14 +307,17 @@ void HostSupervisor::MonitorLoop()
                     should_halt = true;
                 }
             } else {
-                TR_LOG_DRV("[translator-supervisor] clean singleton exit (code=%lu); "
+                TR_LOG_DRV("[translator-supervisor] clean exit (code=%lu); "
                     "skipping fast-exit counter", (unsigned long)code);
             }
 
             if (should_halt) {
-                TR_LOG_DRV("[translator-supervisor] CIRCUIT BREAKER: 5 consecutive fast exits, "
-                    "halting respawn for translator. Last exit code: 0x%08lx",
-                    (unsigned long)code);
+                TR_LOG_DRV("[translator-supervisor] CIRCUIT BREAKER tripped: "
+                    "%d consecutive fast exits; halting respawn. "
+                    "Last exit code=0x%08lx -- %s. "
+                    "Fix the missing DLLs and click Restart host in the overlay.",
+                    kCircuitBreakerThreshold, (unsigned long)code,
+                    DescribeExitCode(code));
                 continue;
             }
 
