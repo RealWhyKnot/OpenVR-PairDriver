@@ -37,17 +37,7 @@ internal struct FaceTrackingFrameBodyNative
     public float   eye_confidence_r;
     public Float63 expressions;
     public uint    flags;
-
-    // v2 head pose fields. Written as zero until the host can supply head data
-    // (SubprocessManager will populate these when head tracking is wired).
-    // head_flags bit 0: head pose fields are valid this frame.
-    public float   head_yaw;
-    public float   head_pitch;
-    public float   head_roll;
-    public float   head_pos_x;
-    public float   head_pos_y;
-    public float   head_pos_z;
-    public uint    head_flags;
+    public uint    _reserved;
 }
 
 // Per-slot seqlock layout. generation precedes body; offset validated by static_assert below.
@@ -66,7 +56,7 @@ internal struct FaceTrackingFrameSlotNative
 public sealed class FrameWriter(string shmemName, HostLogger logger) : IDisposable
 {
     private const uint  Magic        = 0x46544652u; // 'FTFR'
-    private const uint  ShmemVersion = 2; // v2: added head_yaw/pitch/roll/pos_x/y/z/head_flags
+    private const uint  ShmemVersion = 1;
     private const int   RingSize     = 32;
 
     // Byte offset of publish_index within ShmemData.

@@ -1521,19 +1521,7 @@ namespace protocol
 		// Other bits reserved; reader must ignore. Lets a host module that only
 		// supports one capability publish frames the driver can still consume.
 		uint32_t flags;
-
-		// Head pose in HMD-local space. Yaw/pitch/roll are in radians;
-		// pos_x/y/z are in metres relative to the HMD origin. Written by the
-		// host when head_flags bit 0 is set. Unused by the driver until v2
-		// consumption code is added; zeroed by the v2 host writer until then.
-		// head_flags bit 0: head pose fields are valid this frame.
-		float    head_yaw;
-		float    head_pitch;
-		float    head_roll;
-		float    head_pos_x;
-		float    head_pos_y;
-		float    head_pos_z;
-		uint32_t head_flags;
+		uint32_t _reserved;
 	};
 
 	static_assert(std::is_trivially_copyable<FaceTrackingFrameBody>::value,
@@ -1551,7 +1539,7 @@ namespace protocol
 	{
 	public:
 		static const uint32_t SHMEM_MAGIC   = 0x46544652; // 'FTFR'
-		static const uint32_t SHMEM_VERSION = 2; // v2: added head_yaw/pitch/roll/pos_x/y/z/head_flags
+		static const uint32_t SHMEM_VERSION = 1;
 		static const uint32_t RING_SIZE     = 32;
 
 	private:
