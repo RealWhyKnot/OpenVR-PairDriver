@@ -12,6 +12,8 @@ var logger = new HostLogger();
 logger.Info("[startup] phase=logger-open");
 
 ReflectingLegacyBridge.SinkLine = line => logger.Info(line);
+ReflectingExtTrackingModuleAdapter.SinkLine = line => logger.Info(line);
+logger.Info($"[bridge-probe] SinkLine wired; bridge type hash=0x{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(typeof(ReflectingLegacyBridge)):X} adapter type hash=0x{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(typeof(ReflectingExtTrackingModuleAdapter)):X}");
 
 AppDomain.CurrentDomain.UnhandledException += (s, e) => {
     try { logger.Error($"[crash] AppDomain.UnhandledException: {e.ExceptionObject}"); logger.Flush(); } catch { }

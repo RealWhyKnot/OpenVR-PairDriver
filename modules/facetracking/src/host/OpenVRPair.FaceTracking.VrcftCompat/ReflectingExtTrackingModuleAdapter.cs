@@ -30,11 +30,16 @@ public sealed class ReflectingExtTrackingModuleAdapter : FaceTrackingModule
 {
     private readonly ExtTrackingModuleAdapter _inner;
 
+    public static System.Threading.AsyncLocal<string?> CurrentAdapterDir { get; } = new();
+    public static System.Threading.AsyncLocal<AssemblyLoadContext?> CurrentUpstreamAlc { get; } = new();
+    public static Action<string>? SinkLine { get; set; }
+
     public ReflectingExtTrackingModuleAdapter()
     {
-        string adapterLocation = typeof(ReflectingExtTrackingModuleAdapter).Assembly.Location;
-        string adapterDir = Path.GetDirectoryName(adapterLocation)
+        string adapterDir = CurrentAdapterDir.Value
+            ?? Path.GetDirectoryName(typeof(ReflectingExtTrackingModuleAdapter).Assembly.Location)
             ?? throw new InvalidOperationException("Could not resolve the adapter assembly directory.");
+        Log($"[ctor] adapterDir={adapterDir} typeAlc={AssemblyLoadContext.GetLoadContext(typeof(ReflectingExtTrackingModuleAdapter).Assembly)?.Name ?? \"<default>\"} bridgeAlc={AssemblyLoadContext.GetLoadContext(typeof(ReflectingLegacyBridge).Assembly)?.Name ?? \"<default>\"}");
 
         string bridgePath = Path.Combine(adapterDir, "bridge.json");
         if (!File.Exists(bridgePath))
@@ -52,10 +57,32 @@ public sealed class ReflectingExtTrackingModuleAdapter : FaceTrackingModule
         Assembly upstreamAsm = LoadUpstreamAssembly(adapterDir, cfg.UpstreamAssembly);
         Log($"loaded upstream assembly: {upstreamAsm.GetName().Name} v{upstreamAsm.GetName().Version}");
 
-        Type upstreamType = upstreamAsm.GetType(cfg.UpstreamType, throwOnError: false)
-            ?? throw new InvalidOperationException(
-                $"Upstream type '{cfg.UpstreamType}' not found in '{cfg.UpstreamAssembly}'.");
-        Log($"upstream type resolved: {upstreamType.FullName}");
+        Type? upstreamType = upstreamAsm.GetType(cfg.UpstreamType, throwOnError: false);
+        if (upstreamType is null)
+        {
+            Type[] visibleTypes;
+            try { visibleTypes = upstreamAsm.GetTypes(); }
+            catch (ReflectionTypeLoadException rtle)
+            {
+                visibleTypes = rtle.Types.Where(t => t is not null).ToArray()!;
+                foreach (var le in rtle.LoaderExceptions.Where(e => e is not null).Take(5))
+                    Log($"  LoaderException: {le!.GetType().Name}: {le.Message}");
+            }
+            Log($"  configured type '{cfg.UpstreamType}' missing; scanning {visibleTypes.Length} visible types for any inheriting from ExtTrackingModule");
+            var candidates = visibleTypes
+                .Where(t => t is not null && t.IsClass && !t.IsAbstract && InheritsExtTrackingModule(t))
+                .ToArray();
+            foreach (var c in candidates) Log($"  candidate: {c.FullName}");
+            upstreamType = candidates.FirstOrDefault()
+                ?? throw new InvalidOperationException(
+                    $"Upstream type '{cfg.UpstreamType}' not found in '{cfg.UpstreamAssembly}' and no fallback ExtTrackingModule subclass discovered. " +
+                    $"Visible types ({visibleTypes.Length}): {string.Join(", ", visibleTypes.Take(10).Select(t => t?.FullName))}");
+            Log($"upstream type resolved via inheritance scan: {upstreamType.FullName} (configured was {cfg.UpstreamType})");
+        }
+        else
+        {
+            Log($"upstream type resolved: {upstreamType.FullName}");
+        }
 
         object upstreamInstance = TryConstruct(upstreamType, adapterDir)
             ?? throw new InvalidOperationException(
@@ -104,6 +131,8 @@ public sealed class ReflectingExtTrackingModuleAdapter : FaceTrackingModule
     // dependencies); stderr is the simplest single-direction back-channel.
     private static void Log(string message)
     {
+        var sink = SinkLine;
+        if (sink is not null) { sink($"[ft/vrcft-bridge] {message}"); return; }
         Console.Error.WriteLine($"[ft/vrcft-bridge] {message}");
     }
 
@@ -113,6 +142,15 @@ public sealed class ReflectingExtTrackingModuleAdapter : FaceTrackingModule
         JsonSerializerOptions opts = new(JsonSerializerDefaults.Web);
         BridgeConfig? cfg = JsonSerializer.Deserialize<BridgeConfig>(json, opts);
         return cfg ?? throw new InvalidOperationException($"bridge.json at {path} is empty or unparseable.");
+    }
+
+    private static bool InheritsExtTrackingModule(Type t)
+    {
+        for (Type? cur = t.BaseType; cur is not null && cur != typeof(object); cur = cur.BaseType)
+        {
+            if (cur.Name == "ExtTrackingModule") return true;
+        }
+        return false;
     }
 
     private static Assembly LoadUpstreamAssembly(string dir, string filename)
@@ -125,8 +163,9 @@ public sealed class ReflectingExtTrackingModuleAdapter : FaceTrackingModule
                 upstreamPath);
         }
 
-        AssemblyLoadContext alc = AssemblyLoadContext.GetLoadContext(
-                                      typeof(ReflectingExtTrackingModuleAdapter).Assembly)
+        AssemblyLoadContext alc = CurrentUpstreamAlc.Value
+                                  ?? AssemblyLoadContext.GetLoadContext(
+                                         typeof(ReflectingExtTrackingModuleAdapter).Assembly)
                                   ?? AssemblyLoadContext.Default;
         return alc.LoadFromAssemblyPath(upstreamPath);
     }

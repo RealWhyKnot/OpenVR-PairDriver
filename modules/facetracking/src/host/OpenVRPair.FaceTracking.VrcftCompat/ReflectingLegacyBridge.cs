@@ -47,6 +47,7 @@ public sealed class ReflectingLegacyBridge : IExtTrackingModuleLegacy
     {
         _upstream = upstream;
         Type upstreamType = upstream.GetType();
+        Log($"[ctor] constructed for upstream type {upstreamType.FullName} in ALC {System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(typeof(ReflectingLegacyBridge).Assembly)?.Name ?? "<default>"}; sinkBound={(SinkLine != null)}");
 
         _initialize = upstreamType.GetMethod(
                           "Initialize",
@@ -349,15 +350,15 @@ public sealed class ReflectingLegacyBridge : IExtTrackingModuleLegacy
             .FirstOrDefault(a => string.Equals(
                 a.GetName().Name, abstractionsName, StringComparison.Ordinal));
 
-        if (abstractionsAsm is null) return;
+        if (abstractionsAsm is null) { Log($"WARN: {abstractionsName} not loaded in current AppDomain; cannot inject Logger into {moduleInstance.GetType().FullName}"); return; }
 
         Type? nullLoggerType = abstractionsAsm.GetType(nullLoggerName, throwOnError: false);
-        if (nullLoggerType is null) return;
+        if (nullLoggerType is null) { Log($"WARN: NullLogger type not found in {abstractionsAsm.FullName}"); return; }
 
         object? nullLoggerInstance =
             nullLoggerType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)
                          ?.GetValue(null);
-        if (nullLoggerInstance is null) return;
+        if (nullLoggerInstance is null) { Log("WARN: NullLogger.Instance is null"); return; }
 
         Type instanceType = moduleInstance.GetType();
 
@@ -384,8 +385,10 @@ public sealed class ReflectingLegacyBridge : IExtTrackingModuleLegacy
             {
                 loggerProp.SetValue(moduleInstance, nullLoggerInstance);
                 Log($"injected NullLogger into Logger property of {instanceType.Name}");
+                return;
             }
             catch { /* type mismatch; leave as-is */ }
         }
+        Log($"INFO: no writable Logger field/property on {instanceType.FullName}; nothing to inject (fine if module does not use this.Logger)");
     }
 }

@@ -290,14 +290,36 @@ public sealed class ModuleLoader(
 
         try
         {
-            var ctx      = new ModuleLoadContext(Path.Combine(dir, "assemblies"));
-            var asm      = ctx.LoadFromAssemblyPath(assemblyPath);
-            var type     = asm.GetType(manifest.EntryType)
-                ?? throw new InvalidOperationException(
-                    $"Type {manifest.EntryType} not found in {manifest.EntryAssembly}.");
+            var ctx = new ModuleLoadContext(Path.Combine(dir, "assemblies"));
+            FaceTrackingModule instance;
+            Type type;
 
-            var instance = (FaceTrackingModule)(Activator.CreateInstance(type)
-                ?? throw new InvalidOperationException("Activator returned null."));
+            const string VrcftCompatAdapterType = "OpenVRPair.FaceTracking.VrcftCompat.ReflectingExtTrackingModuleAdapter";
+            if (manifest.EntryType == VrcftCompatAdapterType)
+            {
+                type = typeof(OpenVRPair.FaceTracking.VrcftCompat.ReflectingExtTrackingModuleAdapter);
+                OpenVRPair.FaceTracking.VrcftCompat.ReflectingExtTrackingModuleAdapter.CurrentAdapterDir.Value = Path.Combine(dir, "assemblies");
+                OpenVRPair.FaceTracking.VrcftCompat.ReflectingExtTrackingModuleAdapter.CurrentUpstreamAlc.Value = ctx;
+                try
+                {
+                    instance = (FaceTrackingModule)(Activator.CreateInstance(type)
+                        ?? throw new InvalidOperationException("Activator returned null."));
+                }
+                finally
+                {
+                    OpenVRPair.FaceTracking.VrcftCompat.ReflectingExtTrackingModuleAdapter.CurrentAdapterDir.Value = null;
+                    OpenVRPair.FaceTracking.VrcftCompat.ReflectingExtTrackingModuleAdapter.CurrentUpstreamAlc.Value = null;
+                }
+            }
+            else
+            {
+                var asm = ctx.LoadFromAssemblyPath(assemblyPath);
+                type = asm.GetType(manifest.EntryType)
+                    ?? throw new InvalidOperationException(
+                        $"Type {manifest.EntryType} not found in {manifest.EntryAssembly}.");
+                instance = (FaceTrackingModule)(Activator.CreateInstance(type)
+                    ?? throw new InvalidOperationException("Activator returned null."));
+            }
 
             ulong uuidHash = Fnv1a64(manifest.Uuid);
             _loaded.Add(new LoadedModule(instance, manifest, ctx, uuidHash));
