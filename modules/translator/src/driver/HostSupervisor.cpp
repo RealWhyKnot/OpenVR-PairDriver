@@ -9,6 +9,9 @@
 #include <chrono>
 #include <cstring>
 
+// Named pipe the translator host exposes for config messages from the driver.
+#define TR_HOST_CONTROL_PIPE_NAME  "\\\\.\\pipe\\WKOpenVR-Translator.host"
+
 namespace translator {
 
 HostSupervisor::HostSupervisor(const std::string &host_exe_path)
@@ -30,6 +33,7 @@ bool HostSupervisor::Start()
         std::lock_guard<std::mutex> lk(process_mutex_);
         halted_                 = false;
         consecutive_fast_exits_ = 0;
+        attached_to_existing_   = false;
     }
     stop_requested_.store(false, std::memory_order_release);
     if (!Spawn()) return false;
@@ -74,61 +78,95 @@ bool HostSupervisor::IsHalted() const
 
 // -----------------------------------------------------------------------
 
+bool HostSupervisor::CanConnectToHost(int timeout_ms) const
+{
+    if (!WaitNamedPipeA(TR_HOST_CONTROL_PIPE_NAME, static_cast<DWORD>(timeout_ms)))
+        return false;
+    HANDLE h = CreateFileA(
+        TR_HOST_CONTROL_PIPE_NAME,
+        GENERIC_WRITE, 0, nullptr,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    CloseHandle(h);
+    return true;
+}
+
+bool HostSupervisor::IsCleanSingletonExit(DWORD code)
+{
+    return code == 3 || code == 4;
+}
+
 bool HostSupervisor::Spawn()
 {
-    int spawn_attempt = 0;
+    bool already_running = false;
+    bool attached        = false;
+    bool spawned         = false;
+
     {
         std::lock_guard<std::mutex> lk(process_mutex_);
-        spawn_attempt = consecutive_fast_exits_;
-    }
-    TR_LOG_DRV("[translator-supervisor] spawn attempt #%d (consecutive_fast_exits=%d)",
-        spawn_attempt + 1, spawn_attempt);
 
-    int wlen = MultiByteToWideChar(CP_UTF8, 0,
-        host_exe_path_.c_str(), -1, nullptr, 0);
-    if (wlen <= 0) return false;
-    std::wstring wpath(wlen, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, host_exe_path_.c_str(), -1, wpath.data(), wlen);
+        if (process_handle_ != INVALID_HANDLE_VALUE &&
+            WaitForSingleObject(process_handle_, 0) == WAIT_TIMEOUT) {
+            TR_LOG_DRV("[translator-supervisor] host already tracked; skipping spawn");
+            already_running = true;
+        } else if (CanConnectToHost(200)) {
+            TR_LOG_DRV("[translator-supervisor] existing host responsive on pipe; attaching without spawn");
+            attached_to_existing_ = true;
+            running_.store(true, std::memory_order_release);
+            attached = true;
+        } else {
+            int spawn_attempt = consecutive_fast_exits_;
+            TR_LOG_DRV("[translator-supervisor] spawn attempt #%d (consecutive_fast_exits=%d)",
+                spawn_attempt + 1, spawn_attempt);
 
-    STARTUPINFOW si{};
-    si.cb = sizeof(si);
-    PROCESS_INFORMATION pi{};
+            int wlen = MultiByteToWideChar(CP_UTF8, 0,
+                host_exe_path_.c_str(), -1, nullptr, 0);
+            if (wlen > 0) {
+                std::wstring wpath(wlen, L'\0');
+                MultiByteToWideChar(CP_UTF8, 0, host_exe_path_.c_str(), -1, wpath.data(), wlen);
 
-    DWORD cpErr = 0;
-    if (!CreateProcessW(wpath.c_str(), nullptr, nullptr, nullptr, FALSE,
-            CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-        cpErr = GetLastError();
-        char errMsg[256] = {};
-        FormatMessageA(
-            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-            nullptr, cpErr, 0, errMsg, sizeof(errMsg) - 1, nullptr);
-        // Strip trailing newline that FormatMessageA appends.
-        size_t mlen = strlen(errMsg);
-        while (mlen > 0 && (errMsg[mlen-1] == '\r' || errMsg[mlen-1] == '\n'))
-            errMsg[--mlen] = '\0';
-        TR_LOG_DRV("[translator] CreateProcessW FAILED: err=%lu msg=%s path='%s'",
-            cpErr, errMsg, host_exe_path_.c_str());
-        return false;
-    }
-    CloseHandle(pi.hThread);
-    {
-        std::lock_guard<std::mutex> lk(process_mutex_);
-        process_handle_ = pi.hProcess;
-    }
-    running_.store(true, std::memory_order_release);
-    TR_LOG_DRV("[translator] CreateProcessW OK: pid=%lu path='%s'",
-        pi.dwProcessId, host_exe_path_.c_str());
-    return true;
+                STARTUPINFOW si{};
+                si.cb = sizeof(si);
+                PROCESS_INFORMATION pi{};
+
+                if (!CreateProcessW(wpath.c_str(), nullptr, nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+                    DWORD cpErr = GetLastError();
+                    char errMsg[256] = {};
+                    FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                        nullptr, cpErr, 0, errMsg, sizeof(errMsg) - 1, nullptr);
+                    size_t mlen = strlen(errMsg);
+                    while (mlen > 0 && (errMsg[mlen-1] == '\r' || errMsg[mlen-1] == '\n'))
+                        errMsg[--mlen] = '\0';
+                    TR_LOG_DRV("[translator] CreateProcessW FAILED: err=%lu msg=%s path='%s'",
+                        cpErr, errMsg, host_exe_path_.c_str());
+                } else {
+                    CloseHandle(pi.hThread);
+                    process_handle_       = pi.hProcess;
+                    attached_to_existing_ = false;
+                    running_.store(true, std::memory_order_release);
+                    TR_LOG_DRV("[translator] CreateProcessW OK: pid=%lu path='%s'",
+                        pi.dwProcessId, host_exe_path_.c_str());
+                    spawned = true;
+                }
+            }
+        }
+    } // process_mutex_ released
+
+    return already_running || attached || spawned;
 }
 
 void HostSupervisor::Kill()
 {
     std::lock_guard<std::mutex> lk(process_mutex_);
     if (process_handle_ == INVALID_HANDLE_VALUE) return;
-    TerminateProcess(process_handle_, 0);
-    WaitForSingleObject(process_handle_, 5000);
+    if (!attached_to_existing_) {
+        TerminateProcess(process_handle_, 0);
+        WaitForSingleObject(process_handle_, 5000);
+    }
     CloseHandle(process_handle_);
-    process_handle_ = INVALID_HANDLE_VALUE;
+    process_handle_       = INVALID_HANDLE_VALUE;
+    attached_to_existing_ = false;
     running_.store(false, std::memory_order_release);
 }
 
@@ -153,7 +191,30 @@ void HostSupervisor::MonitorLoop()
         }
 
         if (cur_handle == INVALID_HANDLE_VALUE) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            bool is_attached = false;
+            {
+                std::lock_guard<std::mutex> lk(process_mutex_);
+                is_attached = attached_to_existing_;
+            }
+            if (is_attached) {
+                if (!CanConnectToHost(0)) {
+                    TR_LOG_DRV("[translator-supervisor] attached host pipe gone; triggering respawn");
+                    running_.store(false, std::memory_order_release);
+                    {
+                        std::lock_guard<std::mutex> lk(process_mutex_);
+                        attached_to_existing_ = false;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+                    if (!stop_requested_.load(std::memory_order_acquire)) {
+                        if (Spawn()) backoff_ms = 1000;
+                        else backoff_ms = std::min(backoff_ms * 2, kMaxBackoffMs);
+                    }
+                } else {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                }
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
             continue;
         }
 
@@ -190,9 +251,8 @@ void HostSupervisor::MonitorLoop()
             TR_LOG_DRV("[translator-supervisor] host process exited code=0x%08lx uptime_ms=%lld",
                 (unsigned long)code, uptime_ms);
 
-            // Circuit breaker: accumulate fast exits.
             bool should_halt = false;
-            {
+            if (!IsCleanSingletonExit(code)) {
                 std::lock_guard<std::mutex> lk(process_mutex_);
                 if (uptime_ms < kFastExitThresholdMs) {
                     consecutive_fast_exits_++;
@@ -203,6 +263,9 @@ void HostSupervisor::MonitorLoop()
                     halted_     = true;
                     should_halt = true;
                 }
+            } else {
+                TR_LOG_DRV("[translator-supervisor] clean singleton exit (code=%lu); "
+                    "skipping fast-exit counter", (unsigned long)code);
             }
 
             if (should_halt) {
@@ -212,9 +275,12 @@ void HostSupervisor::MonitorLoop()
                 continue;
             }
 
-            TR_LOG_DRV("[host] process exited (code=%lu); restarting in %d ms",
-                (unsigned long)code, backoff_ms);
-            std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+            int delay_ms = IsCleanSingletonExit(code) ? 0 : backoff_ms;
+            if (delay_ms > 0) {
+                TR_LOG_DRV("[host] process exited (code=%lu); restarting in %d ms",
+                    (unsigned long)code, delay_ms);
+                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+            }
 
             if (stop_requested_.load(std::memory_order_acquire)) break;
 

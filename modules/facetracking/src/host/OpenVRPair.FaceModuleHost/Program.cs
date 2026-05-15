@@ -18,6 +18,30 @@ TaskScheduler.UnobservedTaskException += (s, e) => {
 };
 logger.Info("[startup] phase=crash-handlers-installed");
 
+// Layer 1: system-wide singleton mutex. Acquired before opening any IPC so
+// two host processes from overlapping SteamVR sessions cannot coexist.
+var _sid = System.Security.Principal.WindowsIdentity.GetCurrent().User?.Value ?? "unknown";
+var _mutexName = $@"Global\WKOpenVR-FaceModuleHost-Singleton-{_sid}";
+bool _createdNew;
+// Static field so the GC cannot collect it while main is running.
+var _singleton = new System.Threading.Mutex(initiallyOwned: true, name: _mutexName, createdNew: out _createdNew);
+if (!_createdNew)
+{
+    if (!_singleton.WaitOne(TimeSpan.Zero))
+    {
+        logger.Info($"[singleton] another host already owns mutex '{_mutexName}'; exiting cleanly (code 3)");
+        logger.Flush();
+        logger.Dispose();
+        Environment.Exit(3);
+    }
+    logger.Info($"[singleton] acquired stale mutex '{_mutexName}' (previous owner died); proceeding");
+}
+else
+{
+    logger.Info($"[singleton] created mutex '{_mutexName}'; proceeding as sole instance");
+}
+logger.Info("[startup] phase=singleton-acquired");
+
 // Wire SIGINT / SIGTERM -> graceful shutdown.
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 AppDomain.CurrentDomain.ProcessExit += (_, _) => cts.Cancel();

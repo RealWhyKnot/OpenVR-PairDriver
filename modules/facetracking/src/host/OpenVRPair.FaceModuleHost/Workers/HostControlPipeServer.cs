@@ -19,30 +19,58 @@ public sealed class HostControlPipeServer(
     private const string MsgUpdateConfig  = "UpdateConfig";
     private const string MsgShutdown      = "Shutdown";
 
+    // Driver holds at most one active connection at a time; 2 instances
+    // tolerates the brief overlap during a driver-side reconnect.
+    private const int kMaxPipeInstances = 2;
+
     public async Task RunAsync(CancellationToken ct)
     {
+        var shortName = pipeName.TrimStart('\\').Split('\\').Last();
         while (!ct.IsCancellationRequested)
         {
+            NamedPipeServerStream pipe;
             try
             {
-                await using var pipe = new NamedPipeServerStream(
-                    pipeName.TrimStart('\\').Split('\\').Last(),
+                pipe = new NamedPipeServerStream(
+                    shortName,
                     PipeDirection.InOut,
-                    maxNumberOfServerInstances: 1,
+                    kMaxPipeInstances,
                     PipeTransmissionMode.Byte,
                     PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-
-                logger.Info($"Control pipe listening on {pipeName}...");
-                await pipe.WaitForConnectionAsync(ct);
-                logger.Info("Driver connected to control pipe.");
-
-                await HandleConnectionAsync(pipe, ct);
+            }
+            catch (IOException ex) when (ex.HResult == unchecked((int)0x800700E7)) // ERROR_PIPE_BUSY
+            {
+                // Another host process already owns all pipe instances. The
+                // singleton mutex should prevent this; if it fires, exit so
+                // the supervisor surfaces the conflict rather than spinning.
+                logger.Error($"[pipe] FATAL: cannot bind pipe '{shortName}' (ERROR_PIPE_BUSY); another host owns all instances. Exiting (code 4).");
+                logger.Flush();
+                Environment.Exit(4);
+                return; // unreachable; satisfies flow analysis
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                logger.Warn($"Control pipe error: {ex.Message}; restarting listener.");
+                logger.Warn($"[pipe] failed to create server: {ex.Message}; retrying in 500 ms.");
                 await Task.Delay(500, ct);
+                continue;
+            }
+
+            try
+            {
+                logger.Info($"Control pipe listening on {pipeName}...");
+                await pipe.WaitForConnectionAsync(ct);
+                logger.Info("Driver connected to control pipe.");
+                await HandleConnectionAsync(pipe, ct);
+            }
+            catch (OperationCanceledException) { await pipe.DisposeAsync(); break; }
+            catch (Exception ex)
+            {
+                logger.Warn($"Control pipe error: {ex.Message}; restarting listener.");
+            }
+            finally
+            {
+                await pipe.DisposeAsync();
             }
         }
     }

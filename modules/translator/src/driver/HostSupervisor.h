@@ -49,9 +49,20 @@ private:
     int  consecutive_fast_exits_ = 0;
     bool halted_                 = false;
 
+    // True if the host's control pipe is responsive within timeout_ms.
+    bool CanConnectToHost(int timeout_ms) const;
+
+    // True for clean singleton/pipe-busy exits; these must not count toward
+    // the crash circuit-breaker.
+    static bool IsCleanSingletonExit(DWORD code);
+
     bool Spawn();
     void Kill();
     void MonitorLoop();
+
+    // True if process_handle_ was NOT spawned by this instance (attached to
+    // an existing host from a prior session).
+    bool attached_to_existing_ = false;
 };
 
 } // namespace translator

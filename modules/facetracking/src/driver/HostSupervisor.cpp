@@ -34,6 +34,7 @@ bool HostSupervisor::Start()
         stop_requested_.store(false, std::memory_order_release);
         halted_                 = false;
         consecutive_fast_exits_ = 0;
+        attached_to_existing_   = false;
     }
     if (!Spawn()) return false;
     monitor_thread_ = std::thread([this]{ MonitorLoop(); });
@@ -90,67 +91,102 @@ void HostSupervisor::SetActiveModuleUuid(const char *uuid)
 
 // -----------------------------------------------------------------------
 
-bool HostSupervisor::Spawn()
+// Returns true if the host's control pipe answers within timeout_ms.
+// Used to detect a responsive host from a prior session before spawning.
+bool HostSupervisor::CanConnectToHost(int timeout_ms) const
 {
-    // Convert path to wide for CreateProcessW.
-    int wlen = MultiByteToWideChar(CP_UTF8, 0,
-        host_exe_path_.c_str(), -1, nullptr, 0);
-    if (wlen <= 0) return false;
-    std::wstring wpath(wlen, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, host_exe_path_.c_str(), -1, wpath.data(), wlen);
-
-    STARTUPINFOW si{};
-    si.cb = sizeof(si);
-    PROCESS_INFORMATION pi{};
-
-    int spawn_attempt = 0;
-    {
-        std::lock_guard<std::mutex> lk(process_mutex_);
-        spawn_attempt = consecutive_fast_exits_;
-    }
-    FT_LOG_DRV("[host-supervisor] spawn attempt #%d (consecutive_fast_exits=%d)",
-        spawn_attempt + 1, spawn_attempt);
-
-    DWORD cpErr = 0;
-    if (!CreateProcessW(wpath.c_str(), nullptr, nullptr, nullptr, FALSE,
-            CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-        cpErr = GetLastError();
-        char errMsg[256] = {};
-        FormatMessageA(
-            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-            nullptr, cpErr, 0, errMsg, sizeof(errMsg) - 1, nullptr);
-        size_t mlen = strlen(errMsg);
-        while (mlen > 0 && (errMsg[mlen-1] == '\r' || errMsg[mlen-1] == '\n'))
-            errMsg[--mlen] = '\0';
-        FT_LOG_DRV("[facetracking] CreateProcessW FAILED: err=%lu msg=%s path='%s'",
-            cpErr, errMsg, host_exe_path_.c_str());
+    // WaitNamedPipeA probes whether a server is listening on the pipe.
+    if (!WaitNamedPipeA(FT_HOST_CONTROL_PIPE_NAME, static_cast<DWORD>(timeout_ms))) {
         return false;
     }
-    // Close the thread handle; we only need the process handle.
-    CloseHandle(pi.hThread);
+    // Briefly open for write to confirm the server will accept connections.
+    HANDLE h = CreateFileA(
+        FT_HOST_CONTROL_PIPE_NAME,
+        GENERIC_WRITE, 0, nullptr,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    CloseHandle(h);
+    return true;
+}
+
+// Exit codes 3 (singleton-owned) and 4 (pipe-busy) are clean handoff exits
+// that must not count toward the crash circuit-breaker.
+bool HostSupervisor::IsCleanSingletonExit(DWORD code)
+{
+    return code == 3 || code == 4;
+}
+
+bool HostSupervisor::Spawn()
+{
+    // Phase 1: all state mutation under the lock.
+    bool already_running   = false;
+    bool attached          = false;
+    bool spawned           = false;
+
     {
         std::lock_guard<std::mutex> lk(process_mutex_);
-        process_handle_ = pi.hProcess;
-    }
-    running_.store(true, std::memory_order_release);
-    FT_LOG_DRV("[facetracking] CreateProcessW OK: pid=%lu path='%s'",
-        pi.dwProcessId, host_exe_path_.c_str());
 
-    // Deliver any queued module uuid. Capture the value under the lock,
-    // release the lock, THEN call TrySendUuid. The previous form held
-    // uuid_mutex_ across the TrySendUuid call, which itself re-locks the
-    // same non-recursive mutex on success -- a hard self-deadlock the
-    // moment the host's control pipe is reachable on the first try.
+        if (process_handle_ != INVALID_HANDLE_VALUE &&
+            WaitForSingleObject(process_handle_, 0) == WAIT_TIMEOUT) {
+            FT_LOG_DRV("[host-supervisor] host already tracked; skipping spawn", 0);
+            already_running = true;
+        } else if (CanConnectToHost(200)) {
+            // Connect-first: an existing host from a prior session is responsive.
+            FT_LOG_DRV("[host-supervisor] existing host responsive on pipe; attaching without spawn", 0);
+            attached_to_existing_ = true;
+            running_.store(true, std::memory_order_release);
+            attached = true;
+        } else {
+            int spawn_attempt = consecutive_fast_exits_;
+            FT_LOG_DRV("[host-supervisor] spawn attempt #%d (consecutive_fast_exits=%d)",
+                spawn_attempt + 1, spawn_attempt);
+
+            int wlen = MultiByteToWideChar(CP_UTF8, 0,
+                host_exe_path_.c_str(), -1, nullptr, 0);
+            if (wlen > 0) {
+                std::wstring wpath(wlen, L'\0');
+                MultiByteToWideChar(CP_UTF8, 0, host_exe_path_.c_str(), -1, wpath.data(), wlen);
+
+                STARTUPINFOW si{};
+                si.cb = sizeof(si);
+                PROCESS_INFORMATION pi{};
+
+                if (!CreateProcessW(wpath.c_str(), nullptr, nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+                    DWORD cpErr = GetLastError();
+                    char errMsg[256] = {};
+                    FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                        nullptr, cpErr, 0, errMsg, sizeof(errMsg) - 1, nullptr);
+                    size_t mlen = strlen(errMsg);
+                    while (mlen > 0 && (errMsg[mlen-1] == '\r' || errMsg[mlen-1] == '\n'))
+                        errMsg[--mlen] = '\0';
+                    FT_LOG_DRV("[facetracking] CreateProcessW FAILED: err=%lu msg=%s path='%s'",
+                        cpErr, errMsg, host_exe_path_.c_str());
+                } else {
+                    CloseHandle(pi.hThread);
+                    process_handle_       = pi.hProcess;
+                    attached_to_existing_ = false;
+                    running_.store(true, std::memory_order_release);
+                    FT_LOG_DRV("[facetracking] CreateProcessW OK: pid=%lu path='%s'",
+                        pi.dwProcessId, host_exe_path_.c_str());
+                    spawned = true;
+                }
+            }
+        }
+    } // process_mutex_ released
+
+    if (already_running) return true;
+    if (!attached && !spawned) return false;
+
+    // Phase 2: deliver any queued uuid OUTSIDE the process lock to avoid
+    // blocking WriteFile from inside a mutex.
     std::string uuid_to_send;
     {
-        std::lock_guard<std::mutex> lk(uuid_mutex_);
-        if (!pending_uuid_.empty() && !uuid_sent_) {
+        std::lock_guard<std::mutex> ulk(uuid_mutex_);
+        if (!pending_uuid_.empty() && !uuid_sent_)
             uuid_to_send = pending_uuid_;
-        }
     }
-    if (!uuid_to_send.empty()) {
-        TrySendUuid(uuid_to_send);
-    }
+    if (!uuid_to_send.empty()) TrySendUuid(uuid_to_send);
     return true;
 }
 
@@ -158,10 +194,16 @@ void HostSupervisor::Kill()
 {
     std::lock_guard<std::mutex> lk(process_mutex_);
     if (process_handle_ == INVALID_HANDLE_VALUE) return;
-    TerminateProcess(process_handle_, 0);
-    WaitForSingleObject(process_handle_, 5000);
+    // Only terminate processes we actually spawned; if we attached to an
+    // existing host from a prior session, just close our handle and let
+    // that process manage its own lifetime.
+    if (!attached_to_existing_) {
+        TerminateProcess(process_handle_, 0);
+        WaitForSingleObject(process_handle_, 5000);
+    }
     CloseHandle(process_handle_);
-    process_handle_ = INVALID_HANDLE_VALUE;
+    process_handle_       = INVALID_HANDLE_VALUE;
+    attached_to_existing_ = false;
     running_.store(false, std::memory_order_release);
 }
 
@@ -187,8 +229,32 @@ void HostSupervisor::MonitorLoop()
         }
 
         if (cur_handle == INVALID_HANDLE_VALUE) {
-            // Not spawned yet; this shouldn't happen but guard anyway.
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            // Attached to an existing host (no process handle). Poll the pipe
+            // to detect when that host dies, then respawn.
+            bool is_attached = false;
+            {
+                std::lock_guard<std::mutex> lk(process_mutex_);
+                is_attached = attached_to_existing_;
+            }
+            if (is_attached) {
+                if (!CanConnectToHost(0)) {
+                    FT_LOG_DRV("[host-supervisor] attached host pipe gone; triggering respawn", 0);
+                    running_.store(false, std::memory_order_release);
+                    {
+                        std::lock_guard<std::mutex> lk(process_mutex_);
+                        attached_to_existing_ = false;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+                    if (!stop_requested_.load(std::memory_order_acquire)) {
+                        if (Spawn()) backoff_ms = 1000;
+                        else backoff_ms = std::min(backoff_ms * 2, kMaxBackoffMs);
+                    }
+                } else {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                }
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
             continue;
         }
 
@@ -228,9 +294,10 @@ void HostSupervisor::MonitorLoop()
             FT_LOG_DRV("[host-supervisor] host process exited code=0x%08lx uptime_ms=%lld",
                 (unsigned long)code, uptime_ms);
 
-            // Circuit breaker: accumulate fast exits.
+            // Circuit breaker: singleton/pipe-busy exits are clean handoffs;
+            // only real crashes (DLL missing, unhandled exception, etc.) count.
             bool should_halt = false;
-            {
+            if (!IsCleanSingletonExit(code)) {
                 std::lock_guard<std::mutex> lk(process_mutex_);
                 if (uptime_ms < kFastExitThresholdMs) {
                     consecutive_fast_exits_++;
@@ -241,6 +308,9 @@ void HostSupervisor::MonitorLoop()
                     halted_      = true;
                     should_halt  = true;
                 }
+            } else {
+                FT_LOG_DRV("[host-supervisor] clean singleton exit (code=%lu); "
+                    "skipping fast-exit counter", (unsigned long)code);
             }
 
             if (should_halt) {
@@ -250,14 +320,19 @@ void HostSupervisor::MonitorLoop()
                 continue;
             }
 
-            FT_LOG_DRV("[host] process exited (code=%lu); restarting in %d ms",
-                (unsigned long)code, backoff_ms);
-            std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+            // For clean singleton exits, the connect-first path in Spawn() will
+            // find the existing host; no delay needed.
+            int delay_ms = IsCleanSingletonExit(code) ? 0 : backoff_ms;
+            if (delay_ms > 0) {
+                FT_LOG_DRV("[host] process exited (code=%lu); restarting in %d ms",
+                    (unsigned long)code, delay_ms);
+                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+            }
 
             if (stop_requested_.load(std::memory_order_acquire)) break;
 
             if (Spawn()) {
-                backoff_ms = 1000; // reset backoff on successful start
+                backoff_ms = 1000;
             } else {
                 backoff_ms = std::min(backoff_ms * 2, kMaxBackoffMs);
             }

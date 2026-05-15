@@ -73,6 +73,13 @@ private:
     std::string pending_uuid_;
     bool        uuid_sent_ = false;
 
+    // True if the host's control pipe is responsive within timeout_ms.
+    bool CanConnectToHost(int timeout_ms) const;
+
+    // Classify an exit code: returns true for clean singleton/pipe exits
+    // that should NOT increment the fast-exit counter.
+    static bool IsCleanSingletonExit(DWORD code);
+
     // Spawn the exe; returns true on success.
     bool Spawn();
 
@@ -85,6 +92,10 @@ private:
     // Try to push `uuid` over the named-pipe control channel.
     // Returns true if delivered; leaves uuid in pending on failure.
     bool TrySendUuid(const std::string &uuid);
+
+    // True if process_handle_ was NOT spawned by this supervisor instance
+    // (i.e. we attached to an existing host rather than spawning it).
+    bool attached_to_existing_ = false;
 };
 
 } // namespace facetracking

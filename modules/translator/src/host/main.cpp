@@ -54,66 +54,82 @@ static HostConfig  g_config;
 
 static std::atomic<bool> g_shutdown{ false };
 
+static void DispatchControlMessage(char *buf, DWORD got)
+{
+    buf[got] = '\0'; // caller guarantees buf has room for one extra byte
+    std::string msg(buf, got);
+    TH_LOG("[control] received: %s", msg.c_str());
+    if (msg.rfind("config:", 0) != 0) return;
+
+    std::lock_guard<std::mutex> lk(g_config_mutex);
+    std::string body = msg.substr(7);
+    size_t pos = 0;
+    while (pos < body.size()) {
+        size_t eq = body.find('=', pos);
+        if (eq == std::string::npos) break;
+        size_t comma = body.find(',', eq);
+        std::string key = body.substr(pos, eq - pos);
+        std::string val = body.substr(eq + 1,
+            comma == std::string::npos ? std::string::npos : comma - eq - 1);
+        while (!val.empty() && (val.back() == '\n' || val.back() == '\r'))
+            val.pop_back();
+
+        if      (key == "src")  g_config.source_lang          = val;
+        else if (key == "tgt")  g_config.target_lang          = val;
+        else if (key == "mode") g_config.mode                  = std::stoi(val);
+        else if (key == "addr") g_config.chatbox_address      = val;
+        else if (key == "port") g_config.chatbox_port         = (uint16_t)std::stoi(val);
+        else if (key == "log")  g_config.transcript_logging   = (val != "0");
+
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+    }
+}
+
 static void ControlPipeThread()
 {
+    // Create the pipe server once. Driver only sends one config message per
+    // connection; after each message we disconnect and wait for the next
+    // client without destroying the server handle -- this avoids the race
+    // window where a second host process could steal the server slot.
+    HANDLE pipe = CreateNamedPipeA(
+        HOST_CONTROL_PIPE_NAME,
+        PIPE_ACCESS_INBOUND,
+        PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+        2,      // max 2 instances: tolerates brief driver reconnect overlap
+        0, 4096, 1000, nullptr);
+
+    if (pipe == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        if (err == ERROR_PIPE_BUSY) {
+            // Another host process already owns the pipe; exit so the
+            // supervisor surfaces the conflict rather than silently spinning.
+            TH_LOG("[control] FATAL: pipe already owned by another host (ERROR_PIPE_BUSY); exiting (code 4)");
+            TranslatorHostFlushLog();
+            ExitProcess(4);
+        }
+        TH_LOG("[control] CreateNamedPipeA failed err=%lu; control pipe unavailable", (unsigned long)err);
+        return;
+    }
+
+    char buf[4097] = {};
     while (!g_shutdown.load(std::memory_order_acquire)) {
-        HANDLE pipe = CreateNamedPipeA(
-            HOST_CONTROL_PIPE_NAME,
-            PIPE_ACCESS_INBOUND,
-            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
-            PIPE_UNLIMITED_INSTANCES,
-            0, 4096, 1000, nullptr);
-
-        if (pipe == INVALID_HANDLE_VALUE) {
-            Sleep(500);
+        BOOL connected = ConnectNamedPipe(pipe, nullptr);
+        if (!connected && GetLastError() != ERROR_PIPE_CONNECTED) {
+            if (g_shutdown.load(std::memory_order_acquire)) break;
+            Sleep(50);
             continue;
         }
 
-        if (!ConnectNamedPipe(pipe, nullptr) &&
-            GetLastError() != ERROR_PIPE_CONNECTED) {
-            CloseHandle(pipe);
-            continue;
-        }
-
-        char buf[4096] = {};
         DWORD got = 0;
         if (ReadFile(pipe, buf, sizeof(buf) - 1, &got, nullptr) && got > 0) {
-            buf[got] = '\0';
-            std::string msg(buf, got);
-            TH_LOG("[control] received: %s", msg.c_str());
-            // Parse "config:src=XX,tgt=YY,mode=N,addr=ZZ,port=N,log=N"
-            if (msg.rfind("config:", 0) == 0) {
-                std::lock_guard<std::mutex> lk(g_config_mutex);
-                // Simple key=value parser.
-                std::string body = msg.substr(7);
-                size_t pos = 0;
-                while (pos < body.size()) {
-                    size_t eq = body.find('=', pos);
-                    if (eq == std::string::npos) break;
-                    size_t comma = body.find(',', eq);
-                    std::string key = body.substr(pos, eq - pos);
-                    std::string val = body.substr(eq + 1,
-                        comma == std::string::npos ? std::string::npos : comma - eq - 1);
-                    // Trim trailing newline.
-                    while (!val.empty() && (val.back() == '\n' || val.back() == '\r'))
-                        val.pop_back();
-
-                    if (key == "src") g_config.source_lang = val;
-                    else if (key == "tgt") g_config.target_lang = val;
-                    else if (key == "mode") g_config.mode = std::stoi(val);
-                    else if (key == "addr") g_config.chatbox_address = val;
-                    else if (key == "port") g_config.chatbox_port = (uint16_t)std::stoi(val);
-                    else if (key == "log")  g_config.transcript_logging = (val != "0");
-
-                    if (comma == std::string::npos) break;
-                    pos = comma + 1;
-                }
-            }
+            DispatchControlMessage(buf, got);
         }
 
         DisconnectNamedPipe(pipe);
-        CloseHandle(pipe);
     }
+
+    CloseHandle(pipe);
 }
 
 // ---------------------------------------------------------------------------
@@ -142,12 +158,50 @@ static std::string DefaultSileroModelPath()
 // main
 // ---------------------------------------------------------------------------
 
+// Derive a per-user discriminator from %USERNAME% (ASCII; safe for mutex names).
+static std::wstring GetUserSidString()
+{
+    wchar_t user[256] = {};
+    DWORD   len = 256;
+    if (!GetUserNameW(user, &len) || len == 0) return L"unknown";
+    // Truncate any trailing null GetUserNameW leaves inside len.
+    return std::wstring(user);
+}
+
+// Singleton mutex held for process lifetime; prevents two TranslatorHost
+// processes from coexisting under the same user session.
+static HANDLE g_singletonMutex = nullptr;
+
 int main(int argc, char **argv)
 try
 {
     TranslatorHostOpenLogFile();
     TH_LOG("[startup] phase=logger-open");
     TH_LOG("[main] WKOpenVR.TranslatorHost starting");
+
+    // Layer 1: acquire system-wide singleton mutex before opening any IPC.
+    {
+        std::wstring user   = GetUserSidString();
+        wchar_t mname[512]  = {};
+        swprintf_s(mname, L"Global\\WKOpenVR-TranslatorHost-Singleton-%ls", user.c_str());
+
+        g_singletonMutex = CreateMutexW(nullptr, TRUE, mname);
+        DWORD merr = GetLastError();
+        if (!g_singletonMutex) {
+            TH_LOG("[singleton] CreateMutexW failed err=%lu; exiting", (unsigned long)merr);
+            TranslatorHostFlushLog();
+            return 1;
+        }
+        if (merr == ERROR_ALREADY_EXISTS) {
+            // Another instance already holds the mutex; exit cleanly.
+            TH_LOG("[singleton] another host already owns mutex; exiting cleanly (code 3)");
+            TranslatorHostFlushLog();
+            CloseHandle(g_singletonMutex);
+            return 3;
+        }
+        TH_LOG("[singleton] acquired mutex '%ls'; proceeding as sole instance", mname);
+    }
+    TH_LOG("[startup] phase=singleton-acquired");
 
     // Parse optional command-line overrides: --model <path> --silero <path>
     {
