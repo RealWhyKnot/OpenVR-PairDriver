@@ -2,6 +2,7 @@
 #include "UserInterface.h"
 #include "Calibration.h"
 #include "Configuration.h"
+#include "DeviceFilters.h"
 #include "VRState.h"
 #include "CalibrationMetrics.h"
 #include "IPCClient.h"
@@ -1047,7 +1048,16 @@ void BuildSystemSelection(const VRState &state)
 	}
 
 	ImGui::SameLine();
-	ImGui::Combo("##TargetTrackingSystem", &currentTargetSystem, &targetSystemsUi[0], (int)targetSystemsUi.size());
+	if (targetSystemsUi.empty()) {
+		int unavailable = 0;
+		const char *items[] = { "(no target space)" };
+		ImGui::BeginDisabled();
+		ImGui::Combo("##TargetTrackingSystem", &unavailable, items, 1);
+		ImGui::EndDisabled();
+		CalCtx.targetTrackingSystem = "";
+	} else {
+		ImGui::Combo("##TargetTrackingSystem", &currentTargetSystem, &targetSystemsUi[0], (int)targetSystemsUi.size());
+	}
 
 	if (currentTargetSystem != -1 && currentTargetSystem < targetSystems.size())
 	{
@@ -1150,7 +1160,9 @@ void BuildDeviceSelection(const VRState &state, int &initialSelected, const std:
 	}
 
 	uint64_t iterator = 0;
-	if (selected == -1 && standby) {
+	if (selected == -1 && standby &&
+		!openvr_pair::overlay::IsInternalAuxiliaryTrackedDevice(
+			standbyDevice.serial, standbyDevice.model)) {
 		bool present = false;
 		for (auto& device : state.devices)
 		{
@@ -1241,13 +1253,22 @@ VRState LoadVRState() {
 	// Inject entries for continuous calibration targets which have yet to load
 
 	if (CalCtx.state == CalibrationState::ContinuousStandby) {
+		const bool referenceInternal =
+			openvr_pair::overlay::IsInternalAuxiliaryTrackedDevice(
+				CalCtx.referenceStandby.serial, CalCtx.referenceStandby.model);
+		const bool targetInternal =
+			openvr_pair::overlay::IsInternalAuxiliaryTrackedDevice(
+				CalCtx.targetStandby.serial, CalCtx.targetStandby.model);
+
 		auto existing = std::find(trackingSystems.begin(), trackingSystems.end(), CalCtx.referenceTrackingSystem);
-		if (existing == trackingSystems.end()) {
+		if (!referenceInternal && !CalCtx.referenceTrackingSystem.empty() &&
+			existing == trackingSystems.end()) {
 			trackingSystems.push_back(CalCtx.referenceTrackingSystem);
 		}
 
 		existing = std::find(trackingSystems.begin(), trackingSystems.end(), CalCtx.targetTrackingSystem);
-		if (existing == trackingSystems.end()) {
+		if (!targetInternal && !CalCtx.targetTrackingSystem.empty() &&
+			existing == trackingSystems.end()) {
 			trackingSystems.push_back(CalCtx.targetTrackingSystem);
 		}
 	}

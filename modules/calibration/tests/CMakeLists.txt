@@ -45,7 +45,9 @@ add_executable(spacecal_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/test_reanchor_chi_square.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test_translation_solve_direct.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test_common_helpers.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_device_filters.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/stubs.cpp
+    ${CMAKE_SOURCE_DIR}/core/src/overlay/DeviceFilters.cpp
     ${SPACECAL_SRC}/overlay/CalibrationCalc.cpp
     ${SPACECAL_SRC}/overlay/TranslationSolveDirect.cpp
     ${SPACECAL_SRC}/overlay/Configuration.cpp
@@ -57,6 +59,7 @@ target_include_directories(spacecal_tests
     PRIVATE ${SPACECAL_SRC}/overlay
     # Protocol.h and MotionGate.h live in core/src/common in the monorepo.
     PRIVATE ${CMAKE_SOURCE_DIR}/core/src/common
+    PRIVATE ${CMAKE_SOURCE_DIR}/core/src/overlay
     PRIVATE ${CMAKE_SOURCE_DIR}/lib
     PRIVATE ${CMAKE_SOURCE_DIR}/lib/openvr/headers
     PRIVATE ${CMAKE_SOURCE_DIR}/lib/Eigen

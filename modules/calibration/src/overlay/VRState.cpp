@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include "VRState.h"
 
+#include "DeviceFilters.h"
+
 VRState VRState::Load()
 {
 	VRState state;
@@ -58,6 +60,24 @@ VRState VRState::Load()
 					}
 				}
 
+				VRDevice device;
+				device.id = id;
+				device.deviceClass = deviceClass;
+				device.trackingSystem = system;
+
+				vr::VRSystem()->GetStringTrackedDeviceProperty(id, vr::Prop_ModelNumber_String, buffer, vr::k_unMaxPropertyStringSize, &err);
+				device.model = std::string(buffer);
+
+				vr::VRSystem()->GetStringTrackedDeviceProperty(id, vr::Prop_SerialNumber_String, buffer, vr::k_unMaxPropertyStringSize, &err);
+				device.serial = std::string(buffer);
+
+				device.controllerRole = (vr::ETrackedControllerRole)vr::VRSystem()->GetInt32TrackedDeviceProperty(id, vr::Prop_ControllerRoleHint_Int32, &err);
+
+				if (!openvr_pair::overlay::ShouldShowInCalibrationDeviceList(
+					device.deviceClass, device.serial, device.model)) {
+					continue;
+				}
+
 				auto existing = std::find(trackingSystems.begin(), trackingSystems.end(), system);
 				if (existing != trackingSystems.end())
 				{
@@ -71,19 +91,6 @@ VRState VRState::Load()
 				{
 					trackingSystems.push_back(system);
 				}
-
-				VRDevice device;
-				device.id = id;
-				device.deviceClass = deviceClass;
-				device.trackingSystem = system;
-
-				vr::VRSystem()->GetStringTrackedDeviceProperty(id, vr::Prop_ModelNumber_String, buffer, vr::k_unMaxPropertyStringSize, &err);
-				device.model = std::string(buffer);
-
-				vr::VRSystem()->GetStringTrackedDeviceProperty(id, vr::Prop_SerialNumber_String, buffer, vr::k_unMaxPropertyStringSize, &err);
-				device.serial = std::string(buffer);
-
-				device.controllerRole = (vr::ETrackedControllerRole)vr::VRSystem()->GetInt32TrackedDeviceProperty(id, vr::Prop_ControllerRoleHint_Int32, &err);
 
 				state.devices.push_back(device);
 			}

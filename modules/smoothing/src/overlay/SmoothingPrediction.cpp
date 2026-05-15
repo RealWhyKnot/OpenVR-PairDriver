@@ -4,6 +4,7 @@
 #include "SmoothingPlugin.h"
 
 #include "CalibrationAnchor.h"
+#include "DeviceFilters.h"
 #include "Protocol.h"
 #include "UiHelpers.h"
 #include "Win32Text.h"
@@ -181,13 +182,25 @@ void SmoothingPlugin::DrawPredictionTab()
 		vrSystem->GetStringTrackedDeviceProperty(id, vr::Prop_RenderModelName_String, buffer, sizeof buffer, &err);
 		std::string model = (err == vr::TrackedProp_Success) ? buffer : "";
 
+		if (!openvr_pair::overlay::ShouldShowInSmoothingPredictionList(
+				deviceClass, serial, model)) {
+			auto stale = cfg_.trackerSmoothness.find(serial);
+			if (stale != cfg_.trackerSmoothness.end()) {
+				cfg_.trackerSmoothness.erase(stale);
+				SendDevicePrediction(id, 0);
+				dirty = true;
+			}
+			continue;
+		}
+
 		vrSystem->GetStringTrackedDeviceProperty(id, vr::Prop_TrackingSystemName_String, buffer, sizeof buffer, &err);
 		std::string sys = (err == vr::TrackedProp_Success) ? PrettyTrackingSystem(buffer) : "";
 
 		const bool isHmd = (deviceClass == vr::TrackedDeviceClass_HMD);
-		const bool isAnchor = !serial.empty() &&
-			serial == openvr_pair::overlay::GetCalibrationAnchorSerial();
-		const bool isLocked = isHmd || isAnchor;
+		openvr_pair::overlay::CalibrationDeviceLockKind lockKind{};
+		const bool isCalibrationLocked =
+			openvr_pair::overlay::TryGetCalibrationDeviceLockKind(serial, lockKind);
+		const bool isLocked = isHmd || isCalibrationLocked;
 
 		int smoothness = 0;
 		auto it = cfg_.trackerSmoothness.find(serial);
@@ -201,8 +214,11 @@ void SmoothingPlugin::DrawPredictionTab()
 			serial.c_str());
 		if (isHmd) {
 			ImGui::TextColored(openvr_pair::overlay::ui::GetPalette().statusInfo, "[HMD, locked]");
-		} else if (isAnchor) {
-			ImGui::TextColored(openvr_pair::overlay::ui::GetPalette().statusInfo, "[continuous-cal reference, locked]");
+		} else if (isCalibrationLocked &&
+			lockKind == openvr_pair::overlay::CalibrationDeviceLockKind::Reference) {
+			ImGui::TextColored(openvr_pair::overlay::ui::GetPalette().statusInfo, "[continuous calibration reference, locked]");
+		} else if (isCalibrationLocked) {
+			ImGui::TextColored(openvr_pair::overlay::ui::GetPalette().statusInfo, "[continuous calibration target, locked]");
 		}
 
 		ImGui::BeginDisabled(isLocked);
@@ -216,10 +232,10 @@ void SmoothingPlugin::DrawPredictionTab()
 		if (ImGui::IsItemHovered()) {
 			if (isHmd) {
 				ImGui::SetTooltip("Locked to 0. Suppressing HMD prediction would cause judder in your view.");
-			} else if (isAnchor) {
+			} else if (isCalibrationLocked) {
 				ImGui::SetTooltip(
-					"Locked to 0. This tracker is the calibration reference; smoothing it\n"
-					"would introduce lag into every other tracker's calibration solve.");
+					"Locked to 0. This device is being used by continuous calibration;\n"
+					"smoothing it would add lag to the calibration solve.");
 			} else {
 				ImGui::SetTooltip(
 					"0 = raw motion (no suppression).\n"

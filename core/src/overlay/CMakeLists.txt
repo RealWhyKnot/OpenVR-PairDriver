@@ -45,6 +45,8 @@ endif()
 add_executable(OpenVRPairOverlay WIN32
 	CalibrationAnchor.cpp
 	CalibrationAnchor.h
+	DeviceFilters.cpp
+	DeviceFilters.h
 	DiscordPresence.cpp
 	DiscordPresence.h
 	FeaturePlugin.cpp

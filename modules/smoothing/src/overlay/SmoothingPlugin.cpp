@@ -8,6 +8,7 @@
 
 #include "CalibrationAnchor.h"
 #include "DebugLogging.h"
+#include "DeviceFilters.h"
 #include "Logging.h"
 #include "Protocol.h"
 #include "ShellContext.h"
@@ -24,6 +25,7 @@
 #include <algorithm>
 #include <exception>
 #include <memory>
+#include <set>
 #include <string>
 
 void SmoothingPlugin::OnStart(openvr_pair::overlay::ShellContext &)
@@ -46,7 +48,7 @@ void SmoothingPlugin::Tick(openvr_pair::overlay::ShellContext &)
 {
 	if (!ipc_.IsConnected()) ConnectIfNeeded();
 	TickExternalToolDetection();
-	TickAnchorClear();
+	TickCalibrationLockClear();
 }
 
 void SmoothingPlugin::ConnectIfNeeded()
@@ -122,30 +124,59 @@ void SmoothingPlugin::ReplayDevicePredictions()
 	auto *vrSystem = vr::VRSystem();
 	if (!vrSystem) return;
 
-	const std::string &anchor = openvr_pair::overlay::GetCalibrationAnchorSerial();
 	char buffer[vr::k_unMaxPropertyStringSize];
 	for (uint32_t id = 0; id < vr::k_unMaxTrackedDeviceCount; ++id) {
-		if (vrSystem->GetTrackedDeviceClass(id) == vr::TrackedDeviceClass_Invalid) continue;
+		const auto deviceClass = vrSystem->GetTrackedDeviceClass(id);
+		if (deviceClass == vr::TrackedDeviceClass_Invalid) continue;
 		vr::ETrackedPropertyError err = vr::TrackedProp_Success;
 		vrSystem->GetStringTrackedDeviceProperty(id, vr::Prop_SerialNumber_String, buffer, sizeof buffer, &err);
 		if (err != vr::TrackedProp_Success || buffer[0] == 0) continue;
-		if (!anchor.empty() && anchor == buffer) continue;
-		auto it = cfg_.trackerSmoothness.find(buffer);
+
+		std::string serial = buffer;
+		vrSystem->GetStringTrackedDeviceProperty(id, vr::Prop_ModelNumber_String, buffer, sizeof buffer, &err);
+		std::string model = (err == vr::TrackedProp_Success) ? buffer : "";
+		if (!openvr_pair::overlay::ShouldShowInSmoothingPredictionList(
+				deviceClass, serial, model)) {
+			if (cfg_.trackerSmoothness.find(serial) != cfg_.trackerSmoothness.end()) {
+				SendDevicePrediction(id, 0);
+			}
+			continue;
+		}
+		if (deviceClass == vr::TrackedDeviceClass_HMD) {
+			if (cfg_.trackerSmoothness.find(serial) != cfg_.trackerSmoothness.end()) {
+				SendDevicePrediction(id, 0);
+			}
+			continue;
+		}
+
+		openvr_pair::overlay::CalibrationDeviceLockKind lockKind{};
+		if (openvr_pair::overlay::TryGetCalibrationDeviceLockKind(serial, lockKind)) {
+			if (cfg_.trackerSmoothness.find(serial) != cfg_.trackerSmoothness.end()) {
+				SendDevicePrediction(id, 0);
+			}
+			continue;
+		}
+
+		auto it = cfg_.trackerSmoothness.find(serial);
 		if (it == cfg_.trackerSmoothness.end()) continue;
 		SendDevicePrediction(id, it->second);
 	}
 }
 
-void SmoothingPlugin::TickAnchorClear()
+void SmoothingPlugin::TickCalibrationLockClear()
 {
-	const std::string &anchor = openvr_pair::overlay::GetCalibrationAnchorSerial();
-	if (anchor == lastKnownAnchorSerial_) return;
-	lastKnownAnchorSerial_ = anchor;
+	std::set<std::string> locks;
 
-	if (anchor.empty() || !ipc_.IsConnected()) return;
+	for (const auto &kv : cfg_.trackerSmoothness) {
+		openvr_pair::overlay::CalibrationDeviceLockKind lockKind{};
+		if (openvr_pair::overlay::TryGetCalibrationDeviceLockKind(kv.first, lockKind)) {
+			locks.insert(kv.first);
+		}
+	}
+	if (locks == lastKnownCalibrationLocks_) return;
 
 	auto *vrSystem = vr::VRSystem();
-	if (!vrSystem) return;
+	if (!vrSystem || !ipc_.IsConnected()) return;
 
 	char buffer[vr::k_unMaxPropertyStringSize];
 	for (uint32_t id = 0; id < vr::k_unMaxTrackedDeviceCount; ++id) {
@@ -153,11 +184,14 @@ void SmoothingPlugin::TickAnchorClear()
 		vr::ETrackedPropertyError err = vr::TrackedProp_Success;
 		vrSystem->GetStringTrackedDeviceProperty(id, vr::Prop_SerialNumber_String, buffer, sizeof buffer, &err);
 		if (err != vr::TrackedProp_Success || buffer[0] == 0) continue;
-		if (anchor != buffer) continue;
-		SM_LOG("[smoothing] tracker %s is calibration anchor; smoothing inert until anchor changes", anchor.c_str());
+		std::string serial = buffer;
+		if (locks.find(serial) == locks.end()) continue;
+		if (lastKnownCalibrationLocks_.find(serial) != lastKnownCalibrationLocks_.end()) continue;
+		SM_LOG("[smoothing] tracker %s is used by continuous calibration; smoothing disabled while locked", serial.c_str());
 		SendDevicePrediction(id, 0);
-		return;
 	}
+
+	lastKnownCalibrationLocks_ = std::move(locks);
 }
 
 void SmoothingPlugin::DrawTab(openvr_pair::overlay::ShellContext &)

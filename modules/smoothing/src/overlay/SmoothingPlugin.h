@@ -5,6 +5,7 @@
 #include "IPCClient.h"
 
 #include <string>
+#include <set>
 
 class SmoothingPlugin final : public openvr_pair::overlay::FeaturePlugin
 {
@@ -31,17 +32,17 @@ private:
 	std::string externalSmoothingToolName_;
 	double lastExternalScanSeconds_ = 0.0;
 
-	// Most recent anchor serial seen by Tick(). When it changes, send
-	// smoothness=0 to the driver for the new anchor device so any stale
-	// value already in the driver slot is cleared.
-	std::string lastKnownAnchorSerial_;
+	// Most recent continuous-calibration device locks seen by Tick(). When a
+	// serial becomes locked, send smoothness=0 to the driver so any stale value
+	// already in that device slot is cleared.
+	std::set<std::string> lastKnownCalibrationLocks_;
 
 	void ConnectIfNeeded();
 	void SendConfig();                                        // finger smoothing config
 	void SendDevicePrediction(uint32_t openVRID, int smoothness); // per-device prediction
 	void ReplayDevicePredictions();                           // resend whole map on connect
 	void TickExternalToolDetection();
-	void TickAnchorClear();                                   // zero driver slot when anchor changes
+	void TickCalibrationLockClear();                          // zero driver slots when locks change
 	void DrawSettingsTab();
 	void DrawAdvancedTab();
 	void DrawLogsTab();

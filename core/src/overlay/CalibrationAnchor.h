@@ -1,24 +1,44 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
-// In-process shared state: the serial string of the device currently acting as
-// the calibration reference (anchor). Written by the calibration overlay on
-// each scan tick; read by the smoothing overlay to lock out per-tracker
-// prediction-suppression on the anchor device.
+// In-process shared state: serial strings of devices currently used by active
+// continuous calibration. Written by the calibration overlay on each scan tick;
+// read by the smoothing overlay to lock out per-tracker prediction suppression
+// on devices that feed the calibration solve.
 //
-// Both overlays run in the same process (OpenVRPairOverlay). The two calls are
+// Both overlays run in the same process (OpenVRPairOverlay). The calls are
 // always made from the main thread (draw + tick share a thread), so no
-// synchronisation is required beyond a plain std::string.
+// synchronisation is required beyond plain containers.
 
 namespace openvr_pair::overlay {
 
-// Set the current calibration anchor serial. Pass an empty string when the
-// calibration module is not running or has no valid reference device.
+enum class CalibrationDeviceLockKind
+{
+	Reference,
+	Target,
+};
+
+struct CalibrationDeviceLock
+{
+	std::string serial;
+	CalibrationDeviceLockKind kind = CalibrationDeviceLockKind::Target;
+};
+
+// Set the current calibration device locks. Pass an empty vector when the
+// calibration module is not running continuous calibration.
+void SetCalibrationDeviceLocks(const std::vector<CalibrationDeviceLock> &locks);
+
+// Return true when the serial is currently locked by continuous calibration.
+bool TryGetCalibrationDeviceLockKind(const std::string &serial,
+	CalibrationDeviceLockKind &kind);
+
+// Compatibility helper for callers that only care about the primary reference.
 void SetCalibrationAnchorSerial(const std::string &serial);
 
-// Return the most recently set anchor serial. Empty string means no anchor is
-// currently known (calibration not running or reference not resolved).
+// Return the most recently set primary reference serial. Empty string means no
+// reference is currently known.
 const std::string &GetCalibrationAnchorSerial();
 
 } // namespace openvr_pair::overlay

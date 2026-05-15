@@ -11,6 +11,7 @@
 #include <chrono>
 #include <exception>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -59,6 +60,37 @@ bool TryConnect()
 	return true;
 }
 
+std::string ReadDeviceSerial(int32_t id)
+{
+	if (id < 0 || id >= (int32_t)vr::k_unMaxTrackedDeviceCount) return {};
+	auto *vrSystem = vr::VRSystem();
+	if (!vrSystem) return {};
+
+	char buf[vr::k_unMaxPropertyStringSize] = {};
+	vr::ETrackedPropertyError err = vr::TrackedProp_Success;
+	vrSystem->GetStringTrackedDeviceProperty(
+		(uint32_t)id,
+		vr::Prop_SerialNumber_String,
+		buf, sizeof buf, &err);
+	if (err != vr::TrackedProp_Success || buf[0] == '\0') return {};
+	return buf;
+}
+
+void AddCalibrationLock(std::vector<openvr_pair::overlay::CalibrationDeviceLock> &locks,
+	openvr_pair::overlay::CalibrationDeviceLockKind kind,
+	int32_t liveId,
+	const std::string &fallbackSerial)
+{
+	std::string serial = ReadDeviceSerial(liveId);
+	if (serial.empty()) serial = fallbackSerial;
+	if (serial.empty()) return;
+
+	for (const auto &existing : locks) {
+		if (existing.serial == serial) return;
+	}
+	locks.push_back({ serial, kind });
+}
+
 } // namespace
 
 void CCal_UmbrellaStart()
@@ -81,36 +113,27 @@ void CCal_UmbrellaTick()
 	if (g_vrReady) {
 		CalibrationTick(SecondsSinceStart());
 
-		// Anchor serial for cross-module locking (Smoothing reads this to grey
-		// out the row of whichever tracker is currently acting as the
-		// calibration reference). Prefer the live resolved referenceID's
-		// serial -- the standby record's serial is what's persisted in the
-		// profile and may be stale or, in the default wizard flow, redundant
-		// with the HMD (Wizard.cpp seeds referenceStandby.serial = hmd.serial).
-		// Reading the live serial from OpenVR captures non-HMD reference
-		// configurations correctly: the head-mounted Vive tracker that some
-		// users mount to the HMD as a trusted anchor is one of these.
-		std::string anchorSerial;
-		if (CalCtx.referenceID >= 0 &&
-			CalCtx.referenceID < (int32_t)vr::k_unMaxTrackedDeviceCount) {
-			if (auto *vrSystem = vr::VRSystem()) {
-				char buf[vr::k_unMaxPropertyStringSize] = {};
-				vr::ETrackedPropertyError err = vr::TrackedProp_Success;
-				vrSystem->GetStringTrackedDeviceProperty(
-					CalCtx.referenceID,
-					vr::Prop_SerialNumber_String,
-					buf, sizeof buf, &err);
-				if (err == vr::TrackedProp_Success && buf[0] != '\0') {
-					anchorSerial = buf;
-				}
+		std::vector<openvr_pair::overlay::CalibrationDeviceLock> locks;
+		const bool continuous =
+			CalCtx.state == CalibrationState::Continuous ||
+			CalCtx.state == CalibrationState::ContinuousStandby;
+		if (continuous) {
+			AddCalibrationLock(locks,
+				openvr_pair::overlay::CalibrationDeviceLockKind::Reference,
+				CalCtx.referenceID, CalCtx.referenceStandby.serial);
+			AddCalibrationLock(locks,
+				openvr_pair::overlay::CalibrationDeviceLockKind::Target,
+				CalCtx.targetID, CalCtx.targetStandby.serial);
+			for (const auto &extra : CalCtx.additionalCalibrations) {
+				if (!extra.enabled) continue;
+				AddCalibrationLock(locks,
+					openvr_pair::overlay::CalibrationDeviceLockKind::Target,
+					extra.targetID, extra.targetStandby.serial);
 			}
 		}
-		if (anchorSerial.empty()) {
-			anchorSerial = CalCtx.referenceStandby.serial;
-		}
-		openvr_pair::overlay::SetCalibrationAnchorSerial(anchorSerial);
+		openvr_pair::overlay::SetCalibrationDeviceLocks(locks);
 	} else {
-		openvr_pair::overlay::SetCalibrationAnchorSerial({});
+		openvr_pair::overlay::SetCalibrationDeviceLocks({});
 	}
 }
 
