@@ -12,6 +12,9 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **translator/overlay:** Diagnostics drawer on host-failed banner (d93a654)
 - **translator/driver:** Native-dep probe + symbolic exit-code logging (d6ea090)
 - **translator-host:** Delay-load CUDA imports + early-crash logger (f832345)
+- **scripts:** Split local deploy and test paths (e14fd17)
+- **osc:** Coordinate router-backed module outputs (2026.5.15.0-TEST) (8b2483c)
+- **overlay:** Integrate Discord rich presence (770d457)
 
 ### Changed
 - host(facetracking): extend shmem to v2 with head data (2813401)
@@ -21,6 +24,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - host(facetracking): restore v2 shmem (head fields + SHMEM_VERSION=2) (f1427c7)
 - host(facetracking): robustness + diagnostic logging pass on SubprocessManager (70397b0)
 - **facetracking:** Back out v2 shmem extension until driver rebuild (222f83b)
+- Improve diagnostics and deploy flow (6048e4f)
 
 ### Fixed
 - **smoothing:** Lock out per-tracker prediction on the calibration anchor (e87f318)
@@ -35,6 +39,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **facetracking-host:** Extract ALC names before interpolation (CS1056) (8085b84)
 - **facetracking-host:** Force-load MELA so InjectNullLogger finds it (c5db8c7)
 - **facetracking-host:** Force-load MELA via static member; resolve Eye as field-or-property (1f4435e)
+- **smoothing:** Hide internal calibration devices (482ee0a)
 
 ---
 
