@@ -15,10 +15,17 @@
     <ProjectReference Include="..\OpenVRPair.FaceTracking.ModuleSdk\OpenVRPair.FaceTracking.ModuleSdk.csproj" />
     <ProjectReference Include="..\OpenVRPair.FaceTracking.VrcftCompat\OpenVRPair.FaceTracking.VrcftCompat.csproj" />
     <ProjectReference Include="..\OpenVRPair.FaceTracking.Registry\OpenVRPair.FaceTracking.Registry.csproj" />
+    <ProjectReference Include="..\OpenVRPair.FaceTracking.UpstreamRuntime\OpenVRPair.FaceTracking.UpstreamRuntime.csproj" />
+    <!-- subprocess EXE: build alongside but do not load as a managed assembly reference -->
+    <ProjectReference Include="..\WKOpenVR.FaceModuleProcess\WKOpenVR.FaceModuleProcess.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <OutputItemType>Content</OutputItemType>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="System.Formats.Cbor" Version="9.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="7.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="VRCFaceTracking.Core">

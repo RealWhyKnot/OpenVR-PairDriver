@@ -630,3 +630,21 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
 
   This Source Code Form is "Incompatible With Secondary Licenses", as
   defined by the Mozilla Public License, v. 2.0.
+
+==============================================================================
+VRCFaceTracking (https://github.com/benaclejames/VRCFaceTracking)
+==============================================================================
+Apache License 2.0
+Copyright (c) benaclejames and contributors.
+
+This product includes software developed by benaclejames and the
+VRCFaceTracking contributors. Portions of the face tracking module-loading
+runtime are vendored from this project under:
+  modules/facetracking/src/host/WKOpenVR.FaceModuleProcess/
+  modules/facetracking/src/host/OpenVRPair.FaceTracking.UpstreamRuntime/
+
+Modifications: namespace rename of the subprocess (to WKOpenVR.FaceModuleProcess);
+stripped UnifiedTracking.cs to a minimal Data-static placeholder;
+visibility of UpdateDataContiguous changed from internal to public.
+
+Full Apache-2.0 license text: see LICENSE.Apache-2.0 at the repository root.

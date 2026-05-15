@@ -11,6 +11,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenVRPair.FaceTracking.Reg
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenVRPair.FaceModuleHost", "OpenVRPair.FaceModuleHost\OpenVRPair.FaceModuleHost.csproj", "{A1B2C3D4-0004-0000-0000-000000000004}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenVRPair.FaceTracking.UpstreamRuntime", "OpenVRPair.FaceTracking.UpstreamRuntime\OpenVRPair.FaceTracking.UpstreamRuntime.csproj", "{A1B2C3D4-0005-0000-0000-000000000005}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WKOpenVR.FaceModuleProcess", "WKOpenVR.FaceModuleProcess\WKOpenVR.FaceModuleProcess.csproj", "{A1B2C3D4-0006-0000-0000-000000000006}"
+EndProject
 Global
     GlobalSection(SolutionConfigurationPlatforms) = preSolution
         Debug|x64 = Debug|x64
@@ -33,5 +37,13 @@ Global
         {A1B2C3D4-0004-0000-0000-000000000004}.Debug|x64.Build.0 = Debug|Any CPU
         {A1B2C3D4-0004-0000-0000-000000000004}.Release|x64.ActiveCfg = Release|Any CPU
         {A1B2C3D4-0004-0000-0000-000000000004}.Release|x64.Build.0 = Release|Any CPU
+        {A1B2C3D4-0005-0000-0000-000000000005}.Debug|x64.ActiveCfg = Debug|Any CPU
+        {A1B2C3D4-0005-0000-0000-000000000005}.Debug|x64.Build.0 = Debug|Any CPU
+        {A1B2C3D4-0005-0000-0000-000000000005}.Release|x64.ActiveCfg = Release|Any CPU
+        {A1B2C3D4-0005-0000-0000-000000000005}.Release|x64.Build.0 = Release|Any CPU
+        {A1B2C3D4-0006-0000-0000-000000000006}.Debug|x64.ActiveCfg = Debug|Any CPU
+        {A1B2C3D4-0006-0000-0000-000000000006}.Debug|x64.Build.0 = Debug|Any CPU
+        {A1B2C3D4-0006-0000-0000-000000000006}.Release|x64.ActiveCfg = Release|Any CPU
+        {A1B2C3D4-0006-0000-0000-000000000006}.Release|x64.Build.0 = Release|Any CPU
     EndGlobalSection
 EndGlobal
