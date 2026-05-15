@@ -39,7 +39,9 @@ public sealed class ReflectingExtTrackingModuleAdapter : FaceTrackingModule
         string adapterDir = CurrentAdapterDir.Value
             ?? Path.GetDirectoryName(typeof(ReflectingExtTrackingModuleAdapter).Assembly.Location)
             ?? throw new InvalidOperationException("Could not resolve the adapter assembly directory.");
-        Log($"[ctor] adapterDir={adapterDir} typeAlc={AssemblyLoadContext.GetLoadContext(typeof(ReflectingExtTrackingModuleAdapter).Assembly)?.Name ?? \"<default>\"} bridgeAlc={AssemblyLoadContext.GetLoadContext(typeof(ReflectingLegacyBridge).Assembly)?.Name ?? \"<default>\"}");
+        string adapterAlcName = AssemblyLoadContext.GetLoadContext(typeof(ReflectingExtTrackingModuleAdapter).Assembly)?.Name ?? "default";
+        string bridgeAlcName = AssemblyLoadContext.GetLoadContext(typeof(ReflectingLegacyBridge).Assembly)?.Name ?? "default";
+        Log($"[ctor] adapterDir={adapterDir} typeAlc={adapterAlcName} bridgeAlc={bridgeAlcName}");
 
         string bridgePath = Path.Combine(adapterDir, "bridge.json");
         if (!File.Exists(bridgePath))
