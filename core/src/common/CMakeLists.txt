@@ -6,6 +6,8 @@ add_library(openvr_pair_common STATIC
 	DebugLogging.h
 	DriverMemoryProbe.cpp
 	DriverMemoryProbe.h
+	HostSupervisorBase.cpp
+	HostSupervisorBase.h
 	JsonUtil.cpp
 	JsonUtil.h
 	LogPaths.cpp
