@@ -63,14 +63,18 @@ static Hook<vr::EVRInputError(*)(vr::IVRDriverInput *, vr::VRInputComponentHandl
 // =============================================================================
 
 // Wall-clock microseconds since QPC epoch. Cheap and monotonic.
+// QPF is constant for the lifetime of the boot; cache it once with the
+// thread-safe magic-static guarantee instead of branching on every detour.
 static uint64_t QpcMicros()
 {
-	static LARGE_INTEGER s_freq{};
-	if (s_freq.QuadPart == 0) QueryPerformanceFrequency(&s_freq);
+	static const LONGLONG s_freq = []() {
+		LARGE_INTEGER f;
+		return QueryPerformanceFrequency(&f) ? f.QuadPart : 0;
+	}();
+	if (s_freq == 0) return 0;
 	LARGE_INTEGER t;
 	QueryPerformanceCounter(&t);
-	if (s_freq.QuadPart == 0) return 0;
-	return static_cast<uint64_t>(t.QuadPart * 1000000ULL / s_freq.QuadPart);
+	return static_cast<uint64_t>(t.QuadPart * 1000000ULL / s_freq);
 }
 
 static void LogHotPathObservationError(const char *kind, const char *what)

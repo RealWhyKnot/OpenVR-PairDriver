@@ -59,7 +59,10 @@ void ObserveScalarSample(ComponentStats &stats, float newValue, uint64_t nowUs, 
 		if (newValue < stats.observed_min) stats.observed_min = newValue;
 		if (newValue > stats.observed_max) stats.observed_max = newValue;
 	}
-	const auto driftParams = DefaultDriftParams();
+	// DefaultDriftParams is a pure-constant struct -- compute once and
+	// reuse instead of building it on every observation (called at the
+	// per-component update rate, hundreds of Hz total).
+	static const inputhealth::PageHinkleyParams driftParams = DefaultDriftParams();
 	PageHinkleyUpdate(stats.ph_drift, driftParams, static_cast<double>(newValue));
 	if (newValue < kRestThreshold && newValue > -kRestThreshold) {
 		EWMARollingMinUpdate(stats.rest_min,

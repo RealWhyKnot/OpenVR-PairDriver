@@ -115,8 +115,11 @@ static void *DetourGetGenericInterface(vr::IVRDriverContext *_this, const char *
 	TRACE("ServerTrackedDeviceProvider::DetourGetGenericInterface(%s)", pchInterfaceVersion);
 	auto originalInterface = GetGenericInterfaceHook.originalFunc(_this, pchInterfaceVersion, peError);
 
-	std::string iface(pchInterfaceVersion);
-	if ((s_featureFlags & pairdriver::kFeatureCalibration) && iface == "IVRServerDriverHost_005")
+	// strcmp avoids a std::string allocation per interface query. This is
+	// called for every interface version SteamVR queries during driver
+	// init -- not a tight loop, but cumulative startup latency.
+	if ((s_featureFlags & pairdriver::kFeatureCalibration)
+		&& std::strcmp(pchInterfaceVersion, "IVRServerDriverHost_005") == 0)
 	{
 		if (!IHook::Exists(TrackedDevicePoseUpdatedHook005.name))
 		{
@@ -124,7 +127,8 @@ static void *DetourGetGenericInterface(vr::IVRDriverContext *_this, const char *
 			IHook::Register(&TrackedDevicePoseUpdatedHook005);
 		}
 	}
-	else if ((s_featureFlags & pairdriver::kFeatureCalibration) && iface == "IVRServerDriverHost_006")
+	else if ((s_featureFlags & pairdriver::kFeatureCalibration)
+		&& std::strcmp(pchInterfaceVersion, "IVRServerDriverHost_006") == 0)
 	{
 		if (!IHook::Exists(TrackedDevicePoseUpdatedHook006.name))
 		{

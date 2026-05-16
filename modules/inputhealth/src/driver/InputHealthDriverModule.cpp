@@ -6,6 +6,7 @@
 #include "Logging.h"
 #include "ServerTrackedDeviceProvider.h"
 
+#include <cstring>
 #include <string>
 
 namespace inputhealth {
@@ -36,9 +37,11 @@ public:
 	void OnGetGenericInterface(const char *pchInterface, void *iface) override
 	{
 		if (!pchInterface || !iface) return;
-		std::string name(pchInterface);
-		if (name.find("IVRDriverInput_") != std::string::npos &&
-			name.find("Internal") == std::string::npos) {
+		// strstr on the raw C string avoids a std::string allocation per
+		// interface query (this fires for every interface SteamVR asks for
+		// during driver init, a few dozen times per boot).
+		if (std::strstr(pchInterface, "IVRDriverInput_") != nullptr
+			&& std::strstr(pchInterface, "Internal") == nullptr) {
 			inputhealth::TryInstallScalarBooleanHooks(iface);
 		}
 	}
