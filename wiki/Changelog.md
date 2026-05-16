@@ -15,6 +15,11 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **overlay:** Integrate Discord rich presence (770d457)
 - **translator:** Speech and translation pack install flow (30f82ae)
 - **overlay:** Per-module Discord presence composer (a0b7a3c)
+- **inputhealth:** Classify pressure-sensitive analog axes as triggers (7dfdcec)
+- **tests:** Cross-module e2e suite under tests/, consolidate test dirs (c9835b3)
+- **translator:** Reliability pass -- config retry, vrmanifest, phase, ptt status (09409ba)
+- **facetracking:** Reliability pass -- phase, telemetry, ALC, lifecycle, paths (f53b09e)
+- **oscrouter:** Expose test endpoint override for e2e harness (8083e86)
 
 ### Changed
 - host(facetracking): extend shmem to v2 with head data (2813401)
@@ -26,6 +31,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **facetracking:** Back out v2 shmem extension until driver rebuild (222f83b)
 - Improve diagnostics and deploy flow (6048e4f)
 - **build:** Wire compiler cache via sccache or ccache (29e4a64)
+- **inputhealth:** Rename shmem segment to WKOpenVR scheme (34002fb)
 
 ### Fixed
 - **smoothing:** Lock out per-tracker prediction on the calibration anchor (e87f318)
@@ -42,6 +48,12 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **facetracking-host:** Force-load MELA via static member; resolve Eye as field-or-property (1f4435e)
 - **smoothing:** Hide internal calibration devices (482ee0a)
 - **inputhealth:** Persist global toggles and correct trigger compensation (da16380)
+- **calibration:** Reject degenerate solves and reset sample state on restart (789e405)
+- **quick:** Show elevated helper window during deploy (e9b413c)
+- **inputhealth:** Retry late serial-hash resolution on hot path (39198dc)
+- **smoothing:** Replay predictions on ipc reconnect and device-list change (e34072a)
+- **driver:** Logging fallback errno, TRACE fallthrough, smoothness log throttle (cf78723)
+- **paths:** Multi-candidate LocalAppDataLow with %TEMP% fallback (6eec7a2)
 
 ---
 
