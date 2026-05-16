@@ -60,11 +60,22 @@ double ComputeSmartMotionRamp(const vr::DriverPose_t &pose)
 	const double vx = pose.vecVelocity[0];
 	const double vy = pose.vecVelocity[1];
 	const double vz = pose.vecVelocity[2];
-	const double linear = std::sqrt(vx * vx + vy * vy + vz * vz);
-
 	const double wx = pose.vecAngularVelocity[0];
 	const double wy = pose.vecAngularVelocity[1];
 	const double wz = pose.vecAngularVelocity[2];
+
+	// SteamVR can fill the velocity fields with INF on a tracking
+	// recovery edge (the driver-side IMU integrator briefly produces
+	// non-finite values). sqrt(INF) = INF; clamp((INF - threshold) / span,
+	// 0, 1) = 1; the EMA would saturate the motion ramp permanently and
+	// disable the smart-motion blend suppressor. Treat any non-finite
+	// component as "no motion data" and return the still ramp value.
+	if (!std::isfinite(vx) || !std::isfinite(vy) || !std::isfinite(vz)
+		|| !std::isfinite(wx) || !std::isfinite(wy) || !std::isfinite(wz)) {
+		return 0.0;
+	}
+
+	const double linear = std::sqrt(vx * vx + vy * vy + vz * vz);
 	const double angular = std::sqrt(wx * wx + wy * wy + wz * wz);
 
 	const double posRamp = std::clamp(

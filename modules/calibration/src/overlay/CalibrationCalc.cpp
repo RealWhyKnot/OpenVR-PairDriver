@@ -100,8 +100,14 @@ namespace {
 		auto targetA = AngleFromRotationMatrix3(dtarget);
 		ds.valid = refA > 0.4 && targetA > 0.4 && ds.ref.norm() > 0.01 && ds.target.norm() > 0.01;
 
-		ds.ref.normalize();
-		ds.target.normalize();
+		// Only normalise when the magnitudes pass the gate above; a sub-1cm
+		// axis would otherwise be normalised to NaN/Inf entries, and any
+		// downstream consumer that forgets to check ds.valid would ingest
+		// the garbage.
+		if (ds.valid) {
+			ds.ref.normalize();
+			ds.target.normalize();
+		}
 		return ds;
 	}
 }

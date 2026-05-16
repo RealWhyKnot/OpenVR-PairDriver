@@ -437,8 +437,14 @@ namespace {
 		auto targetA = AngleFromRotationMatrix3(dtarget);
 		ds.valid = refA > 0.4 && targetA > 0.4 && ds.ref.norm() > 0.01 && ds.target.norm() > 0.01;
 
-		ds.ref.normalize();
-		ds.target.normalize();
+		// Only normalise when the magnitudes pass the gate above; a sub-1cm
+		// axis would otherwise be normalised to NaN/Inf entries, and any
+		// downstream consumer that forgets to check ds.valid would ingest
+		// the garbage.
+		if (ds.valid) {
+			ds.ref.normalize();
+			ds.target.normalize();
+		}
 		return ds;
 	}
 
@@ -938,6 +944,13 @@ namespace {
 	// value. The previous single-slot g_lastFallback worked when only one
 	// system ever had a fallback active, but with extras we send N fallbacks
 	// per scan tick, and a single-slot cache would miss on every other call.
+	//
+	// Threading invariant: this map and the legacy single-slot g_lastFallback /
+	// g_lastFallbackSent above are written ONLY from the overlay's calibration
+	// tick (SpaceCalibratorUmbrellaRuntime::Tick -> CalibrationTick) and
+	// InvalidateAllTransformCaches, both of which run on the overlay main
+	// thread. Adding a UI handler or background worker that mutates these
+	// would introduce a race and requires adding synchronisation here first.
 	std::unordered_map<std::string, protocol::SetTrackingSystemFallback> g_lastFallbacksBySystem;
 
 	void SendFallbackIfChanged(const std::string& systemName, bool enabled,
