@@ -218,6 +218,11 @@ public:
         std::string host_path = ResolveHostExePath(driver_context_);
         FT_LOG_DRV("[module] host exe: %s", host_path.c_str());
         supervisor_ = std::make_unique<HostSupervisor>(host_path);
+        // Pre-spawn sweep: if a prior SteamVR session left a wedged host
+        // process (singleton mutex held, pipe unresponsive), terminate it
+        // before Start() so connect-first attach does not lock onto a dead
+        // peer.
+        supervisor_->CleanupStaleHostIfWedged();
         supervisor_->Start();
 
         // Start the frame worker thread.

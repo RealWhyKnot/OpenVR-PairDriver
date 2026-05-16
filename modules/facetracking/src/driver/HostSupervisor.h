@@ -24,7 +24,8 @@ public:
     void SetActiveModuleUuid(const char *uuid);
 
 protected:
-    std::string ControlPipeName() const override;
+    std::string  ControlPipeName()  const override;
+    std::wstring SingletonMutexName() const override;
     void BuildCommandLine(std::wstring& commandLine,
                           const std::wstring& exe_path) const override;
     void OnHostReady() override;

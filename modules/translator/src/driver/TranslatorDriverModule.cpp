@@ -104,6 +104,11 @@ public:
         }
 
         supervisor_ = std::make_unique<HostSupervisor>(host_path);
+        // Pre-spawn sweep: if a prior SteamVR session left a wedged host
+        // process (singleton mutex held, pipe unresponsive), terminate it
+        // before Start() so connect-first attach does not lock onto a dead
+        // peer.
+        supervisor_->CleanupStaleHostIfWedged();
         supervisor_->Start();
 
         TR_LOG_DRV("[module] Init complete");

@@ -25,11 +25,12 @@ public:
     void SetHostConfigCommand(const std::string &command);
 
 protected:
-    std::string ControlPipeName() const override;
-    void        OnHostReady() override;
-    void        OnHostExited() override;
-    std::string DescribeExitCode(DWORD code) const override;
-    void        LogV(const char* fmt, va_list args) override;
+    std::string  ControlPipeName()    const override;
+    std::wstring SingletonMutexName() const override;
+    void         OnHostReady() override;
+    void         OnHostExited() override;
+    std::string  DescribeExitCode(DWORD code) const override;
+    void         LogV(const char* fmt, va_list args) override;
 
 private:
     bool TrySendCommand(const std::string &command);

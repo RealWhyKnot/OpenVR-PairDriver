@@ -5,12 +5,46 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <tlhelp32.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <utility>
+
+namespace {
+
+// Lowercase ASCII compare for image-name match. Win32 process names from
+// Toolhelp32 come back in the original case (typically PascalCase exe
+// names) -- the supervisor's host_exe_path_ is whatever the resolver
+// returned. Compare case-insensitively over the last path component only.
+std::string ExtractImageName(const std::string& full_path)
+{
+    size_t slash = full_path.find_last_of("\\/");
+    std::string name = (slash == std::string::npos)
+        ? full_path
+        : full_path.substr(slash + 1);
+    for (char& c : name)
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    return name;
+}
+
+std::string LowerAscii(const wchar_t* w)
+{
+    std::string out;
+    for (; *w; ++w) {
+        wchar_t c = *w;
+        if (c < 128) {
+            char ch = static_cast<char>(c);
+            if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
+            out.push_back(ch);
+        }
+    }
+    return out;
+}
+
+} // namespace
 
 namespace openvr_pair::common {
 
@@ -138,6 +172,78 @@ bool HostSupervisorBase::CanConnectToHost(int timeout_ms) const
     return true;
 }
 
+bool HostSupervisorBase::IsSingletonMutexHeld() const
+{
+    std::wstring name = SingletonMutexName();
+    if (name.empty()) return false;
+    HANDLE h = OpenMutexW(SYNCHRONIZE, FALSE, name.c_str());
+    if (!h) return false;
+    CloseHandle(h);
+    return true;
+}
+
+int HostSupervisorBase::CleanupStaleHostIfWedged()
+{
+    // Only trigger cleanup when the host appears to be running but
+    // unresponsive: singleton mutex is held AND the control pipe does not
+    // answer within 200 ms. If either condition fails, there is nothing
+    // wedged to clean up.
+    if (SingletonMutexName().empty()) return 0;
+    if (!IsSingletonMutexHeld())      return 0;
+    if (CanConnectToHost(200))        return 0;
+
+    const std::string image_lc = ExtractImageName(host_exe_path_);
+    if (image_lc.empty()) return 0;
+
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) {
+        Log("[host-supervisor] CleanupStaleHostIfWedged: CreateToolhelp32Snapshot failed err=%lu",
+            GetLastError());
+        return 0;
+    }
+
+    PROCESSENTRY32W entry{};
+    entry.dwSize = sizeof(entry);
+
+    int killed = 0;
+    if (Process32FirstW(snap, &entry)) {
+        do {
+            const std::string proc_lc = LowerAscii(entry.szExeFile);
+            if (proc_lc != image_lc) continue;
+
+            // Don't terminate our own driver host process (vrserver,
+            // technically possible but the image name will not match).
+            if (entry.th32ProcessID == GetCurrentProcessId()) continue;
+
+            HANDLE proc = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE,
+                                      FALSE, entry.th32ProcessID);
+            if (!proc) {
+                Log("[host-supervisor] CleanupStaleHostIfWedged: OpenProcess pid=%lu failed err=%lu",
+                    entry.th32ProcessID, GetLastError());
+                continue;
+            }
+
+            if (TerminateProcess(proc, 1)) {
+                WaitForSingleObject(proc, 1000);
+                ++killed;
+                Log("[host-supervisor] CleanupStaleHostIfWedged: terminated stale pid=%lu image=%s",
+                    entry.th32ProcessID, image_lc.c_str());
+            } else {
+                Log("[host-supervisor] CleanupStaleHostIfWedged: TerminateProcess pid=%lu failed err=%lu",
+                    entry.th32ProcessID, GetLastError());
+            }
+            CloseHandle(proc);
+        } while (Process32NextW(snap, &entry));
+    }
+    CloseHandle(snap);
+
+    if (killed > 0) {
+        Log("[host-supervisor] CleanupStaleHostIfWedged: cleaned up %d stale host(s) before spawn",
+            killed);
+    }
+    return killed;
+}
+
 bool HostSupervisorBase::SendBytesOverControlPipe(const void* data, size_t len)
 {
     const std::string pipe = ControlPipeName();
@@ -171,7 +277,14 @@ bool HostSupervisorBase::Spawn()
             WaitForSingleObject(process_handle_, 0) == WAIT_TIMEOUT) {
             Log("[host-supervisor] host already tracked; skipping spawn");
             already_running = true;
-        } else if (CanConnectToHost(200)) {
+        } else if (CanConnectToHost(200) &&
+                   (SingletonMutexName().empty() || IsSingletonMutexHeld())) {
+            // Attach-to-existing requires BOTH a responsive pipe AND, when
+            // the host advertises a singleton mutex, that the mutex is
+            // held. The combined check rejects a half-spawned host that
+            // owns the mutex but hasn't bound the pipe yet (200 ms window),
+            // and also rejects a stale pipe whose owning process died
+            // without releasing its named-pipe instance.
             Log("[host-supervisor] existing host responsive on pipe; "
                 "attaching without spawn");
             attached_to_existing_ = true;

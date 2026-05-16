@@ -2,11 +2,30 @@
 #include "HostSupervisor.h"
 #include "Logging.h"
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+
 #include <cstdarg>
 
 #define TR_HOST_CONTROL_PIPE_NAME  "\\\\.\\pipe\\WKOpenVR-Translator.host"
 
 namespace translator {
+namespace {
+
+// Matches the username discriminator the translator host writes in
+// modules/translator/src/host/main.cpp (GetUserNameW result). Empty
+// on failure so the supervisor falls back to pipe-only attach.
+std::wstring GetCurrentUserNameString()
+{
+    wchar_t user[256] = {};
+    DWORD   len = 256;
+    if (!GetUserNameW(user, &len) || len == 0) return {};
+    return std::wstring(user);
+}
+
+} // namespace
 
 HostSupervisor::HostSupervisor(const std::string &host_exe_path)
     : HostSupervisorBase(host_exe_path)
@@ -15,6 +34,13 @@ HostSupervisor::HostSupervisor(const std::string &host_exe_path)
 std::string HostSupervisor::ControlPipeName() const
 {
     return TR_HOST_CONTROL_PIPE_NAME;
+}
+
+std::wstring HostSupervisor::SingletonMutexName() const
+{
+    std::wstring user = GetCurrentUserNameString();
+    if (user.empty()) return {};
+    return L"Global\\WKOpenVR-TranslatorHost-Singleton-" + user;
 }
 
 void HostSupervisor::LogV(const char* fmt, va_list args)

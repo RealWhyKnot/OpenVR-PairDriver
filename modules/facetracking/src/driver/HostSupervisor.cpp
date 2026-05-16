@@ -5,9 +5,16 @@
 #include "Logging.h"
 #include "Win32Paths.h"
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <sddl.h>
+
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 #define FT_HOST_CONTROL_PIPE_NAME  "\\\\.\\pipe\\WKOpenVR-FaceTracking.host"
 
@@ -76,6 +83,37 @@ std::string EncodeSelectModule(const std::string &uuid)
     return wire;
 }
 
+// Returns the current user's SID as the canonical S-1-... string. Matches
+// what the C# host writes via WindowsIdentity.GetCurrent().User.Value so
+// the supervisor can probe the same mutex name from the driver side.
+// Returns an empty string on failure (caller falls back to pipe-only
+// attach detection).
+std::wstring GetCurrentUserSidString()
+{
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+        return {};
+
+    DWORD needed = 0;
+    GetTokenInformation(token, TokenUser, nullptr, 0, &needed);
+    if (needed == 0) { CloseHandle(token); return {}; }
+
+    std::vector<unsigned char> buf(needed);
+    if (!GetTokenInformation(token, TokenUser, buf.data(), needed, &needed)) {
+        CloseHandle(token);
+        return {};
+    }
+    CloseHandle(token);
+
+    PSID sid = reinterpret_cast<TOKEN_USER*>(buf.data())->User.Sid;
+    LPWSTR sidStr = nullptr;
+    if (!ConvertSidToStringSidW(sid, &sidStr) || !sidStr) return {};
+
+    std::wstring result(sidStr);
+    LocalFree(sidStr);
+    return result;
+}
+
 } // namespace
 
 HostSupervisor::HostSupervisor(const std::string &host_exe_path)
@@ -85,6 +123,13 @@ HostSupervisor::HostSupervisor(const std::string &host_exe_path)
 std::string HostSupervisor::ControlPipeName() const
 {
     return FT_HOST_CONTROL_PIPE_NAME;
+}
+
+std::wstring HostSupervisor::SingletonMutexName() const
+{
+    std::wstring sid = GetCurrentUserSidString();
+    if (sid.empty()) return {};
+    return L"Global\\WKOpenVR-FaceModuleHost-Singleton-" + sid;
 }
 
 void HostSupervisor::BuildCommandLine(std::wstring& commandLine,

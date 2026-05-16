@@ -55,8 +55,23 @@ public:
     uint32_t    LastExitCode()        const;
     std::string LastExitDescription() const;
 
+    // If a stale host from a previous SteamVR session is still holding the
+    // singleton mutex but its control pipe has gone unresponsive, terminate
+    // any process matching the host's image name. Call this from the driver
+    // module's Init() BEFORE Start() so the supervisor's connect-first
+    // attach path does not race against a wedged host.
+    //
+    // Returns the number of stale processes terminated (zero if the host
+    // image isn't running, or if the live host's pipe answered the probe).
+    int CleanupStaleHostIfWedged();
+
 protected:
     virtual std::string ControlPipeName() const = 0;
+
+    // Per-user singleton mutex name (e.g. Global\WKOpenVR-FaceModuleHost-
+    // Singleton-<sid-or-username>). Empty means "host has no singleton
+    // mutex", and the supervisor falls back to pipe-only attach detection.
+    virtual std::wstring SingletonMutexName() const { return {}; }
 
     // Default appends nothing. Subclasses override to add their own flags.
     virtual void BuildCommandLine(std::wstring& commandLine,
@@ -92,6 +107,10 @@ protected:
 
     // True if the host's control pipe is responsive within timeout_ms.
     bool CanConnectToHost(int timeout_ms) const;
+
+    // True if the per-user singleton mutex named by SingletonMutexName()
+    // exists. Always returns false when SingletonMutexName() is empty.
+    bool IsSingletonMutexHeld() const;
 
     bool IsStopRequested() const
     {
