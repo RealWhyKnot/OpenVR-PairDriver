@@ -1,83 +1,43 @@
 #pragma once
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "HostSupervisorBase.h"
 
-#include <atomic>
-#include <cstdint>
+#include <cstdarg>
 #include <mutex>
 #include <string>
-#include <thread>
 
 namespace translator {
 
 // Spawns and supervises WKOpenVR.TranslatorHost.exe.
 //
-// Lifecycle: Start() launches the host process; the background monitor thread
-// watches for unexpected exit and restarts with exponential backoff (cap 30 s).
-// Stop() terminates the host and joins the thread.
-class HostSupervisor
+// Lifecycle, job-object kill-on-driver-exit, exponential backoff, and the
+// 5-strike circuit breaker live in HostSupervisorBase. This class plugs in
+// the translator pipe name, an exit-code description table for the loader
+// failures most translator hosts hit (missing CUDA runtime, etc.), and the
+// raw-bytes "host config" message the driver pushes after spawn.
+class HostSupervisor : public openvr_pair::common::HostSupervisorBase
 {
 public:
     explicit HostSupervisor(const std::string &host_exe_path);
-    ~HostSupervisor();
 
-    bool Start();
-    void Stop();
-    void Restart();
-    bool IsRunning() const;
-
-    // Queue and send the current host config. If the control pipe is not
-    // available yet, the supervisor retries after spawn/reconnect.
+    // Queue and send the current host config blob. If the control pipe is
+    // not available yet, retry after the next spawn/reconnect.
     void SetHostConfigCommand(const std::string &command);
 
-    // True if the circuit breaker has tripped (5 consecutive fast exits).
-    // Cleared by Stop() / Start() so a redeployment attempt is not blocked.
-    bool IsHalted() const;
-    uint32_t LastExitCode() const;
-    std::string LastExitDescription() const;
+protected:
+    std::string ControlPipeName() const override;
+    void        OnHostReady() override;
+    void        OnHostExited() override;
+    std::string DescribeExitCode(DWORD code) const override;
+    void        LogV(const char* fmt, va_list args) override;
 
 private:
-    std::string       host_exe_path_;
-    std::atomic<bool> stop_requested_{ false };
-    std::atomic<bool> running_{ false };
-
-    // process_handle_ is read/written by both MonitorLoop and Restart/Kill;
-    // all accesses must hold process_mutex_.
-    mutable std::mutex process_mutex_;
-    HANDLE process_handle_ = INVALID_HANDLE_VALUE;
-
-    std::thread monitor_thread_;
-
-    // Circuit breaker: counts consecutive exits within kFastExitThresholdMs.
-    static constexpr int  kFastExitThresholdMs     = 2000;
-    static constexpr int  kCircuitBreakerThreshold  = 5;
-    int  consecutive_fast_exits_ = 0;
-    bool halted_                 = false;
-    uint32_t last_exit_code_     = 0;
-    std::string last_exit_description_;
-
-    // True if the host's control pipe is responsive within timeout_ms.
-    bool CanConnectToHost(int timeout_ms) const;
-
-    // True for clean singleton/pipe-busy exits; these must not count toward
-    // the crash circuit-breaker.
-    static bool IsCleanSingletonExit(DWORD code);
-
-    bool Spawn();
-    void Kill();
-    void MonitorLoop();
     bool TrySendCommand(const std::string &command);
-    void RetryPendingCommand();
-
-    // True if process_handle_ was NOT spawned by this instance (attached to
-    // an existing host from a prior session).
-    bool attached_to_existing_ = false;
 
     std::mutex  command_mutex_;
     std::string pending_command_;
     bool        has_pending_command_ = false;
-    bool        command_sent_ = false;
+    bool        command_sent_        = false;
 };
 
 } // namespace translator

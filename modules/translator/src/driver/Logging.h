@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdarg>
 #include <cstdio>
 
 // Open the per-session log file (called once in Init). Subsequent TR_LOG_DRV
@@ -14,3 +15,7 @@ void TrLogFlushDrv();
 #define TR_LOG_DRV(fmt, ...) TrDrvLog((fmt), ##__VA_ARGS__)
 
 void TrDrvLog(const char *fmt, ...);
+
+// va_list variant for callers that already have args captured (e.g. a base
+// class's LogV hook). Same behavior as TrDrvLog otherwise.
+void TrDrvLogV(const char *fmt, va_list args);

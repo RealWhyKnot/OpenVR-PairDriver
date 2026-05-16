@@ -52,15 +52,12 @@ void TrLogFlushDrv()
     if (g_logFile) fflush(g_logFile);
 }
 
-void TrDrvLog(const char *fmt, ...)
+void TrDrvLogV(const char *fmt, va_list args)
 {
     if (!openvr_pair::common::IsDebugLoggingEnabled()) return;
 
     char buf[1024];
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, ap);
-    va_end(ap);
+    vsnprintf(buf, sizeof(buf), fmt, args);
 
     std::lock_guard<std::mutex> lk(g_logMutex);
     if (!g_logFile) {
@@ -74,4 +71,12 @@ void TrDrvLog(const char *fmt, ...)
         fputs("\n", g_logFile);
         fflush(g_logFile);
     }
+}
+
+void TrDrvLog(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    TrDrvLogV(fmt, ap);
+    va_end(ap);
 }
