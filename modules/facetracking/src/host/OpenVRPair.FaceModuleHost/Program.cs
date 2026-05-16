@@ -81,7 +81,6 @@ var writer   = new FrameWriter(opts.ShmemName, logger);
 logger.Info($"[startup] phase=opening-ipc-pipe pipe={opts.DriverHandshakePipe}");
 // Pass the same CTS so MsgShutdown cancels all workers.
 var pipe     = new HostControlPipeServer(opts.DriverHandshakePipe, loader, logger, cts);
-var calib    = new CalibrationCache();
 var status   = new HostStatusWriter(opts.StatusFilePath, loader, logger, opts);
 
 logger.Info($"OpenVRPair.FaceModuleHost starting. shmem={opts.ShmemName} pipe={opts.DriverHandshakePipe}");
@@ -106,7 +105,7 @@ try
     {
         pipe.RunAsync(ct),
         RunRegistryPollAsync(registry, logger, ct),
-        loader.RunActiveAsync(writer, calib, ct),
+        loader.RunActiveAsync(writer, ct),
         status.RunAsync(ct),
     };
 

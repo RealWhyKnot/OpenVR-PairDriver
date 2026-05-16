@@ -16,7 +16,6 @@ public sealed class HostControlPipeServer(
 {
     // Message type tags sent by the driver.
     private const string MsgSelectModule  = "SelectModule";
-    private const string MsgUpdateConfig  = "UpdateConfig";
     private const string MsgShutdown      = "Shutdown";
 
     // Driver holds at most one active connection at a time; 2 instances

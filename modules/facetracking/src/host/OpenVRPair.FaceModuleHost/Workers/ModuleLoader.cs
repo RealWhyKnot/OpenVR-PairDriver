@@ -161,7 +161,6 @@ public sealed class ModuleLoader(
     /// </summary>
     public async Task RunActiveAsync(
         FrameWriter writer,
-        CalibrationCache calib,
         CancellationToken ct)
     {
         // Idle if no module is active; re-check every 250 ms.

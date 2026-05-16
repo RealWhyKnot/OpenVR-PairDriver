@@ -232,7 +232,6 @@ public sealed class SubprocessManager : IDisposable
     /// </summary>
     public async Task RunActiveAsync(
         FrameWriter writer,
-        CalibrationCache calib,
         CancellationToken ct)
     {
         _logger.Info("[ftp/data] RunActiveAsync started");

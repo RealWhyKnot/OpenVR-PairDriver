@@ -97,6 +97,12 @@ public sealed class FrameWriter(string shmemName, HostLogger logger) : IDisposab
     private unsafe byte* _basePtr;
     private bool         _ptrAcquired;
 
+    // Flipped to true by Dispose; checked at the top of WriteUnderSeqlock so
+    // a publish racing with shutdown drops the frame instead of dereferencing
+    // a torn-down mapping (AV would tear down the whole host).
+    private volatile bool _disposed;
+    private int           _droppedFrameLogCounter;
+
     public async Task OpenAsync(CancellationToken ct)
     {
         await Task.Run(() =>
@@ -231,6 +237,17 @@ public sealed class FrameWriter(string shmemName, HostLogger logger) : IDisposab
 
     private unsafe void WriteUnderSeqlock(ref FaceTrackingFrameBodyNative body)
     {
+        // Guard against the publish path racing the shutdown path: if Dispose
+        // has released the SafeMemoryMappedViewHandle pointer, _basePtr is
+        // null and the next dereference would AV the host. Drop the frame.
+        if (_disposed || !_ptrAcquired || _basePtr == null || _view is null)
+        {
+            int n = Interlocked.Increment(ref _droppedFrameLogCounter);
+            if ((n % 60) == 1)
+                logger.Warn("FrameWriter: dropping publish; mapping not available (shutdown race or Dispose called).");
+            return;
+        }
+
         long next    = Interlocked.Increment(ref _localPublishIndex);
         int  slotIdx = (int)((next - 1) % RingSize);
 
@@ -258,6 +275,11 @@ public sealed class FrameWriter(string shmemName, HostLogger logger) : IDisposab
 
     public unsafe void Dispose()
     {
+        // Set the disposed flag BEFORE tearing down the mapping so a publish
+        // racing in flight observes _disposed=true and short-circuits before
+        // touching _basePtr. The volatile write provides the release fence.
+        _disposed = true;
+
         if (_ptrAcquired)
         {
             _view?.SafeMemoryMappedViewHandle.ReleasePointer();
