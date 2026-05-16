@@ -43,7 +43,6 @@ std::mutex                                                                    g_
 // One-shot install / probe log markers.
 static std::atomic<bool> g_firstCreateBoolLogged{false};
 static std::atomic<bool> g_firstCreateScalarLogged{false};
-static std::atomic<uint64_t> g_hotPathLockSkips{0};
 static std::atomic<uint64_t> g_hotPathObservationErrors{0};
 
 // =============================================================================
@@ -72,15 +71,6 @@ static uint64_t QpcMicros()
 	QueryPerformanceCounter(&t);
 	if (s_freq.QuadPart == 0) return 0;
 	return static_cast<uint64_t>(t.QuadPart * 1000000ULL / s_freq.QuadPart);
-}
-
-static void LogHotPathLockSkip(const char *kind)
-{
-	const uint64_t n = g_hotPathLockSkips.fetch_add(1, std::memory_order_relaxed) + 1;
-	if (n == 1 || n == 100 || (n % 10000) == 0) {
-		LOG("[inputhealth] skipped %s observation because stats mutex was busy (count=%llu); forwarded raw value",
-			kind, (unsigned long long)n);
-	}
 }
 
 static void LogHotPathObservationError(const char *kind, const char *what)
@@ -145,10 +135,12 @@ static vr::EVRInputError DetourUpdateBooleanComponent(
 			const auto cfg = driver->GetInputHealthConfig();
 			if (cfg.master_enabled) {
 				const uint64_t now_us = QpcMicros();
-				if (!g_componentMutex.try_lock()) {
-					LogHotPathLockSkip("boolean");
-				} else {
-					std::lock_guard<std::mutex> lk(g_componentMutex, std::adopt_lock);
+				// Blocking lock: the publisher's critical sections are O(1)
+				// after the StageSnapshots single-pass restructure, so detours
+				// block for microseconds at worst. Earlier code used try_lock
+				// here and silently dropped observations on contention.
+				std::lock_guard<std::mutex> lk(g_componentMutex);
+				{
 					auto it = g_componentStats.find(ulComponent);
 					if (it != g_componentStats.end()) {
 						auto &s = it->second;
@@ -250,10 +242,10 @@ static vr::EVRInputError DetourUpdateScalarComponent(
 			const auto cfg = driver->GetInputHealthConfig();
 			if (cfg.master_enabled) {
 				const uint64_t now_us = QpcMicros();
-				if (!g_componentMutex.try_lock()) {
-					LogHotPathLockSkip("scalar");
-				} else {
-					std::lock_guard<std::mutex> lk(g_componentMutex, std::adopt_lock);
+				// See DetourUpdateBooleanComponent for the rationale on
+				// switching from try_lock to a blocking lock.
+				std::lock_guard<std::mutex> lk(g_componentMutex);
+				{
 					auto it = g_componentStats.find(ulComponent);
 					if (it != g_componentStats.end()) {
 						auto &s = it->second;
@@ -337,7 +329,6 @@ void Init(ServerTrackedDeviceProvider *driver)
 	g_driver.store(driver, std::memory_order_release);
 	g_firstCreateBoolLogged.store(false, std::memory_order_release);
 	g_firstCreateScalarLogged.store(false, std::memory_order_release);
-	g_hotPathLockSkips.store(0, std::memory_order_release);
 	g_hotPathObservationErrors.store(0, std::memory_order_release);
 	{
 		std::lock_guard<std::mutex> lk(g_componentMutex);

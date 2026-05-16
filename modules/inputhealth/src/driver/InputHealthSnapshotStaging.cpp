@@ -74,37 +74,21 @@ void FillSnapshotBody(
 
 void StageSnapshots(std::vector<StagedSnapshot> &out)
 {
-	// Swap the live map into a local copy under a minimal critical section so
-	// detour threads are not blocked for the duration of the FillSnapshotBody
-	// loop. Detours will repopulate g_componentStats entries on their next
-	// tick; the swap-drain-drop design is safe because StageSnapshots runs at
-	// 10 Hz and any component not updated before the next publish cycle will
-	// reappear naturally.
-	std::unordered_map<vr::VRInputComponentHandle_t, ComponentStats> local;
-	{
-		std::unique_lock<std::mutex> lk(g_componentMutex);
-		local = std::move(g_componentStats);
-		// Leave g_componentStats in a valid empty state so detours can insert
-		// new observations immediately after we release the lock.
-		g_componentStats.clear();
-	}
-
-	out.reserve(out.size() + local.size());
-	for (const auto &kv : local) {
-		StagedSnapshot rec;
+	// Fill snapshot bodies directly under one lock. The previous
+	// move-out / fill / merge-back pattern took the mutex twice and the
+	// merge-back was O(N) try_emplace under the second lock, during which
+	// detour threads either blocked or (when they used try_lock) silently
+	// dropped observations. FillSnapshotBody is a fixed-size field copy
+	// per entry -- microseconds of work for the ~50-100 components a
+	// dual-controller session produces -- so a single short blocking lock
+	// is cheaper end-to-end and no longer loses state.
+	std::lock_guard<std::mutex> lk(g_componentMutex);
+	out.reserve(out.size() + g_componentStats.size());
+	for (const auto &kv : g_componentStats) {
+		out.emplace_back();
+		auto &rec  = out.back();
 		rec.handle = static_cast<uint64_t>(kv.first);
 		FillSnapshotBody(kv.first, kv.second, rec.body);
-		out.push_back(rec);
-	}
-
-	// Merge the drained entries back so the next publish cycle has a baseline
-	// and detour observations accumulate on top. try_emplace leaves entries
-	// that detours re-inserted during iteration untouched (they are newer).
-	{
-		std::unique_lock<std::mutex> lk(g_componentMutex);
-		for (const auto &kv : local) {
-			g_componentStats.try_emplace(kv.first, kv.second);
-		}
 	}
 }
 
