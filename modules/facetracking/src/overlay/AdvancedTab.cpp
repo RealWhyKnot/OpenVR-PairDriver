@@ -59,6 +59,21 @@ void DrawAdvancedTab(FacetrackingPlugin &plugin)
         ImGui::TextColored(pal.statusOk,
             "Host running: pid=%d uptime=%02d:%02d:%02d",
             hs.host_pid, h, m, sec);
+        if (!hs.phase.empty()) {
+            ImGui::TextDisabled("Phase: %s", hs.phase.c_str());
+        }
+        if (!hs.last_error.empty()) {
+            ImGui::TextColored(pal.statusWarn, "Last issue: %s", hs.last_error.c_str());
+        }
+        ImGui::TextDisabled("Host frames written: %llu",
+            (unsigned long long)hs.frames_written);
+        const auto &dt = plugin.driver_telemetry_.Snapshot();
+        if (dt.valid) {
+            ImGui::TextDisabled("Driver frames read: %llu | OSC sent: %llu | dropped: %llu",
+                (unsigned long long)dt.frames_read,
+                (unsigned long long)dt.osc_messages_sent,
+                (unsigned long long)dt.osc_messages_dropped);
+        }
         if (hs.active_module.has_value()) {
             ImGui::Text("Active module: %s %s (%s)",
                 hs.active_module->name.c_str(),

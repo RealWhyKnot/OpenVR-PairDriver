@@ -46,9 +46,9 @@ public class ModuleProcessMain
     {
         AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
         {
-            Logger.LogInformation("Received SIGTERM");
+            Logger?.LogInformation("Received SIGTERM");
             WaitForPackets = false;
-            DefModuleAssembly._updateCts.Cancel();
+            DefModuleAssembly?._updateCts?.Cancel();
             cts.Cancel();
             cts.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(5));
         };
@@ -93,8 +93,15 @@ public class ModuleProcessMain
         catch ( Exception ex )
         {
             // So that we can catch errors
-            Logger.LogCritical($"{ex.Message}:\n{ex.StackTrace}");
-            Logger.LogCritical($"{ex.Message}");
+            if (Logger != null)
+            {
+                Logger.LogCritical($"{ex.Message}:\n{ex.StackTrace}");
+                Logger.LogCritical($"{ex.Message}");
+            }
+            else
+            {
+                Console.Error.WriteLine(ex);
+            }
 #if DEBUG
             Console.ReadKey();
             Console.ReadLine();
@@ -174,6 +181,11 @@ public class ModuleProcessMain
         // Try loading the module
         DefModuleAssembly = new ModuleAssembly(Logger, LoggerFactory, modulePath);
         DefModuleAssembly.TryLoadAssembly();
+        if (!DefModuleAssembly.Loaded || DefModuleAssembly.TrackingModule == null)
+        {
+            Logger.LogError("Module failed to load: {modulePath}", modulePath);
+            return ModuleProcessExitCodes.EXCEPTION_CRASH;
+        }
 
         // Initialise to invalid state
         UnifiedTracking.Data = new() {

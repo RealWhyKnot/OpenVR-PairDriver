@@ -147,6 +147,16 @@ void HostStatusPoller::ReadFile()
     s.host_started_at      = openvr_pair::common::json::StringAt(root, "host_started_at");
     s.host_uptime_seconds  = openvr_pair::common::json::IntAt(root, "host_uptime_s");
     s.host_shutting_down   = openvr_pair::common::json::BoolAt(root, "host_shutting_down");
+    s.phase                = openvr_pair::common::json::StringAt(root, "phase");
+    s.last_error           = openvr_pair::common::json::StringAt(root, "last_error");
+    s.module_count         = openvr_pair::common::json::IntAt(root, "module_count");
+    s.active_module_uuid   = openvr_pair::common::json::StringAt(root, "active_module_uuid");
+    s.active_module_name   = openvr_pair::common::json::StringAt(root, "active_module_name");
+    s.frames_written       = static_cast<uint64_t>(openvr_pair::common::json::NumberAt(root, "frames_written"));
+    s.frames_read          = static_cast<uint64_t>(openvr_pair::common::json::NumberAt(root, "frames_read"));
+    s.osc_messages_sent    = static_cast<uint64_t>(openvr_pair::common::json::NumberAt(root, "osc_messages_sent"));
+    s.last_exit_code       = openvr_pair::common::json::IntAt(root, "last_exit_code");
+    s.last_restart_time    = openvr_pair::common::json::StringAt(root, "last_restart_time");
 
     if (const auto *am = openvr_pair::common::json::ValueAt(root, "active_module"); am && am->is<picojson::object>())
     {

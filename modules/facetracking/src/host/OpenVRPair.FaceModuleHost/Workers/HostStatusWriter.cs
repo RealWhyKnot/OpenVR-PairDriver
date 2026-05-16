@@ -32,6 +32,92 @@ public sealed class HostStatusWriter(
     private readonly DateTime  _startedAt = DateTime.UtcNow;
     private readonly int       _pid = Environment.ProcessId;
 
+    public static void WriteStartupFailure(
+        string statusFilePath,
+        string phase,
+        string lastError,
+        HostOptions options,
+        HostLogger logger)
+    {
+        try
+        {
+            string? dir = Path.GetDirectoryName(statusFilePath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+            var status = new HostStatus
+            {
+                SchemaVersion      = 1,
+                HostPid            = Environment.ProcessId,
+                HostStartedAt      = DateTime.UtcNow,
+                HostUptimeSeconds  = 0,
+                HostShuttingDown   = true,
+                Phase              = phase,
+                LastError          = lastError,
+                ModuleCount        = 0,
+                InstalledModules   = [],
+                ModulesInstallDir  = options.ModulesInstallDir,
+                FramesWritten      = 0,
+                FramesRead         = 0,
+                OscMessagesSent    = 0,
+                LastExitCode       = 0,
+                LastRestartTime    = "",
+            };
+            string json = JsonSerializer.Serialize(
+                status,
+                HostStatusJsonContext.Default.HostStatus);
+            string tmp = statusFilePath + ".tmp";
+            File.WriteAllText(tmp, json);
+            File.Move(tmp, statusFilePath, overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            logger.Warn($"HostStatusWriter: startup failure write failed: {ex.Message}");
+        }
+    }
+
+    public static void WriteE2eStatus(
+        string statusFilePath,
+        string phase,
+        long framesWritten,
+        HostOptions options,
+        HostLogger logger)
+    {
+        try
+        {
+            string? dir = Path.GetDirectoryName(statusFilePath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+            var status = new HostStatus
+            {
+                SchemaVersion      = 1,
+                HostPid            = Environment.ProcessId,
+                HostStartedAt      = DateTime.UtcNow,
+                HostUptimeSeconds  = 0,
+                HostShuttingDown   = phase.EndsWith("complete", StringComparison.OrdinalIgnoreCase),
+                Phase              = phase,
+                LastError          = "",
+                ModuleCount        = 0,
+                InstalledModules   = [],
+                ModulesInstallDir  = options.ModulesInstallDir,
+                FramesWritten      = framesWritten,
+                FramesRead         = 0,
+                OscMessagesSent    = 0,
+                LastExitCode       = 0,
+                LastRestartTime    = "",
+            };
+            string json = JsonSerializer.Serialize(
+                status,
+                HostStatusJsonContext.Default.HostStatus);
+            string tmp = statusFilePath + ".tmp";
+            File.WriteAllText(tmp, json);
+            File.Move(tmp, statusFilePath, overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            logger.Warn($"HostStatusWriter: e2e status write failed: {ex.Message}");
+        }
+    }
+
     public async Task RunAsync(CancellationToken ct)
     {
         // Ensure parent directory exists; the driver creates it on first install
@@ -71,6 +157,7 @@ public sealed class HostStatusWriter(
 
     private void WriteOnce(bool shuttingDown = false)
     {
+        var runtime = loader.SnapshotStatus();
         var status = new HostStatus
         {
             SchemaVersion       = 1,
@@ -78,8 +165,19 @@ public sealed class HostStatusWriter(
             HostStartedAt       = _startedAt,
             HostUptimeSeconds   = (int)_uptime.Elapsed.TotalSeconds,
             HostShuttingDown    = shuttingDown,
+            Phase               = runtime.Phase,
+            LastError           = runtime.LastError,
+            ModuleCount         = loader.Loaded.Count,
             ActiveModule        = BuildActiveModule(),
             InstalledModules    = ScanInstalledModules(),
+            ModulesInstallDir   = options.ModulesInstallDir,
+            ActiveModuleUuid    = loader.Active?.Uuid ?? "",
+            ActiveModuleName    = loader.Active?.Manifest.Name ?? "",
+            FramesWritten       = runtime.FramesWritten,
+            FramesRead          = 0,
+            OscMessagesSent     = 0,
+            LastExitCode        = runtime.LastExitCode,
+            LastRestartTime     = runtime.LastRestartTime?.ToString("O") ?? "",
         };
 
         string json = JsonSerializer.Serialize(
@@ -164,6 +262,17 @@ public sealed class HostStatus
     [JsonPropertyName("host_started_at")]   public DateTime  HostStartedAt     { get; init; }
     [JsonPropertyName("host_uptime_s")]     public int       HostUptimeSeconds { get; init; }
     [JsonPropertyName("host_shutting_down")] public bool     HostShuttingDown  { get; init; }
+    [JsonPropertyName("phase")]             public string    Phase             { get; init; } = "";
+    [JsonPropertyName("last_error")]        public string    LastError         { get; init; } = "";
+    [JsonPropertyName("module_count")]      public int       ModuleCount       { get; init; }
+    [JsonPropertyName("active_module_uuid")] public string   ActiveModuleUuid  { get; init; } = "";
+    [JsonPropertyName("active_module_name")] public string   ActiveModuleName  { get; init; } = "";
+    [JsonPropertyName("frames_written")]    public long      FramesWritten     { get; init; }
+    [JsonPropertyName("frames_read")]       public long      FramesRead        { get; init; }
+    [JsonPropertyName("osc_messages_sent")] public long      OscMessagesSent   { get; init; }
+    [JsonPropertyName("last_exit_code")]    public int       LastExitCode      { get; init; }
+    [JsonPropertyName("last_restart_time")] public string    LastRestartTime   { get; init; } = "";
+    [JsonPropertyName("modules_install_dir")] public string  ModulesInstallDir { get; init; } = "";
     [JsonPropertyName("active_module")]     public ActiveModuleStatus? ActiveModule { get; init; }
     [JsonPropertyName("installed_modules")] public IList<InstalledModule> InstalledModules { get; init; } = [];
 }

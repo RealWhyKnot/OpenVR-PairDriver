@@ -96,6 +96,10 @@ void DriverTelemetryPoller::ReadFile()
     s.valid             = true;
     s.driver_pid        = openvr_pair::common::json::IntAt(root, "driver_pid");
     s.frames_processed  = static_cast<uint64_t>(openvr_pair::common::json::NumberAt(root, "frames_processed"));
+    s.frames_read       = static_cast<uint64_t>(openvr_pair::common::json::NumberAt(root, "frames_read"));
+    s.osc_messages_sent = static_cast<uint64_t>(openvr_pair::common::json::NumberAt(root, "osc_messages_sent"));
+    s.osc_messages_dropped = static_cast<uint64_t>(openvr_pair::common::json::NumberAt(root, "osc_messages_dropped"));
+    s.active_module_uuid = openvr_pair::common::json::StringAt(root, "active_module_uuid");
 
     if (const auto *verg = openvr_pair::common::json::ValueAt(root, "vergence"); verg && verg->is<picojson::object>()) {
         s.vergence_enabled = openvr_pair::common::json::BoolAt(*verg, "enabled");
@@ -110,9 +114,12 @@ void DriverTelemetryPoller::ReadFile()
         }
     }
 
-    FT_LOG_OVL("DriverTelemetryPoller: refreshed (pid=%d frames=%llu verg=%s focus=%.3fm)",
+    FT_LOG_OVL("DriverTelemetryPoller: refreshed (pid=%d read=%llu processed=%llu osc_sent=%llu osc_drop=%llu verg=%s focus=%.3fm)",
         s.driver_pid,
+        (unsigned long long)s.frames_read,
         (unsigned long long)s.frames_processed,
+        (unsigned long long)s.osc_messages_sent,
+        (unsigned long long)s.osc_messages_dropped,
         s.vergence_enabled ? "on" : "off",
         s.focus_distance_m);
 

@@ -21,12 +21,15 @@
 #include "picojson.h"
 
 #include <chrono>
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <exception>
 #include <memory>
 #include <string>
+#include <unordered_set>
+#include <vector>
 
 using Clock = std::chrono::steady_clock;
 
@@ -142,6 +145,9 @@ void FacetrackingPlugin::Tick(openvr_pair::overlay::ShellContext &)
         }
         // Refresh catalogue and timestamp all github sources that were running.
         sources_catalogue_ = facetracking::EnsureSourcesCatalogue();
+        if (res->ok) {
+            ReconcileEnabledModulesWithInstalled(res->installed_uuid);
+        }
     }
 
     // Periodic auto-save (every 60 s).
@@ -267,6 +273,53 @@ void FacetrackingPlugin::SendEnabledModules(const std::vector<std::string> &uuid
     } catch (const std::exception &e) {
         last_error_ = std::string("IPC error: ") + e.what();
         FT_LOG_OVL("[ipc] SendEnabledModules failed: %s", e.what());
+    }
+}
+
+void FacetrackingPlugin::ReconcileEnabledModulesWithInstalled(const std::string &preferred_uuid)
+{
+    const std::vector<facetracking::InstalledModule> installed =
+        facetracking::ScanInstalledModules();
+    std::unordered_set<std::string> installedUuids;
+    installedUuids.reserve(installed.size());
+    for (const auto &m : installed) {
+        if (!m.uuid.empty()) installedUuids.insert(m.uuid);
+    }
+
+    const auto current = profile_.current.enabled_module_uuids;
+    std::vector<std::string> next;
+    next.reserve(current.size() + 1);
+
+    bool changed = false;
+    for (const auto &uuid : current) {
+        if (installedUuids.find(uuid) == installedUuids.end()) {
+            changed = true;
+            FT_LOG_OVL("[modules] pruning enabled module missing from disk: uuid='%s'",
+                uuid.c_str());
+            continue;
+        }
+        if (std::find(next.begin(), next.end(), uuid) == next.end())
+            next.push_back(uuid);
+        else
+            changed = true;
+    }
+
+    bool forceResend = false;
+    if (!preferred_uuid.empty() &&
+        installedUuids.find(preferred_uuid) != installedUuids.end()) {
+        auto it = std::find(next.begin(), next.end(), preferred_uuid);
+        if (it == next.end()) {
+            next.insert(next.begin(), preferred_uuid);
+            changed = true;
+            FT_LOG_OVL("[modules] auto-enabled newly installed module: uuid='%s'",
+                preferred_uuid.c_str());
+        } else {
+            forceResend = (it == next.begin());
+        }
+    }
+
+    if (changed || forceResend) {
+        SendEnabledModules(next);
     }
 }
 

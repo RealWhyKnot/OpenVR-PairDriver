@@ -4,7 +4,7 @@ namespace OpenVRPair.FaceModuleHost.Logging;
 
 /// <summary>
 /// Minimal logger that appends UTF-8 lines to
-/// %LocalAppDataLow%\WKOpenVR\Logs\facetracking_log.&lt;timestamp&gt;.txt.
+/// %LocalAppDataLow%\WKOpenVR\Logs\facetracking_host_log.&lt;timestamp&gt;.txt.
 /// Opened with FileShare.ReadWrite | FileShare.Delete so the overlay's log
 /// viewer can tail the file concurrently, and the file can be rotated under us.
 /// The file is opened lazily only while shared debug logging is enabled.
@@ -51,7 +51,15 @@ public sealed class HostLogger : IDisposable
                 EnsureOpen();
                 _writer?.WriteLine(line);
             }
-            catch { /* log write failure is silently swallowed to avoid infinite recursion */ }
+            catch (Exception ex)
+            {
+                try
+                {
+                    string fallback = Path.Combine(Path.GetTempPath(), "WKOpenVR.FaceModuleHost.log");
+                    File.AppendAllText(fallback, $"{line} [log-write-failed: {ex.Message}]{Environment.NewLine}");
+                }
+                catch { }
+            }
         }
         // Mirror to stderr so the driver's HostSupervisor can capture process output.
         Console.Error.WriteLine(line);
@@ -88,21 +96,11 @@ public sealed class HostLogger : IDisposable
 
     public static string DefaultLogPath()
     {
-        string localLow = LocalAppDataLow();
-        string ts       = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
-        return Path.Combine(localLow, "WKOpenVR", "Logs", $"facetracking_log.{ts}.txt");
+        return AppPaths.TimestampedLogPath("facetracking_host_log");
     }
 
     private static string DebugFlagPath() =>
-        Path.Combine(LocalAppDataLow(), "WKOpenVR", "debug_logging.enabled");
-
-    private static string LocalAppDataLow()
-    {
-        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return local.EndsWith("Local", StringComparison.OrdinalIgnoreCase)
-            ? local[..^5] + "LocalLow"
-            : local;
-    }
+        Path.Combine(AppPaths.RootDir(), "debug_logging.enabled");
 
     public void Dispose() => _writer?.Dispose();
 }

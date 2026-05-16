@@ -153,6 +153,25 @@ static bool IsModuleEnabled(const FacetrackingPlugin &plugin,
     return false;
 }
 
+static void DisableModulesFromSource(FacetrackingPlugin &plugin,
+                                     const std::string &sourceId)
+{
+    if (sourceId.empty()) return;
+
+    std::vector<std::string> next = plugin.Profile().current.enabled_module_uuids;
+    const size_t before = next.size();
+    for (const auto &m : g_state.installed) {
+        if (m.source_id != sourceId) continue;
+        next.erase(std::remove(next.begin(), next.end(), m.uuid), next.end());
+    }
+
+    if (next.size() != before) {
+        FT_LOG_OVL("[modules] disabling %zu module(s) before removing source '%s'",
+            before - next.size(), sourceId.c_str());
+        plugin.SendEnabledModules(next);
+    }
+}
+
 static void DrawInstalledModulesSection(FacetrackingPlugin &plugin)
 {
     DrawSectionHeading("Modules");
@@ -276,6 +295,7 @@ static void DrawSourcesSection(FacetrackingPlugin &plugin)
             // Refresh installed list and catalogue immediately.
             g_state.last_scan_tick = 0;
             g_state.catalogue = EnsureSourcesCatalogue();
+            plugin.ReconcileEnabledModulesWithInstalled(result->installed_uuid);
         }
     }
 
@@ -379,6 +399,7 @@ static void DrawSourcesSection(FacetrackingPlugin &plugin)
         if (removeIdx >= 0) {
             const auto &src = g_state.catalogue.sources[static_cast<size_t>(removeIdx)];
             std::string id = src.id;
+            DisableModulesFromSource(plugin, id);
             plugin.SyncRunner().StartRemove(id);
             g_state.catalogue.sources.erase(
                 g_state.catalogue.sources.begin() + removeIdx);

@@ -12,6 +12,14 @@ using VRCFaceTracking.Core.Sandboxing.IPC;
 
 namespace OpenVRPair.FaceModuleHost.Workers;
 
+public sealed record HostRuntimeStatus(
+    string Phase,
+    string LastError,
+    long FramesWritten,
+    long FramesWithData,
+    int LastExitCode,
+    DateTime? LastRestartTime);
+
 /// <summary>
 /// Drop-in replacement for <see cref="ModuleLoader"/> using upstream's subprocess-per-module
 /// architecture. Spawns one <c>WKOpenVR.FaceModuleProcess.exe</c> at a time; tears the old one
@@ -55,6 +63,13 @@ public sealed class SubprocessManager : IDisposable
     private readonly List<DiscoveredModule> _loaded = [];
     private DiscoveredModule?   _activeModule;
     private ActiveSubprocess?   _activeProcess;
+    private readonly object     _statusLock = new();
+    private string              _phase = "starting";
+    private string              _lastError = "";
+    private long                _framesWritten;
+    private long                _framesWithData;
+    private int                 _lastExitCode;
+    private DateTime?           _lastRestartTime;
 
     // Serializes SelectActive calls: teardown must finish before next spawn.
     private readonly SemaphoreSlim _selectLock = new(1, 1);
@@ -108,8 +123,23 @@ public sealed class SubprocessManager : IDisposable
     public DiscoveredModule? Active => _activeModule;
     public IReadOnlyList<DiscoveredModule> Loaded => _loaded;
 
+    public HostRuntimeStatus SnapshotStatus()
+    {
+        lock (_statusLock)
+        {
+            return new HostRuntimeStatus(
+                _phase,
+                _lastError,
+                Interlocked.Read(ref _framesWritten),
+                Interlocked.Read(ref _framesWithData),
+                _lastExitCode,
+                _lastRestartTime);
+        }
+    }
+
     public async Task<IReadOnlyList<DiscoveredModule>> LoadAllAsync()
     {
+        SetPhase("discovering-modules");
         _loaded.Clear();
         if (!Directory.Exists(_opts.ModulesInstallDir))
         {
@@ -135,6 +165,7 @@ public sealed class SubprocessManager : IDisposable
 
         var names = string.Join(", ", _loaded.Select(m => $"{m.Uuid[..8]}../{m.Manifest.Name}"));
         _logger.Info($"[ftp/spawn] discovery complete: {_loaded.Count} modules: {names}");
+        SetPhase(_loaded.Count == 0 ? "no-modules" : "modules-loaded");
         return _loaded;
     }
 
@@ -147,15 +178,51 @@ public sealed class SubprocessManager : IDisposable
 
     public void SelectActive(string uuid)
     {
+        uuid ??= "";
         _logger.Info($"[ftp/spawn] SelectActive(uuid={uuid}) -- current active: {_activeModule?.Uuid ?? "none"}");
+
+        if (string.IsNullOrWhiteSpace(uuid))
+        {
+            if (_activeModule is not null)
+                _logger.Info($"[ftp/spawn] disabling active module {_activeModule.Manifest.Name} ({_activeModule.Uuid})");
+            _activeModule = null;
+            _breakerUuid = null;
+            _breakerCount = 0;
+            SetPhase(_loaded.Count == 0 ? "no-modules" : "module-disabled");
+            return;
+        }
+
+        // Module installs/updates can happen while the host is already running.
+        // Rescan on every explicit selection so a newly installed UUID is
+        // immediately visible, and so re-selecting an updated module swaps to
+        // the freshly discovered path and restarts the subprocess loop.
+        try
+        {
+            LoadAllAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"[ftp/spawn] module rescan failed before selection: {ex.Message}");
+        }
+
         var m = _loaded.FirstOrDefault(m => m.Uuid == uuid);
         if (m is null)
         {
-            _logger.Warn($"[ftp/spawn] SelectActive: module {uuid} not found in loaded list " +
-                         $"(loaded={string.Join(",", _loaded.Select(x => x.Uuid[..8]))})");
+            string msg = $"SelectActive: module {uuid} not found in loaded list " +
+                         $"(loaded={string.Join(",", _loaded.Select(x => x.Uuid[..8]))})";
+            if (_activeModule?.Uuid == uuid)
+                _activeModule = null;
+            SetPhase("module-select-failed", msg);
+            _logger.Warn($"[ftp/spawn] {msg}");
             return;
         }
         _activeModule = m;
+        if (_breakerUuid == uuid)
+        {
+            _breakerUuid = null;
+            _breakerCount = 0;
+        }
+        SetPhase("module-selected");
         _logger.Info($"[ftp/spawn] active module set to {m.Manifest.Name} v{m.Manifest.Version} ({uuid})");
     }
 
@@ -175,6 +242,7 @@ public sealed class SubprocessManager : IDisposable
             {
                 if (_activeModule is null)
                 {
+                    SetPhase(_loaded.Count == 0 ? "no-modules" : "waiting-for-module-selection");
                     await Task.Delay(250, ct);
                     continue;
                 }
@@ -186,6 +254,7 @@ public sealed class SubprocessManager : IDisposable
                 {
                     _logger.Error($"[ftp/spawn] CIRCUIT BREAKER: halting respawn for {module.Uuid} " +
                                   $"({module.Manifest.Name}); {CrashHaltThreshold} consecutive fast exits");
+                    SetPhase("module-circuit-breaker", $"Module {module.Manifest.Name} exited too quickly.");
                     _activeModule = null;
                     continue;
                 }
@@ -374,12 +443,15 @@ public sealed class SubprocessManager : IDisposable
         // Re-verify exe on disk just before spawn (could have been deleted after startup check).
         if (!File.Exists(_subprocessExePath))
         {
-            _logger.Error($"[ftp/spawn] FATAL: subprocess exe missing at spawn time: {_subprocessExePath}");
+            string msg = $"subprocess exe missing at spawn time: {_subprocessExePath}";
+            SetPhase("subprocess-missing", msg);
+            _logger.Error($"[ftp/spawn] FATAL: {msg}");
             return;
         }
 
         int serverPort = _server.Port;
         string argv = $"--port {serverPort} --module-path \"{module.ModuleDllPath}\" --parent-pid {Environment.ProcessId}";
+        SetPhase("spawning-module-process");
         _logger.Info($"[ftp/spawn] exec: {_subprocessExePath} {argv}");
 
         var psi = new ProcessStartInfo(_subprocessExePath)
@@ -398,11 +470,13 @@ public sealed class SubprocessManager : IDisposable
         }
         catch (Win32Exception ex)
         {
+            SetPhase("spawn-failed", $"Win32Exception({ex.NativeErrorCode}) {ex.Message}");
             _logger.Error($"[ftp/spawn] Process.Start failed: Win32Exception({ex.NativeErrorCode}) {ex.Message}");
             return;
         }
         catch (Exception ex)
         {
+            SetPhase("spawn-failed", $"{ex.GetType().Name} {ex.Message}");
             _logger.Error($"[ftp/spawn] Process.Start failed: {ex.GetType().Name} {ex.Message}");
             return;
         }
@@ -425,6 +499,7 @@ public sealed class SubprocessManager : IDisposable
         {
             active.MarkExited();
             int raw = TryGetExitCode(proc);
+            RecordExit(raw);
             string sym = ExitCodeNames.TryGetValue(raw, out var name) ? name : $"0x{(uint)raw:X8}";
             _logger.Info($"[ftp/spawn] PID={proc.Id} exited code={raw} ({sym}) " +
                          $"uptime={(DateTime.UtcNow - spawnTime).TotalSeconds:F1}s");
@@ -441,17 +516,20 @@ public sealed class SubprocessManager : IDisposable
             try
             {
                 _logger.Info($"[ftp/ipc] waiting for Handshake from PID={proc.Id} (timeout=30s)");
+                SetPhase("waiting-for-module-handshake");
                 await _handshakeTcs.Task.WaitAsync(handshakeCts.Token);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
-                _logger.Error($"[ftp/ipc] TIMEOUT waiting for Handshake from PID={proc.Id} after 30s; " +
-                              $"subprocess alive={!active.Exited}");
+                string msg = $"TIMEOUT waiting for Handshake from PID={proc.Id} after 30s; subprocess alive={!active.Exited}";
+                SetPhase("module-handshake-timeout", msg);
+                _logger.Error($"[ftp/ipc] {msg}");
                 return;
             }
 
             // GetSupported
             _logger.Info($"[ftp/ipc] SEND EventInitGetSupported -> port={_activePort}");
+            SetPhase("querying-module-capabilities");
             SendToSubprocess(new EventInitGetSupported());
             using var supportedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             supportedCts.CancelAfter(TimeSpan.FromSeconds(30));
@@ -462,13 +540,15 @@ public sealed class SubprocessManager : IDisposable
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
-                _logger.Error($"[ftp/ipc] TIMEOUT waiting for ReplyGetSupported from PID={proc.Id} after 30s; " +
-                              $"subprocess alive={!active.Exited}");
+                string msg = $"TIMEOUT waiting for ReplyGetSupported from PID={proc.Id} after 30s; subprocess alive={!active.Exited}";
+                SetPhase("module-capabilities-timeout", msg);
+                _logger.Error($"[ftp/ipc] {msg}");
                 return;
             }
 
             // Init
             _logger.Info($"[ftp/ipc] SEND EventInit(eye=true,expr=true) -> port={_activePort}");
+            SetPhase("initializing-module");
             SendToSubprocess(new EventInitPacket { eyeAvailable = true, expressionAvailable = true });
             using var initCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             initCts.CancelAfter(TimeSpan.FromSeconds(30));
@@ -478,13 +558,16 @@ public sealed class SubprocessManager : IDisposable
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
-                _logger.Error($"[ftp/ipc] TIMEOUT waiting for ReplyInit from PID={proc.Id} after 30s; " +
-                              $"subprocess alive={!active.Exited}; supported eye={supportedReply.eyeAvailable} expr={supportedReply.expressionAvailable}");
+                string msg = $"TIMEOUT waiting for ReplyInit from PID={proc.Id} after 30s; " +
+                             $"subprocess alive={!active.Exited}; supported eye={supportedReply.eyeAvailable} expr={supportedReply.expressionAvailable}";
+                SetPhase("module-init-timeout", msg);
+                _logger.Error($"[ftp/ipc] {msg}");
                 return;
             }
 
             // Tell module to start sampling hardware.
             _logger.Info($"[ftp/ipc] SEND EventStatusUpdate(Active) -> port={_activePort}");
+            SetPhase("module-active");
             SendToSubprocess(new EventStatusUpdatePacket { ModuleState = ModuleState.Active });
 
             selectSw.Stop();
@@ -504,10 +587,26 @@ public sealed class SubprocessManager : IDisposable
             var  lastUpdateTime   = DateTime.UtcNow;
 
             _logger.Info($"[ftp/data] pull loop started for {module.Manifest.Name} PID={proc.Id}");
+            SetPhase("publishing-frames");
+            var nextModuleDiskCheck = DateTime.UtcNow + TimeSpan.FromSeconds(1);
 
             while (!ct.IsCancellationRequested && !active.Exited &&
                    ReferenceEquals(_activeModule, module))
             {
+                if (DateTime.UtcNow >= nextModuleDiskCheck)
+                {
+                    nextModuleDiskCheck = DateTime.UtcNow + TimeSpan.FromSeconds(1);
+                    if (!File.Exists(module.ModuleDllPath))
+                    {
+                        string msg = $"active module disappeared from disk: {module.ModuleDllPath}";
+                        _logger.Warn($"[ftp/spawn] {msg}");
+                        if (ReferenceEquals(_activeModule, module))
+                            _activeModule = null;
+                        SetPhase("module-uninstalled", msg);
+                        break;
+                    }
+                }
+
                 SendToSubprocess(new EventUpdatePacket());
 
                 // Brief yield to let the server's async receive thread deliver the reply.
@@ -544,8 +643,13 @@ public sealed class SubprocessManager : IDisposable
                 ReadOnlySpan<float> s = exprSink.Values;
                 int nonZero = 0;
                 foreach (float v in s) if (v != 0f) nonZero++;
-                float jawOpen = s.Length > 0 ? s[0] : 0f;
+                float jawOpen = s.Length > (int)UnifiedExpression.JawOpen
+                    ? s[(int)UnifiedExpression.JawOpen]
+                    : 0f;
                 lastJawOpen = jawOpen;
+
+                if (nonZero > 0 || (leftOpen is not 0f and not kInvalid))
+                    Interlocked.Increment(ref _framesWithData);
 
                 if (nonZero > 0 && !firstNonZero)
                 {
@@ -590,6 +694,7 @@ public sealed class SubprocessManager : IDisposable
                     eyeSink, exprSink,
                     initReply.eyeSuccess, initReply.expressionSuccess,
                     module.UuidHash, ct);
+                Interlocked.Increment(ref _framesWritten);
             }
 
             _logger.Info($"[ftp/data] pull loop ended for {module.Manifest.Name}: " +
@@ -602,6 +707,7 @@ public sealed class SubprocessManager : IDisposable
         }
         catch (Exception ex)
         {
+            SetPhase("module-run-error", $"{ex.GetType().Name} {ex.Message}");
             _logger.Error($"[ftp/spawn] error in run loop: {ex.GetType().Name} {ex.Message}");
         }
         finally
@@ -621,6 +727,7 @@ public sealed class SubprocessManager : IDisposable
                     _breakerCount = 1;
                 }
                 int raw = TryGetExitCode(proc);
+                RecordExit(raw);
                 string sym = ExitCodeNames.TryGetValue(raw, out var name) ? name : $"0x{(uint)raw:X8}";
                 _logger.Warn($"[ftp/spawn] fast-exit #{_breakerCount} (consecutive={_breakerCount} of max={CrashHaltThreshold}) " +
                              $"module={module.Uuid} lifetime={lifetime.TotalSeconds:F1}s " +
@@ -629,6 +736,7 @@ public sealed class SubprocessManager : IDisposable
                 {
                     _logger.Error($"[ftp/spawn] CIRCUIT BREAKER: halting respawn for {module.Uuid} ({module.Manifest.Name}). " +
                                   $"Last exit code: {raw} ({sym})");
+                    SetPhase("module-circuit-breaker", $"Last exit code: {raw} ({sym})");
                 }
             }
             else
@@ -677,10 +785,35 @@ public sealed class SubprocessManager : IDisposable
         catch { }
 
         int code = TryGetExitCode(proc.Process);
+        RecordExit(code);
         string sym = ExitCodeNames.TryGetValue(code, out var cname) ? cname : $"0x{(uint)code:X8}";
         _logger.Info($"[ftp/teardown] process PID={proc.Process.Id} gone; " +
                      $"exitCode={code} ({sym}) lifetime={(DateTime.UtcNow - proc.SpawnTime).TotalSeconds:F1}s");
         proc.Dispose();
+    }
+
+    private void SetPhase(string phase, string? error = null)
+    {
+        lock (_statusLock)
+        {
+            _phase = phase;
+            if (error is not null) _lastError = error;
+            else if (!phase.EndsWith("failed", StringComparison.OrdinalIgnoreCase) &&
+                     !phase.EndsWith("timeout", StringComparison.OrdinalIgnoreCase) &&
+                     phase != "module-circuit-breaker")
+            {
+                _lastError = "";
+            }
+        }
+    }
+
+    private void RecordExit(int exitCode)
+    {
+        lock (_statusLock)
+        {
+            _lastExitCode = exitCode;
+            _lastRestartTime = DateTime.UtcNow;
+        }
     }
 
     private void SendToSubprocess(IpcPacket packet)

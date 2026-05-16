@@ -18,6 +18,47 @@ using VRCFaceTracking;
 namespace WKOpenVR.FaceModuleProcess;
 public class ModuleAssembly
 {
+    private sealed class ModuleProcessLoadContext(string modulePath) : AssemblyLoadContext(
+        name: Path.GetFileName(modulePath), isCollectible: true)
+    {
+        private static readonly HashSet<string> SharedAssemblyNames = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Microsoft.Extensions.Logging.Abstractions",
+        };
+
+        private readonly string _moduleDir = Path.GetDirectoryName(modulePath)
+            ?? throw new ArgumentException("Module path must include a parent directory.", nameof(modulePath));
+
+        protected override Assembly? Load(AssemblyName assemblyName)
+        {
+            if (string.Equals(assemblyName.Name, "VRCFaceTracking.Core", StringComparison.OrdinalIgnoreCase))
+            {
+                return typeof(ExtTrackingModule).Assembly;
+            }
+
+            if (assemblyName.Name is { } name && SharedAssemblyNames.Contains(name))
+            {
+                return null;
+            }
+
+            string candidate = Path.Combine(_moduleDir, assemblyName.Name + ".dll");
+            return File.Exists(candidate) ? LoadFromAssemblyPath(candidate) : null;
+        }
+
+        protected override IntPtr LoadUnmanagedDll(string unmanagedDllName)
+        {
+            foreach (string name in new[] { unmanagedDllName, unmanagedDllName + ".dll" })
+            {
+                string candidate = Path.Combine(_moduleDir, name);
+                if (File.Exists(candidate))
+                {
+                    return LoadUnmanagedDllFromPath(candidate);
+                }
+            }
+            return IntPtr.Zero;
+        }
+    }
+
     public Assembly Assembly;
     public string ModulePath;
     public bool Loaded;
@@ -52,7 +93,7 @@ public class ModuleAssembly
 
         try
         {
-            var alc = new AssemblyLoadContext(ModulePath, true);
+            var alc = new ModuleProcessLoadContext(ModulePath);
             Assembly = alc.LoadFromAssemblyPath(ModulePath);
 
             var references = Assembly.GetReferencedAssemblies();

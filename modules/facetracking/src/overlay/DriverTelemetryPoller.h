@@ -25,6 +25,10 @@ struct DriverTelemetrySnapshot
 
     int      driver_pid       = 0;
     uint64_t frames_processed = 0;
+    uint64_t frames_read = 0;
+    uint64_t osc_messages_sent = 0;
+    uint64_t osc_messages_dropped = 0;
+    std::string active_module_uuid;
 
     // Vergence lock readout.
     bool  vergence_enabled   = false;

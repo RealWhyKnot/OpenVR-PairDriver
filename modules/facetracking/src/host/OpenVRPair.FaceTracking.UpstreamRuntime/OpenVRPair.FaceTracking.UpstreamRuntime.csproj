@@ -3,6 +3,9 @@
     <!-- net10.0 (no -windows suffix): this library is shared with WKOpenVR.FaceModuleProcess
          which runs as a subprocess. No Windows-only APIs needed here. -->
     <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>VRCFaceTracking.Core</AssemblyName>
+    <AssemblyVersion>5.1.1.1</AssemblyVersion>
+    <FileVersion>5.1.1.1</FileVersion>
     <!-- Keep upstream namespaces verbatim so future rebases are a straight copy. -->
     <RootNamespace>VRCFaceTracking</RootNamespace>
     <LangVersion>latest</LangVersion>

@@ -65,6 +65,7 @@ public:
     FacetrackingProfileStore            &Profile()             { return profile_; }
     const FacetrackingProfileStore      &Profile() const       { return profile_; }
     facetracking::ModuleSyncRunner      &SyncRunner()          { return sync_runner_; }
+    void ReconcileEnabledModulesWithInstalled(const std::string &preferred_uuid);
 
 private:
     friend void facetracking::ui::DrawSettingsTab(FacetrackingPlugin &plugin);

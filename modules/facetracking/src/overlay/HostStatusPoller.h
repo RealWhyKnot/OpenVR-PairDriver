@@ -44,6 +44,16 @@ struct HostStatusSnapshot
     std::string                             host_started_at;
     int                                     host_uptime_seconds  = 0;
     bool                                    host_shutting_down   = false;
+    std::string                             phase;
+    std::string                             last_error;
+    int                                     module_count = 0;
+    std::string                             active_module_uuid;
+    std::string                             active_module_name;
+    uint64_t                                frames_written = 0;
+    uint64_t                                frames_read = 0;
+    uint64_t                                osc_messages_sent = 0;
+    int                                     last_exit_code = 0;
+    std::string                             last_restart_time;
     std::optional<HostStatusActiveModule>   active_module;
     std::vector<HostStatusInstalledModule>  installed_modules;
 };

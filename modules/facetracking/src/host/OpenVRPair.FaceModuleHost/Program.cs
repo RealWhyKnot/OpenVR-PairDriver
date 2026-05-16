@@ -1,14 +1,17 @@
 using OpenVRPair.FaceModuleHost;
 using OpenVRPair.FaceModuleHost.Logging;
 using OpenVRPair.FaceModuleHost.Workers;
+using OpenVRPair.FaceTracking.ModuleSdk;
 using OpenVRPair.FaceTracking.Registry;
+using System.Numerics;
 
 var opts = HostOptions.FromArgs(args);
 var cts  = new CancellationTokenSource();
 var ct   = cts.Token;
 
-var logger = new HostLogger(forceEnabled: opts.DebugLoggingEnabled);
+var logger = new HostLogger(logFilePath: opts.LogFilePath, forceEnabled: opts.DebugLoggingEnabled);
 logger.Info("[startup] phase=logger-open");
+logger.Info($"[startup] paths root={AppPaths.RootDir()} logs={AppPaths.LogsDir()} modules={opts.ModulesInstallDir} status={opts.StatusFilePath}");
 
 AppDomain.CurrentDomain.UnhandledException += (s, e) => {
     try { logger.Error($"[crash] AppDomain.UnhandledException: {e.ExceptionObject}"); logger.Flush(); } catch { }
@@ -17,6 +20,14 @@ TaskScheduler.UnobservedTaskException += (s, e) => {
     try { logger.Error($"[crash] TaskScheduler.UnobservedTaskException: {e.Exception}"); logger.Flush(); e.SetObserved(); } catch { }
 };
 logger.Info("[startup] phase=crash-handlers-installed");
+
+if (opts.E2eFakeFrames)
+{
+    int rc = await RunE2eFakeFramesAsync(opts, logger, ct);
+    logger.Flush();
+    logger.Dispose();
+    return rc;
+}
 
 // Layer 1: system-wide singleton mutex. Acquired before opening any IPC so
 // two host processes from overlapping SteamVR sessions cannot coexist.
@@ -49,6 +60,12 @@ logger.Info($"[startup] subprocess-exe-path={subprocessExe} (exists={File.Exists
 if (!File.Exists(subprocessExe))
 {
     logger.Error("[startup] FATAL: subprocess EXE missing; aborting");
+    HostStatusWriter.WriteStartupFailure(
+        opts.StatusFilePath,
+        "subprocess-missing",
+        $"Subprocess EXE missing: {subprocessExe}",
+        opts,
+        logger);
     logger.Flush();
     Environment.Exit(5);
 }
@@ -116,6 +133,12 @@ catch (OperationCanceledException) { /* clean shutdown */ }
 catch (Exception ex)
 {
     logger.Error($"[crash] Main threw: {ex}");
+    HostStatusWriter.WriteStartupFailure(
+        opts.StatusFilePath,
+        "main-crash",
+        ex.Message,
+        opts,
+        logger);
     logger.Flush();
     oscQuery.Stop();
     await loader.UnloadAllAsync();
@@ -151,5 +174,65 @@ static async Task RunRegistryPollAsync(
         {
             logger.Warn($"Registry poll failed: {ex.Message}");
         }
+    }
+}
+
+static async Task<int> RunE2eFakeFramesAsync(
+    HostOptions opts, HostLogger logger, CancellationToken ct)
+{
+    long framesWritten = 0;
+    logger.Info($"[e2e] fake face output starting shmem={opts.ShmemName} frames={opts.E2eFakeFrameCount}");
+    HostStatusWriter.WriteE2eStatus(
+        opts.StatusFilePath, "e2e-fake-running", framesWritten, opts, logger);
+
+    try
+    {
+        using var writer = new FrameWriter(opts.ShmemName, logger);
+        await writer.OpenAsync(ct);
+
+        var eye = new EyeFrameSink
+        {
+            LeftOpenness       = 0.62f,
+            RightOpenness      = 0.58f,
+            PupilDilationLeft  = 0.33f,
+            PupilDilationRight = 0.37f,
+        };
+        eye.Left.OriginHmd = new Vector3(-0.032f, 0.012f, -0.045f);
+        eye.Right.OriginHmd = new Vector3(0.032f, 0.012f, -0.045f);
+        eye.Left.DirHmd = new Vector3(-0.10f, 0.20f, -0.97f);
+        eye.Right.DirHmd = new Vector3(0.11f, 0.18f, -0.97f);
+        eye.Left.Confidence = 0.95f;
+        eye.Right.Confidence = 0.96f;
+
+        var expr = new ExpressionFrameSink();
+        expr[UnifiedExpression.JawOpen] = 0.75f;
+        expr[UnifiedExpression.MouthSmileLeft] = 0.25f;
+        expr[UnifiedExpression.MouthSmileRight] = 0.30f;
+
+        for (int i = 0; i < opts.E2eFakeFrameCount; ++i)
+        {
+            await writer.PublishAsync(
+                eye,
+                expr,
+                eyeValid: true,
+                exprValid: true,
+                moduleUuidHash: 0xE2E0FACADE123456UL,
+                ct);
+            framesWritten++;
+            if (opts.E2eFakeFrameIntervalMs > 0)
+                await Task.Delay(opts.E2eFakeFrameIntervalMs, ct);
+        }
+
+        HostStatusWriter.WriteE2eStatus(
+            opts.StatusFilePath, "e2e-fake-complete", framesWritten, opts, logger);
+        logger.Info($"[e2e] fake face output complete frames_written={framesWritten}");
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        logger.Error($"[e2e] fake face output failed: {ex}");
+        HostStatusWriter.WriteStartupFailure(
+            opts.StatusFilePath, "e2e-fake-failed", ex.Message, opts, logger);
+        return 1;
     }
 }

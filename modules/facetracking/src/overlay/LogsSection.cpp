@@ -43,15 +43,22 @@ std::vector<LogEntry> EnumerateLogs(const std::wstring &dir)
     std::vector<LogEntry> result;
     if (dir.empty()) return result;
 
-    std::wstring search = dir + L"\\facetracking_log.*.txt";
-    WIN32_FIND_DATAW fd{};
-    HANDLE h = FindFirstFileW(search.c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) return result;
-    do {
-        std::string name = openvr_pair::common::WideToUtf8(fd.cFileName);
-        result.push_back({ dir + L"\\" + fd.cFileName, std::move(name) });
-    } while (FindNextFileW(h, &fd));
-    FindClose(h);
+    const wchar_t *prefixes[] = {
+        L"facetracking_log.*.txt",
+        L"facetracking_drv_log.*.txt",
+        L"facetracking_host_log.*.txt",
+    };
+    for (const wchar_t *prefix : prefixes) {
+        std::wstring search = dir + L"\\" + prefix;
+        WIN32_FIND_DATAW fd{};
+        HANDLE h = FindFirstFileW(search.c_str(), &fd);
+        if (h == INVALID_HANDLE_VALUE) continue;
+        do {
+            std::string name = openvr_pair::common::WideToUtf8(fd.cFileName);
+            result.push_back({ dir + L"\\" + fd.cFileName, std::move(name) });
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
     return result;
 }
 
@@ -94,7 +101,7 @@ void DrawLogsSection(FacetrackingPlugin &plugin)
     auto         entries = EnumerateLogs(dir);
 
     if (entries.empty()) {
-        ImGui::TextDisabled("No facetracking_log.*.txt files found.");
+        ImGui::TextDisabled("No face-tracking log files found.");
     } else {
         for (const auto &e : entries) {
             ImGui::TextUnformatted(e.nameUtf8.c_str());
@@ -112,7 +119,8 @@ void DrawLogsSection(FacetrackingPlugin &plugin)
     // ---- File paths (reference) ----
     DrawSectionHeading("Paths");
     ImGui::TextWrapped("Overlay:   %%LocalAppDataLow%%\\WKOpenVR\\Logs\\facetracking_log.<ts>.txt");
-    ImGui::TextWrapped("Driver:    %%LocalAppDataLow%%\\WKOpenVR\\Logs\\driver_log.<ts>.txt");
+    ImGui::TextWrapped("Driver:    %%LocalAppDataLow%%\\WKOpenVR\\Logs\\facetracking_drv_log.<ts>.txt");
+    ImGui::TextWrapped("Host:      %%LocalAppDataLow%%\\WKOpenVR\\Logs\\facetracking_host_log.<ts>.txt");
     ImGui::TextWrapped("Profiles:  %%LocalAppDataLow%%\\WKOpenVR\\profiles\\facetracking.json");
     ImGui::TextWrapped("Calib:     %%LocalAppDataLow%%\\WKOpenVR\\profiles\\facetracking_calib_<uuid>.json");
     ImGui::TextWrapped("Trust:     %%LocalAppDataLow%%\\WKOpenVR\\facetracking\\trust.json");

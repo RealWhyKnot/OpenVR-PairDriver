@@ -29,6 +29,7 @@ endif()
 
 set(FACE_HOST_SOLUTION "${CMAKE_CURRENT_LIST_DIR}/OpenVRPair.FaceTracking.sln")
 set(FACE_HOST_PROJECT  "${CMAKE_CURRENT_LIST_DIR}/OpenVRPair.FaceModuleHost/OpenVRPair.FaceModuleHost.csproj")
+set(FACE_MODULE_PROCESS_PROJECT "${CMAKE_CURRENT_LIST_DIR}/WKOpenVR.FaceModuleProcess/WKOpenVR.FaceModuleProcess.csproj")
 set(FACE_HOST_PUBLISH_DIR "${CMAKE_BINARY_DIR}/facetracking-host-publish")
 set(FACE_HOST_ARTIFACT_DIR "${CMAKE_BINARY_DIR}/artifacts/FaceModuleHost")
 # Mirror the published tree into the driver staging directory so the
@@ -48,6 +49,8 @@ file(GLOB_RECURSE FACE_HOST_INPUTS
 
 add_custom_command(
 	OUTPUT "${FACE_HOST_STAMP}"
+	COMMAND ${CMAKE_COMMAND} -E rm -rf "${FACE_HOST_PUBLISH_DIR}"
+	COMMAND ${CMAKE_COMMAND} -E make_directory "${FACE_HOST_PUBLISH_DIR}"
 	COMMAND ${DOTNET_EXECUTABLE} publish "${FACE_HOST_PROJECT}"
 		-c Release
 		-r win-x64
@@ -57,8 +60,19 @@ add_custom_command(
 		-o "${FACE_HOST_PUBLISH_DIR}"
 		--nologo
 		--verbosity minimal
+	COMMAND ${DOTNET_EXECUTABLE} publish "${FACE_MODULE_PROCESS_PROJECT}"
+		-c Release
+		-r win-x64
+		--self-contained false
+		-p:PublishSingleFile=false
+		-p:UseAppHost=true
+		-o "${FACE_HOST_PUBLISH_DIR}"
+		--nologo
+		--verbosity minimal
+	COMMAND ${CMAKE_COMMAND} -E rm -rf "${FACE_HOST_ARTIFACT_DIR}"
 	COMMAND ${CMAKE_COMMAND} -E make_directory "${FACE_HOST_ARTIFACT_DIR}"
 	COMMAND ${CMAKE_COMMAND} -E copy_directory "${FACE_HOST_PUBLISH_DIR}" "${FACE_HOST_ARTIFACT_DIR}"
+	COMMAND ${CMAKE_COMMAND} -E rm -rf "${FACE_HOST_DRIVER_STAGE_DIR}"
 	COMMAND ${CMAKE_COMMAND} -E make_directory "${FACE_HOST_DRIVER_STAGE_DIR}"
 	COMMAND ${CMAKE_COMMAND} -E copy_directory "${FACE_HOST_PUBLISH_DIR}" "${FACE_HOST_DRIVER_STAGE_DIR}"
 	COMMAND ${CMAKE_COMMAND} -E touch "${FACE_HOST_STAMP}"

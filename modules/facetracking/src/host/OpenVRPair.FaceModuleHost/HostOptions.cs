@@ -17,13 +17,20 @@ public sealed class HostOptions
 
     /// <summary>Directory where installed hardware modules live, one uuid/version sub-tree each.</summary>
     public string ModulesInstallDir { get; set; } = Path.Combine(
-        LocalAppDataLow(), "WKOpenVR", "facetracking", "modules");
+        AppPaths.FaceTrackingDir(), "modules");
 
     /// <summary>Where the host writes its periodic status JSON for the overlay to poll.</summary>
     public string StatusFilePath { get; set; } = Path.Combine(
-        LocalAppDataLow(), "WKOpenVR", "facetracking", "host_status.json");
+        AppPaths.FaceTrackingDir(), "host_status.json");
+
+    /// <summary>Optional explicit log file path passed by the driver.</summary>
+    public string? LogFilePath { get; set; }
 
     public bool DebugLoggingEnabled { get; set; } = false;
+
+    public bool E2eFakeFrames { get; set; } = false;
+    public int E2eFakeFrameCount { get; set; } = 5;
+    public int E2eFakeFrameIntervalMs { get; set; } = 5;
 
     public static HostOptions FromArgs(string[] args)
     {
@@ -38,14 +45,25 @@ public sealed class HostOptions
             opts.DebugLoggingEnabled = IsTruthy(envDebug);
 
         // Command-line args override env vars.
-        for (int i = 0; i < args.Length - 1; i++)
+        for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
-                case "--driver-handshake-pipe": opts.DriverHandshakePipe = args[i + 1]; break;
-                case "--shmem-name":            opts.ShmemName           = args[i + 1]; break;
-                case "--modules-dir":           opts.ModulesInstallDir   = args[i + 1]; break;
-                case "--debug-logging":         opts.DebugLoggingEnabled = IsTruthy(args[i + 1]); break;
+                case "--driver-handshake-pipe" when i + 1 < args.Length: opts.DriverHandshakePipe = args[++i]; break;
+                case "--shmem-name"            when i + 1 < args.Length: opts.ShmemName           = args[++i]; break;
+                case "--modules-dir"           when i + 1 < args.Length: opts.ModulesInstallDir   = args[++i]; break;
+                case "--status-file"           when i + 1 < args.Length: opts.StatusFilePath      = args[++i]; break;
+                case "--log-file"              when i + 1 < args.Length: opts.LogFilePath         = args[++i]; break;
+                case "--debug-logging"         when i + 1 < args.Length: opts.DebugLoggingEnabled = IsTruthy(args[++i]); break;
+                case "--e2e-fake-face-output": opts.E2eFakeFrames = true; break;
+                case "--e2e-fake-frame-count"  when i + 1 < args.Length:
+                    if (int.TryParse(args[++i], out int frameCount))
+                        opts.E2eFakeFrameCount = Math.Max(1, frameCount);
+                    break;
+                case "--e2e-fake-frame-interval-ms" when i + 1 < args.Length:
+                    if (int.TryParse(args[++i], out int intervalMs))
+                        opts.E2eFakeFrameIntervalMs = Math.Max(0, intervalMs);
+                    break;
             }
         }
 
@@ -58,13 +76,4 @@ public sealed class HostOptions
         value.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
         value.Equals("on", StringComparison.OrdinalIgnoreCase);
 
-    private static string LocalAppDataLow()
-    {
-        // SHGetKnownFolderPath(FOLDERID_LocalAppDataLow) via the CSIDL trick:
-        // %LOCALAPPDATA% is ...\AppData\Local; replace with ...\AppData\LocalLow.
-        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return local.EndsWith("Local", StringComparison.OrdinalIgnoreCase)
-            ? local[..^5] + "LocalLow"
-            : local;
-    }
 }

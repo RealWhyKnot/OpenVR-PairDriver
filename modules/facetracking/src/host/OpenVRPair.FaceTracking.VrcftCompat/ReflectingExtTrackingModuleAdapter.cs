@@ -127,8 +127,8 @@ public sealed class ReflectingExtTrackingModuleAdapter : FaceTrackingModule
         _inner.Teardown();
     }
 
-    // Writes a single line to stderr so the driver-side HostSupervisor picks it
-    // up into facetracking_log.<ts>.txt. The C# host's HostLogger is not
+    // Writes a single line to stderr so the host log captures bridge events.
+    // The C# host's HostLogger is not
     // injected into VrcftCompat (the adapter is a leaf assembly with no host
     // dependencies); stderr is the simplest single-direction back-channel.
     private static void Log(string message)

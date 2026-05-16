@@ -13,6 +13,8 @@ namespace OpenVRPair.FaceModuleHost.Workers;
 /// </summary>
 public static class UpstreamExpressionMap
 {
+    private const float InvalidFloat = unchecked((float)0xFFFFFFFF);
+
     private static readonly int[] _upstreamToOurs;
     private static readonly int   _mapped;
     private static readonly int   _dropped;
@@ -76,7 +78,12 @@ public static class UpstreamExpressionMap
             int o = _upstreamToOurs[u];
             if (o < 0) continue;
             if (o >= (int)UnifiedExpression.Count) continue;
-            dst[(UnifiedExpression)o] = upstreamShapes[u];
+
+            float value = upstreamShapes[u];
+            if (value == InvalidFloat || float.IsNaN(value) || float.IsInfinity(value))
+                continue;
+
+            dst[(UnifiedExpression)o] = Math.Clamp(value, 0f, 1f);
         }
     }
 

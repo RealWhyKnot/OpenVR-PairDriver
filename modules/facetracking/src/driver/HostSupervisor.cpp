@@ -1,7 +1,9 @@
 #define _CRT_SECURE_NO_DEPRECATE
 #include "HostSupervisor.h"
 #include "DebugLogging.h"
+#include "LogPaths.h"
 #include "Logging.h"
+#include "Win32Paths.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -14,6 +16,29 @@
 #define FT_HOST_CONTROL_PIPE_NAME  "\\\\.\\pipe\\OpenVR-FaceTracking.host"
 
 namespace facetracking {
+namespace {
+
+std::wstring QuoteArg(const std::wstring &value)
+{
+    std::wstring out = L"\"";
+    for (wchar_t ch : value) {
+        if (ch == L'"') out += L"\\\"";
+        else out.push_back(ch);
+    }
+    out += L"\"";
+    return out;
+}
+
+void AppendPathArg(std::wstring &commandLine, const wchar_t *name, const std::wstring &value)
+{
+    if (value.empty()) return;
+    commandLine += L" ";
+    commandLine += name;
+    commandLine += L" ";
+    commandLine += QuoteArg(value);
+}
+
+} // namespace
 
 HostSupervisor::HostSupervisor(const std::string &host_exe_path)
     : host_exe_path_(host_exe_path)
@@ -60,6 +85,10 @@ void HostSupervisor::Restart()
         halted_                 = false;
         consecutive_fast_exits_ = 0;
     }
+    {
+        std::lock_guard<std::mutex> lk(uuid_mutex_);
+        if (has_pending_uuid_) uuid_sent_ = false;
+    }
     Kill();
     if (!stop_requested_.load(std::memory_order_acquire)) {
         Spawn();
@@ -79,12 +108,12 @@ bool HostSupervisor::IsHalted() const
 
 void HostSupervisor::SetActiveModuleUuid(const char *uuid)
 {
-    if (!uuid || uuid[0] == '\0') return;
-    std::string s(uuid);
+    std::string s = uuid ? std::string(uuid) : std::string();
     {
         std::lock_guard<std::mutex> lk(uuid_mutex_);
-        pending_uuid_ = s;
-        uuid_sent_    = false;
+        pending_uuid_     = s;
+        has_pending_uuid_ = true;
+        uuid_sent_        = false;
     }
     // Try to deliver immediately; if the pipe is down, MonitorLoop will retry.
     TrySendUuid(s);
@@ -149,9 +178,22 @@ bool HostSupervisor::Spawn()
                 MultiByteToWideChar(CP_UTF8, 0, host_exe_path_.c_str(), -1, wpath.data(), wlen);
                 if (!wpath.empty() && wpath.back() == L'\0') wpath.pop_back();
                 std::wstring commandLine = L"\"" + wpath + L"\"";
-                if (openvr_pair::common::IsDebugLoggingForcedOn()) {
+                const bool debugLogging = openvr_pair::common::IsDebugLoggingEnabled();
+                if (debugLogging) {
                     commandLine += L" --debug-logging 1";
                 }
+                std::wstring faceDir = openvr_pair::common::WkOpenVrSubdirectoryPath(
+                    L"facetracking", true);
+                AppendPathArg(commandLine, L"--status-file",
+                    faceDir.empty() ? std::wstring{} : faceDir + L"\\host_status.json");
+                AppendPathArg(commandLine, L"--modules-dir",
+                    faceDir.empty() ? std::wstring{} : faceDir + L"\\modules");
+                if (debugLogging) {
+                    AppendPathArg(commandLine, L"--log-file",
+                        openvr_pair::common::TimestampedLogPath(L"facetracking_host_log"));
+                }
+                FT_LOG_DRV("[host-supervisor] command line prepared debug=%d status_dir_resolved=%d",
+                    debugLogging ? 1 : 0, faceDir.empty() ? 0 : 1);
 
                 STARTUPINFOW si{};
                 si.cb = sizeof(si);
@@ -187,12 +229,15 @@ bool HostSupervisor::Spawn()
     // Phase 2: deliver any queued uuid OUTSIDE the process lock to avoid
     // blocking WriteFile from inside a mutex.
     std::string uuid_to_send;
+    bool should_send_uuid = false;
     {
         std::lock_guard<std::mutex> ulk(uuid_mutex_);
-        if (!pending_uuid_.empty() && !uuid_sent_)
+        if (has_pending_uuid_ && !uuid_sent_) {
             uuid_to_send = pending_uuid_;
+            should_send_uuid = true;
+        }
     }
-    if (!uuid_to_send.empty()) TrySendUuid(uuid_to_send);
+    if (should_send_uuid) TrySendUuid(uuid_to_send);
     return true;
 }
 
@@ -250,12 +295,17 @@ void HostSupervisor::MonitorLoop()
                         std::lock_guard<std::mutex> lk(process_mutex_);
                         attached_to_existing_ = false;
                     }
+                    {
+                        std::lock_guard<std::mutex> lk(uuid_mutex_);
+                        if (has_pending_uuid_) uuid_sent_ = false;
+                    }
                     std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
                     if (!stop_requested_.load(std::memory_order_acquire)) {
                         if (Spawn()) backoff_ms = 1000;
                         else backoff_ms = std::min(backoff_ms * 2, kMaxBackoffMs);
                     }
                 } else {
+                    RetryPendingUuid();
                     std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 }
             } else {
@@ -266,6 +316,8 @@ void HostSupervisor::MonitorLoop()
 
         // Record spawn time to detect fast exits.
         auto spawn_time = std::chrono::steady_clock::now();
+
+        RetryPendingUuid();
 
         // Wait for the process to exit or for a stop request.
         DWORD wait = WaitForSingleObject(cur_handle,
@@ -292,6 +344,10 @@ void HostSupervisor::MonitorLoop()
                 continue;
             }
             running_.store(false, std::memory_order_release);
+            {
+                std::lock_guard<std::mutex> lk(uuid_mutex_);
+                if (has_pending_uuid_) uuid_sent_ = false;
+            }
 
             auto now = std::chrono::steady_clock::now();
             long long uptime_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -343,7 +399,8 @@ void HostSupervisor::MonitorLoop()
                 backoff_ms = std::min(backoff_ms * 2, kMaxBackoffMs);
             }
         }
-        // else WAIT_TIMEOUT: process still alive, loop again
+        // else WAIT_TIMEOUT: process still alive, loop again and retry any
+        // active-module selection that arrived before the host pipe opened.
     }
 
     FT_LOG_DRV("[host] monitor thread exiting", 0);
@@ -419,6 +476,22 @@ bool HostSupervisor::TrySendUuid(const std::string &uuid)
         return true;
     }
     return false;
+}
+
+void HostSupervisor::RetryPendingUuid()
+{
+    std::string uuid;
+    bool should_send_uuid = false;
+    {
+        std::lock_guard<std::mutex> lk(uuid_mutex_);
+        if (has_pending_uuid_ && !uuid_sent_) {
+            uuid = pending_uuid_;
+            should_send_uuid = true;
+        }
+    }
+    if (should_send_uuid) {
+        TrySendUuid(uuid);
+    }
 }
 
 } // namespace facetracking

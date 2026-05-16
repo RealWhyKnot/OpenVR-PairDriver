@@ -73,6 +73,7 @@ private:
     // Pending module-uuid to send on next pipe connection.
     std::mutex  uuid_mutex_;
     std::string pending_uuid_;
+    bool        has_pending_uuid_ = false;
     bool        uuid_sent_ = false;
 
     // True if the host's control pipe is responsive within timeout_ms.
@@ -94,6 +95,9 @@ private:
     // Try to push `uuid` over the named-pipe control channel.
     // Returns true if delivered; leaves uuid in pending on failure.
     bool TrySendUuid(const std::string &uuid);
+
+    // Retry any queued active-module selection once the host pipe is alive.
+    void RetryPendingUuid();
 
     // True if process_handle_ was NOT spawned by this supervisor instance
     // (i.e. we attached to an existing host rather than spawning it).

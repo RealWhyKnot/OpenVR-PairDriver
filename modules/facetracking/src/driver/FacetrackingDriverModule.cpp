@@ -2,6 +2,7 @@
 #include "CalibrationEngine.h"
 #include "EyelidSync.h"
 #include "FaceFrameReader.h"
+#include "FaceOscPublisher.h"
 #include "FaceTrackingDevice.h"
 #include "HostSupervisor.h"
 #include "Logging.h"
@@ -10,13 +11,11 @@
 #include "DriverModule.h"
 #include "FeatureFlags.h"
 #include "Protocol.h"
-#include "RouterPublishApi.h"
 #include "ServerTrackedDeviceProvider.h"
+#include "Win32Paths.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <shlobj.h>
-#include <objbase.h>
 #include <openvr_driver.h>
 
 #include <atomic>
@@ -32,192 +31,13 @@ namespace facetracking {
 namespace {
 
 // -----------------------------------------------------------------------
-// OSC publish helpers
-// -----------------------------------------------------------------------
-
-// Encode a single IEEE 754 float in OSC 1.0 big-endian wire format and
-// forward it to the OSC router. No-ops if the router is not active.
-static inline void OscPublishFloat(const char *address, float value)
-{
-    uint32_t bits;
-    // Use memcpy to avoid strict-aliasing UB; the compiler optimises it away.
-    std::memcpy(&bits, &value, sizeof(bits));
-    uint8_t arg_bytes[4] = {
-        static_cast<uint8_t>(bits >> 24),
-        static_cast<uint8_t>(bits >> 16),
-        static_cast<uint8_t>(bits >>  8),
-        static_cast<uint8_t>(bits        ),
-    };
-    pairdriver::oscrouter::PublishOsc(
-        "facetracking", address, ",f", arg_bytes, 4);
-}
-
-// Send all eye-gaze OSC messages for one frame. Called when eye data is valid
-// and the user's output_osc_enabled toggle is set.
-//
-// Each parameter is published twice:
-//   1. The legacy bare-name path: /avatar/parameters/<Name>. Matches the
-//      pre-v2 VRCFT convention some avatars and the original SC fork shipped
-//      with. Names like LeftEyeLid / EyesDilation map onto VRCFT's legacy
-//      EyeTrackingParams string set.
-//   2. The modern v2 path: /avatar/parameters/v2/<Name>. Matches upstream
-//      VRCFaceTracking's UnifiedExpressionsParameters / UnifiedHeadParameters
-//      "v2/" + shape.ToString() convention -- the path every recent VRCFT
-//      template (Adjerry91 and others) is built around. Without this prefix,
-//      a stock VRCFT avatar receives our packets and ignores them because no
-//      animator parameter matches the address.
-//
-// Doubling the traffic is cheap (UDP loopback, small packets) and the router
-// queue is sized for it.
-static void OscPublishEye(const protocol::FaceTrackingFrameBody &frame)
-{
-    const float pupil = (frame.pupil_dilation_l + frame.pupil_dilation_r) * 0.5f;
-
-    // Legacy bare-name paths.
-    OscPublishFloat("/avatar/parameters/LeftEyeX",     frame.eye_gaze_l[0]);
-    OscPublishFloat("/avatar/parameters/LeftEyeY",     frame.eye_gaze_l[1]);
-    OscPublishFloat("/avatar/parameters/RightEyeX",    frame.eye_gaze_r[0]);
-    OscPublishFloat("/avatar/parameters/RightEyeY",    frame.eye_gaze_r[1]);
-    OscPublishFloat("/avatar/parameters/LeftEyeLid",   frame.eye_openness_l);
-    OscPublishFloat("/avatar/parameters/RightEyeLid",  frame.eye_openness_r);
-    OscPublishFloat("/avatar/parameters/EyesDilation", pupil);
-
-    // VRCFT v2 paths. EyeLeft/EyeRight + EyeOpenLeft/EyeOpenRight + PupilDilation
-    // are the upstream canonical names; EyeOpen* is 0=closed, 1=open, matching
-    // our eye_openness_* sign so no inversion is needed.
-    OscPublishFloat("/avatar/parameters/v2/EyeLeftX",      frame.eye_gaze_l[0]);
-    OscPublishFloat("/avatar/parameters/v2/EyeLeftY",      frame.eye_gaze_l[1]);
-    OscPublishFloat("/avatar/parameters/v2/EyeRightX",     frame.eye_gaze_r[0]);
-    OscPublishFloat("/avatar/parameters/v2/EyeRightY",     frame.eye_gaze_r[1]);
-    OscPublishFloat("/avatar/parameters/v2/EyeOpenLeft",   frame.eye_openness_l);
-    OscPublishFloat("/avatar/parameters/v2/EyeOpenRight",  frame.eye_openness_r);
-    OscPublishFloat("/avatar/parameters/v2/PupilDilation", pupil);
-}
-
-// Unified Expression parameter names in index order 0..62.
-// Must match the C# UnifiedExpression enum order byte-for-byte.
-// Source: modules/facetracking/src/host/OpenVRPair.FaceModuleHost/Output/UnifiedExpressions.cs
-// (which derives names from the ModuleSdk's UnifiedExpression enum via .ToString()).
-static const char *const kExprParamNames[protocol::FACETRACKING_EXPRESSION_COUNT] = {
-    "EyeLookOutLeft",
-    "EyeLookInLeft",
-    "EyeLookUpLeft",
-    "EyeLookDownLeft",
-    "EyeLookOutRight",
-    "EyeLookInRight",
-    "EyeLookUpRight",
-    "EyeLookDownRight",
-    "EyeWideLeft",
-    "EyeWideRight",
-    "EyeSquintLeft",
-    "EyeSquintRight",
-    "BrowLowererLeft",
-    "BrowLowererRight",
-    "BrowInnerUpLeft",
-    "BrowInnerUpRight",
-    "BrowOuterUpLeft",
-    "BrowOuterUpRight",
-    "BrowPinchLeft",
-    "BrowPinchRight",
-    "CheekPuffLeft",
-    "CheekPuffRight",
-    "CheekSuckLeft",
-    "CheekSuckRight",
-    "NoseSneerLeft",
-    "NoseSneerRight",
-    "JawOpen",
-    "JawForward",
-    "JawLeft",
-    "JawRight",
-    "LipSuckUpperLeft",
-    "LipSuckUpperRight",
-    "LipSuckLowerLeft",
-    "LipSuckLowerRight",
-    "LipFunnelUpperLeft",
-    "LipFunnelUpperRight",
-    "LipFunnelLowerLeft",
-    "LipFunnelLowerRight",
-    "LipPuckerUpperLeft",
-    "LipPuckerUpperRight",
-    "MouthClose",
-    "MouthUpperLeft",
-    "MouthUpperRight",
-    "MouthLowerLeft",
-    "MouthLowerRight",
-    "MouthSmileLeft",
-    "MouthSmileRight",
-    "MouthSadLeft",
-    "MouthSadRight",
-    "MouthStretchLeft",
-    "MouthStretchRight",
-    "MouthDimpleLeft",
-    "MouthDimpleRight",
-    "MouthRaiserUpper",
-    "MouthRaiserLower",
-    "MouthPressLeft",
-    "MouthPressRight",
-    "MouthTightenerLeft",
-    "MouthTightenerRight",
-    "TongueOut",
-    "TongueUp",
-    "TongueDown",
-    "TongueLeft",
-};
-
-static_assert(
-    sizeof(kExprParamNames) / sizeof(kExprParamNames[0]) ==
-        protocol::FACETRACKING_EXPRESSION_COUNT,
-    "kExprParamNames length must match FACETRACKING_EXPRESSION_COUNT");
-
-// Prefixes used for all Unified Expression avatar parameters. We publish each
-// shape under both the legacy bare-name path and the modern VRCFT v2 path
-// (see OscPublishEye for the rationale).
-static const char kLegacyPrefix[] = "/avatar/parameters/";
-static const char kV2Prefix[]     = "/avatar/parameters/v2/";
-static const size_t kLegacyPrefixLen = sizeof(kLegacyPrefix) - 1; // excludes NUL
-static const size_t kV2PrefixLen     = sizeof(kV2Prefix) - 1;
-
-// Send all expression OSC messages for one frame. Called when expression data
-// is valid and the user's output_osc_enabled toggle is set. Each expression is
-// emitted twice: legacy bare-name and v2/. The kExprParamNames entries are the
-// upstream UnifiedExpressions enum names verbatim, so the v2 path is a
-// straight prefix swap (matching upstream's "v2/" + shape.ToString()).
-static void OscPublishExpressions(const protocol::FaceTrackingFrameBody &frame)
-{
-    char legacy[64]; // /avatar/parameters/<name> + NUL; longest name = 19 chars
-    char v2addr[64]; // /avatar/parameters/v2/<name> + NUL
-    for (uint32_t i = 0; i < protocol::FACETRACKING_EXPRESSION_COUNT; ++i) {
-        const char *name = kExprParamNames[i];
-        const size_t nameLen = std::strlen(name);
-        if (kLegacyPrefixLen + nameLen + 1 > sizeof(legacy)) continue;
-        if (kV2PrefixLen     + nameLen + 1 > sizeof(v2addr)) continue;
-
-        std::memcpy(legacy, kLegacyPrefix, kLegacyPrefixLen);
-        std::memcpy(legacy + kLegacyPrefixLen, name, nameLen + 1);
-        std::memcpy(v2addr, kV2Prefix, kV2PrefixLen);
-        std::memcpy(v2addr + kV2PrefixLen, name, nameLen + 1);
-
-        const float value = frame.expressions[i];
-        OscPublishFloat(legacy, value);
-        OscPublishFloat(v2addr, value);
-    }
-}
-
-// -----------------------------------------------------------------------
 // Telemetry sidecar helpers
 // -----------------------------------------------------------------------
 
 // %LocalAppDataLow%/WKOpenVR/facetracking/
 static std::wstring ResolveTelemetryDir()
 {
-    PWSTR raw = nullptr;
-    if (S_OK != SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &raw)) {
-        if (raw) CoTaskMemFree(raw);
-        return {};
-    }
-    std::wstring root(raw);
-    CoTaskMemFree(raw);
-    return root + L"\\WKOpenVR\\facetracking";
+    return openvr_pair::common::WkOpenVrSubdirectoryPath(L"facetracking", true);
 }
 
 // Atomically write `content` to `final_path` via a .tmp rename.
@@ -245,6 +65,10 @@ static void AtomicWriteFile(const std::wstring &final_path, const std::string &c
 static std::string BuildTelemetryJson(
     DWORD                     pid,
     uint64_t                  frames_processed,
+    uint64_t                  frames_read,
+    uint64_t                  osc_messages_sent,
+    uint64_t                  osc_messages_dropped,
+    const std::string        &active_module_uuid,
     bool                      vergence_enabled,
     float                     focus_m,
     float                     ipd_m,
@@ -275,6 +99,10 @@ static std::string BuildTelemetryJson(
     o << "  \"wrote_at\": \"" << tsz << "\",\n";
     o << "  \"wrote_at_unix\": " << unix_s << ",\n";
     o << "  \"frames_processed\": " << frames_processed << ",\n";
+    o << "  \"frames_read\": " << frames_read << ",\n";
+    o << "  \"osc_messages_sent\": " << osc_messages_sent << ",\n";
+    o << "  \"osc_messages_dropped\": " << osc_messages_dropped << ",\n";
+    o << "  \"active_module_uuid\": \"" << active_module_uuid << "\",\n";
     o << "  \"vergence\": {\n";
     o << "    \"enabled\": " << (vergence_enabled ? "true" : "false") << ",\n";
     o << "    \"focus_distance_m\": " << focus_m << ",\n";
@@ -381,12 +209,10 @@ public:
         }
         FT_LOG_DRV("[module] shmem segment created", 0);
 
-        // Register the tracking device.
-        device_ = std::make_unique<FaceTrackingDevice>();
-        vr::VRServerDriverHost()->TrackedDeviceAdded(
-            "OpenVRPair-FaceTracking-Sink",
-            vr::TrackedDeviceClass_GenericTracker,
-            device_.get());
+        // Native SteamVR tracker output is not registered by default. VRChat
+        // face output uses OSC, and registering a generic tracker creates a
+        // visible floor tracker with no useful role for the default path.
+        FT_LOG_DRV("[module] native SteamVR sink tracker registration skipped; OSC output is the default path", 0);
 
         // Build host path and start supervisor.
         std::string host_path = ResolveHostExePath(driver_context_);
@@ -429,7 +255,7 @@ public:
             std::lock_guard<std::mutex> lk(config_mutex_);
             config_ = req.setFaceTrackingConfig;
             // Forward active module selection to supervisor.
-            if (supervisor_ && config_.active_module_uuid[0] != '\0') {
+            if (supervisor_) {
                 supervisor_->SetActiveModuleUuid(config_.active_module_uuid);
             }
             resp.type = protocol::ResponseSuccess;
@@ -485,12 +311,16 @@ private:
     std::wstring telemetry_path_;
     std::chrono::steady_clock::time_point last_telemetry_write_{};
     uint64_t frames_processed_ = 0;
+    uint64_t frames_read_ = 0;
+    uint64_t osc_messages_sent_ = 0;
+    uint64_t osc_messages_dropped_ = 0;
 
     // Diagnostics state: OSC output transition tracking.
     bool     osc_was_enabled_     = false;
     bool     osc_first_publish_   = false;
     uint32_t all_zero_frames_     = 0;
     bool     all_zero_warned_     = false;
+    bool     native_unavailable_warned_ = false;
 
     // -----------------------------------------------------------------------
     // Worker thread: polls shmem, runs the filter pipeline, publishes.
@@ -517,6 +347,7 @@ private:
 
             protocol::FaceTrackingFrameBody frame{};
             if (!reader_.TryRead(frame)) continue;
+            ++frames_read_;
 
             // Snapshot config under lock.
             protocol::FaceTrackingConfig cfg;
@@ -546,6 +377,9 @@ private:
             // Publish to SteamVR inputs.
             if (cfg._reserved_native && device_) {
                 device_->PublishFrame(frame);
+            } else if (cfg._reserved_native && !native_unavailable_warned_) {
+                FT_LOG_DRV("[facetracking] native output requested but no SteamVR sink tracker is registered", 0);
+                native_unavailable_warned_ = true;
             }
 
             // Forward face data to the OSC router. PublishOsc is non-blocking
@@ -596,8 +430,9 @@ private:
                     osc_first_publish_ = true;
                 }
 
-                if (eye_valid)  OscPublishEye(frame);
-                if (expr_valid) OscPublishExpressions(frame);
+                FaceOscPublishCounts counts = PublishFaceFrameOsc(frame);
+                osc_messages_sent_ += counts.sent;
+                osc_messages_dropped_ += counts.dropped;
             }
 
             ++frames_processed_;
@@ -626,7 +461,9 @@ private:
         const float ipd_m   = verg_enabled ? vergence_.LastIpdM()           : 0.f;
 
         std::string json = BuildTelemetryJson(
-            pid, frames_processed_,
+            pid, frames_processed_, frames_read_,
+            osc_messages_sent_, osc_messages_dropped_,
+            cfg.active_module_uuid,
             verg_enabled, focus_m, ipd_m,
             calib_);
 
