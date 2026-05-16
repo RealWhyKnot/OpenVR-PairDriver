@@ -4,6 +4,7 @@
 #include "FeaturePlugin.h"
 #include "IPCClient.h"
 
+#include <chrono>
 #include <string>
 #include <set>
 
@@ -37,11 +38,14 @@ private:
 	// serial becomes locked, send smoothness=0 to the driver so any stale value
 	// already in that device slot is cleared.
 	std::set<std::string> lastKnownCalibrationLocks_;
+	std::string lastPredictionDeviceSignature_;
+	std::chrono::steady_clock::time_point lastPredictionReplayScan_{};
 
-	void ConnectIfNeeded();
+	bool ConnectIfNeeded();
 	void SendConfig();                                        // finger smoothing config
 	void SendDevicePrediction(uint32_t openVRID, int smoothness); // per-device prediction
-	void ReplayDevicePredictions();                           // resend whole map on connect
+	void ReplayDevicePredictions(const char *reason);          // resend whole map on connect/device changes
+	void TickPredictionRestore();
 	void TickExternalToolDetection();
 	void TickCalibrationLockClear();                          // zero driver slots when locks change
 	void DrawSettingsTab();

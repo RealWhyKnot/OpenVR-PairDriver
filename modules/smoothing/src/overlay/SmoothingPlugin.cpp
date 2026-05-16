@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <exception>
 #include <memory>
+#include <sstream>
 #include <set>
 #include <string>
 
@@ -33,36 +34,40 @@ void SmoothingPlugin::OnStart(openvr_pair::overlay::ShellContext &)
 {
 	smoothing::logging::OpenLogFile();
 	SM_LOG("WKOpenVR-Smoothing plugin starting (protocol=v%u)", (unsigned)protocol::Version);
-	ConnectIfNeeded();
+	const bool connectedNow = ConnectIfNeeded();
 	if (ipc_.IsConnected()) {
-		SM_LOG("[ipc] connected on first try");
+		SM_LOG("[ipc] connected on first try (new=%d)", connectedNow ? 1 : 0);
 	} else if (!connectError_.empty()) {
 		SM_LOG("[ipc] initial connect failed: %s", connectError_.c_str());
 	}
 	SendConfig();
 	SM_LOG("[config] pushed: smoothness=%d finger_mask=0x%04x",
 		cfg_.smoothness, (unsigned)cfg_.finger_mask);
-	ReplayDevicePredictions();
+	ReplayDevicePredictions("startup");
 }
 
 void SmoothingPlugin::Tick(openvr_pair::overlay::ShellContext &)
 {
-	if (!ipc_.IsConnected()) ConnectIfNeeded();
+	if (!ipc_.IsConnected() && ConnectIfNeeded()) {
+		SM_LOG("[ipc] connected; replaying smoothing state");
+		SendConfig();
+		ReplayDevicePredictions("ipc-reconnect");
+	}
+	TickPredictionRestore();
 	TickExternalToolDetection();
 	TickCalibrationLockClear();
 }
 
-void SmoothingPlugin::ConnectIfNeeded()
+bool SmoothingPlugin::ConnectIfNeeded()
 {
-	if (ipc_.IsConnected()) return;
-	const bool wasConnected = false; // local trace; ipc_ is currently NOT connected
-	(void)wasConnected;
+	if (ipc_.IsConnected()) return false;
 	try {
 		ipc_.Connect();
 		if (!connectError_.empty()) {
 			SM_LOG("[ipc] reconnect succeeded after error: %s", connectError_.c_str());
 		}
 		connectError_.clear();
+		return true;
 	} catch (const std::exception &e) {
 		// Only log the message the first time it changes to avoid per-tick spam
 		// while the driver is unavailable.
@@ -71,6 +76,7 @@ void SmoothingPlugin::ConnectIfNeeded()
 		}
 		connectError_ = e.what();
 	}
+	return false;
 }
 
 void SmoothingPlugin::SendConfig()
@@ -116,15 +122,36 @@ void SmoothingPlugin::SendDevicePrediction(uint32_t openVRID, int smoothness)
 	}
 }
 
-void SmoothingPlugin::ReplayDevicePredictions()
+static std::string BuildPredictionDeviceSignature()
+{
+	auto *vrSystem = vr::VRSystem();
+	if (!vrSystem) return {};
+
+	std::ostringstream sig;
+	char buffer[vr::k_unMaxPropertyStringSize];
+	for (uint32_t id = 0; id < vr::k_unMaxTrackedDeviceCount; ++id) {
+		const auto deviceClass = vrSystem->GetTrackedDeviceClass(id);
+		if (deviceClass == vr::TrackedDeviceClass_Invalid) continue;
+		vr::ETrackedPropertyError err = vr::TrackedProp_Success;
+		vrSystem->GetStringTrackedDeviceProperty(id, vr::Prop_SerialNumber_String, buffer, sizeof buffer, &err);
+		if (err != vr::TrackedProp_Success || buffer[0] == 0) continue;
+		sig << id << ":" << static_cast<int>(deviceClass) << ":" << buffer << ";";
+	}
+	return sig.str();
+}
+
+void SmoothingPlugin::ReplayDevicePredictions(const char *reason)
 {
 	// On startup / reconnect, walk the saved tracker_smoothness map and push
 	// each entry to the driver. Without this, restored values would sit on
 	// disk until the user happened to wiggle the slider for that device.
-	if (!ipc_.IsConnected() || cfg_.trackerSmoothness.empty()) return;
+	if (!ipc_.IsConnected()) return;
 	auto *vrSystem = vr::VRSystem();
 	if (!vrSystem) return;
 
+	int restored = 0;
+	int cleared = 0;
+	int skipped = 0;
 	char buffer[vr::k_unMaxPropertyStringSize];
 	for (uint32_t id = 0; id < vr::k_unMaxTrackedDeviceCount; ++id) {
 		const auto deviceClass = vrSystem->GetTrackedDeviceClass(id);
@@ -140,12 +167,22 @@ void SmoothingPlugin::ReplayDevicePredictions()
 				deviceClass, serial, model)) {
 			if (cfg_.trackerSmoothness.find(serial) != cfg_.trackerSmoothness.end()) {
 				SendDevicePrediction(id, 0);
+				SM_LOG("[prediction] replay reason=%s id=%u serial='%s' value=0 hidden/internal",
+					reason ? reason : "unknown", id, serial.c_str());
+				++cleared;
+			} else {
+				++skipped;
 			}
 			continue;
 		}
 		if (deviceClass == vr::TrackedDeviceClass_HMD) {
 			if (cfg_.trackerSmoothness.find(serial) != cfg_.trackerSmoothness.end()) {
 				SendDevicePrediction(id, 0);
+				SM_LOG("[prediction] replay reason=%s id=%u serial='%s' value=0 hmd-locked",
+					reason ? reason : "unknown", id, serial.c_str());
+				++cleared;
+			} else {
+				++skipped;
 			}
 			continue;
 		}
@@ -154,14 +191,47 @@ void SmoothingPlugin::ReplayDevicePredictions()
 		if (openvr_pair::overlay::TryGetCalibrationDeviceLockKind(serial, lockKind)) {
 			if (cfg_.trackerSmoothness.find(serial) != cfg_.trackerSmoothness.end()) {
 				SendDevicePrediction(id, 0);
+				SM_LOG("[prediction] replay reason=%s id=%u serial='%s' value=0 calibration-locked",
+					reason ? reason : "unknown", id, serial.c_str());
+				++cleared;
+			} else {
+				++skipped;
 			}
 			continue;
 		}
 
 		auto it = cfg_.trackerSmoothness.find(serial);
-		if (it == cfg_.trackerSmoothness.end()) continue;
+		if (it == cfg_.trackerSmoothness.end()) {
+			++skipped;
+			continue;
+		}
 		SendDevicePrediction(id, it->second);
+		SM_LOG("[prediction] replay reason=%s id=%u serial='%s' value=%d",
+			reason ? reason : "unknown", id, serial.c_str(), it->second);
+		++restored;
 	}
+	SM_LOG("[prediction] replay complete reason=%s restored=%d cleared=%d skipped=%d saved=%zu",
+		reason ? reason : "unknown", restored, cleared, skipped, cfg_.trackerSmoothness.size());
+}
+
+void SmoothingPlugin::TickPredictionRestore()
+{
+	if (!ipc_.IsConnected()) return;
+	const auto now = std::chrono::steady_clock::now();
+	if (now - lastPredictionReplayScan_ < std::chrono::seconds(2)) return;
+	lastPredictionReplayScan_ = now;
+
+	std::string sig = BuildPredictionDeviceSignature();
+	if (sig.empty()) return;
+	if (lastPredictionDeviceSignature_.empty()) {
+		lastPredictionDeviceSignature_ = std::move(sig);
+		return;
+	}
+	if (sig == lastPredictionDeviceSignature_) return;
+
+	lastPredictionDeviceSignature_ = std::move(sig);
+	SM_LOG("[prediction] tracked-device list changed; replaying saved smoothing values");
+	ReplayDevicePredictions("device-list-change");
 }
 
 void SmoothingPlugin::TickCalibrationLockClear()
