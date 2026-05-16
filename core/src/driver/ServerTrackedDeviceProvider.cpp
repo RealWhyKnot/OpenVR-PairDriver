@@ -7,6 +7,8 @@
 #include "inputhealth/SerialHash.h"
 #include "MotionGate.h"  // ClassifyCorrection / StillFloor -- option 3 per user 2026-05-04
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <random>
 
@@ -36,6 +38,42 @@ std::string InputHealthPathString(const char *path)
 	size_t n = 0;
 	while (n < protocol::INPUTHEALTH_PATH_LEN && path[n] != '\0') ++n;
 	return std::string(path, path + n);
+}
+
+// Smart-smoothing motion-ramp thresholds. Picked for hand-held VR motion:
+// resting hand tremor sits around 5-10 deg/s and a few cm/s, while a walking
+// head/hands sweep is on the order of 100+ deg/s and 50+ cm/s. Either axis
+// going hot is enough to release suppression (max() not mean()) -- a slow
+// aim adjustment moves the controller rotationally with almost no
+// translation, and we still want to back off there.
+constexpr double kSmartLinearStill   = 0.05;   // m/s
+constexpr double kSmartLinearMoving  = 0.60;   // m/s
+constexpr double kSmartAngularStill  = 0.10;   // rad/s  (~5.7 deg/s)
+constexpr double kSmartAngularMoving = 2.00;   // rad/s  (~115  deg/s)
+// EMA on the motion ramp itself. 0.15 ~= 5-frame lag at 90 Hz; keeps the
+// effective factor from twitching on noisy IMU velocity without making the
+// roll-off feel sticky.
+constexpr double kSmartEmaAlpha      = 0.15;
+
+double ComputeSmartMotionRamp(const vr::DriverPose_t &pose)
+{
+	const double vx = pose.vecVelocity[0];
+	const double vy = pose.vecVelocity[1];
+	const double vz = pose.vecVelocity[2];
+	const double linear = std::sqrt(vx * vx + vy * vy + vz * vz);
+
+	const double wx = pose.vecAngularVelocity[0];
+	const double wy = pose.vecAngularVelocity[1];
+	const double wz = pose.vecAngularVelocity[2];
+	const double angular = std::sqrt(wx * wx + wy * wy + wz * wz);
+
+	const double posRamp = std::clamp(
+		(linear  - kSmartLinearStill)  / (kSmartLinearMoving  - kSmartLinearStill),
+		0.0, 1.0);
+	const double rotRamp = std::clamp(
+		(angular - kSmartAngularStill) / (kSmartAngularMoving - kSmartAngularStill),
+		0.0, 1.0);
+	return std::max(posRamp, rotRamp);
 }
 
 } // namespace
@@ -608,16 +646,26 @@ void ServerTrackedDeviceProvider::SetDevicePrediction(const protocol::SetDeviceP
 
 	auto &tf = transforms[cfg.openVRID];
 	const uint8_t oldSmoothness = tf.predictionSmoothness;
+	const bool    oldSmart      = tf.smartEnabled;
+	const bool    newSmart      = cfg.smart_enabled != 0;
 
 	// Cheap to write unconditionally; HandleDevicePoseUpdated reads it once
 	// per pose update for the velocity / acceleration / poseTimeOffset
 	// scaling. 0 = pose untouched, 100 = predictor fully defeated.
 	tf.predictionSmoothness = cfg.predictionSmoothness;
-	if (oldSmoothness != cfg.predictionSmoothness) {
-		LOG("[prediction] SetDevicePrediction id=%u smoothness=%u old=%u",
+	tf.smartEnabled         = newSmart;
+	if (newSmart && !oldSmart) {
+		// Re-enable starts from a known state so the first frame after
+		// toggle doesn't inherit a stale motion estimate from an earlier
+		// enabled stretch.
+		tf.smartMotionEma = 0.0;
+	}
+	if (oldSmoothness != cfg.predictionSmoothness || oldSmart != newSmart) {
+		LOG("[prediction] SetDevicePrediction id=%u smoothness=%u old=%u smart=%s",
 			cfg.openVRID,
 			static_cast<unsigned>(cfg.predictionSmoothness),
-			static_cast<unsigned>(oldSmoothness));
+			static_cast<unsigned>(oldSmoothness),
+			newSmart ? "on" : "off");
 	}
 }
 
@@ -722,7 +770,17 @@ bool ServerTrackedDeviceProvider::HandleDevicePoseUpdated(uint32_t openVRID, vr:
 		// Clamp defensively -- a buggy overlay (or a stale-protocol mismatch)
 		// shouldn't be able to push a value above 100 here.
 		if (smoothness > 100) smoothness = 100;
-		const double factor = 1.0 - (double)smoothness / 100.0;
+		double factor = 1.0 - (double)smoothness / 100.0;
+		if (tf.smartEnabled) {
+			// Treat the slider as the maximum strength to apply when the
+			// device is stationary, and blend toward "no suppression"
+			// (factor = 1.0) as motion rises. EMA the input ramp so the
+			// effective factor doesn't twitch on noisy IMU velocity.
+			const double motion   = ComputeSmartMotionRamp(pose);
+			tf.smartMotionEma     = (1.0 - kSmartEmaAlpha) * tf.smartMotionEma
+			                      + kSmartEmaAlpha * motion;
+			factor = factor + (1.0 - factor) * tf.smartMotionEma;
+		}
 		pose.vecVelocity[0] *= factor;
 		pose.vecVelocity[1] *= factor;
 		pose.vecVelocity[2] *= factor;

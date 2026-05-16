@@ -450,7 +450,16 @@ namespace protocol
 	{
 		uint32_t openVRID;
 		uint8_t  predictionSmoothness;   // 0..100, see SetDeviceTransform notes
-		uint8_t  _reserved[3];           // pad to 8-byte alignment; must be 0
+		// Smart smoothing: when non-zero, the driver treats
+		// predictionSmoothness as the maximum strength to apply when the
+		// device is stationary, and rolls it off toward 0 as the device's
+		// linear or angular velocity rises. Stationary jitter is suppressed;
+		// real motion (walking, fast aim) is not damped. 0 = static
+		// behaviour (predictionSmoothness applied uniformly, prior wire
+		// semantics). 1 = adaptive. Old overlays leave this byte zero so
+		// they get the prior behaviour automatically.
+		uint8_t  smart_enabled;
+		uint8_t  _reserved[2];           // pad to 8-byte alignment; must be 0
 	};
 
 	// Per-tracking-system fallback transform. Applied to any device whose tracking

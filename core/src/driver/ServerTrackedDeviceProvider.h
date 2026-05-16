@@ -141,6 +141,16 @@ private:
 		// has already vetted that suppressing this device is safe.
 		uint8_t predictionSmoothness = 0;
 
+		// Smart smoothing: when true, predictionSmoothness above becomes a
+		// maximum-when-stationary value and the effective factor is rolled
+		// off toward "no suppression" as the device's linear or angular
+		// velocity rises. smartMotionEma tracks a 0..1 motion-ramp signal
+		// (max of normalised linear and angular speed) low-passed across
+		// frames so the factor doesn't twitch on noisy IMU velocity. Both
+		// fields are guarded by stateMutex, same as predictionSmoothness.
+		bool   smartEnabled    = false;
+		double smartMotionEma  = 0.0;
+
 		// When true, BlendTransform's lerp toward targetTransform only advances
 		// proportional to detected per-frame motion magnitude. A stationary user
 		// (lying down, sitting still) sees no calibration drift even when the

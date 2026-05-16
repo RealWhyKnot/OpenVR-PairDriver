@@ -111,9 +111,13 @@ void SmoothingPlugin::SendDevicePrediction(uint32_t openVRID, int smoothness)
 	protocol::Request req(protocol::RequestSetDevicePrediction);
 	req.setDevicePrediction.openVRID = openVRID;
 	req.setDevicePrediction.predictionSmoothness = (uint8_t)smoothness;
+	// Smart flag rides with every per-device push; the driver caches it
+	// alongside predictionSmoothness and only consumes it when smoothness
+	// is non-zero, so sending it for clear-to-zero calls is harmless and
+	// keeps the wire path uniform.
+	req.setDevicePrediction.smart_enabled = cfg_.smart_smoothing ? 1 : 0;
 	req.setDevicePrediction._reserved[0] = 0;
 	req.setDevicePrediction._reserved[1] = 0;
-	req.setDevicePrediction._reserved[2] = 0;
 	try {
 		ipc_.SendBlocking(req);
 		connectError_.clear();
@@ -295,6 +299,26 @@ void SmoothingPlugin::DrawTab(openvr_pair::overlay::ShellContext &)
 
 void SmoothingPlugin::DrawSettingsTab()
 {
+	bool smart = cfg_.smart_smoothing;
+	if (ImGui::Checkbox("Smart smoothing", &smart)) {
+		cfg_.smart_smoothing = smart;
+		SaveConfig(cfg_);
+		// Push the new flag down to every device that already has a saved
+		// per-tracker value. ReplayDevicePredictions walks the saved map
+		// and calls SendDevicePrediction, which now carries cfg_.smart_smoothing
+		// alongside each device's smoothness. Devices without a saved value
+		// pick up the flag the first time the user touches their slider.
+		ReplayDevicePredictions(smart ? "smart-toggle-on" : "smart-toggle-off");
+		SM_LOG("[smart] master toggle set to %s", smart ? "on" : "off");
+	}
+	openvr_pair::overlay::ui::TooltipForLastItem(
+		"Adapts the prediction strength to how much each tracker is moving.\n"
+		"Stationary: full slider strength (kills resting jitter when holding\n"
+		"or aiming the controller).\n"
+		"Walking / fast aim: relaxed toward 0 (no judder, no lag).\n"
+		"Affects prediction only -- finger smoothing is unchanged.");
+	ImGui::Spacing();
+
 	openvr_pair::overlay::ui::DrawSectionHeading("Prediction");
 	DrawPredictionTab();
 
