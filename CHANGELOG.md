@@ -23,6 +23,10 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **facetracking:** Reliability pass -- phase, telemetry, ALC, lifecycle, paths (f53b09e)
 - **oscrouter:** Expose test endpoint override for e2e harness (8083e86)
 - **smoothing:** Adaptive prediction smoothing toggle (c286c5d)
+- **facetracking:** Emit upstream alias OSC names + fix OSCQuery advertise (b33289a)
+- **facetracking:** Move VRCFT shape remap from host to driver (1ed0eb4)
+- **facetracking:** Wedge detection via shmem heartbeat + host_state (6a52694)
+- **supervisor:** Require singleton mutex + sweep stale hosts before spawn (9dc05d4)
 
 ### Changed
 - host(facetracking): extend shmem to v2 with head data (2813401)
@@ -35,6 +39,13 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - Improve diagnostics and deploy flow (6048e4f)
 - **build:** Wire compiler cache via sccache or ccache (29e4a64)
 - **inputhealth:** Rename shmem segment to WKOpenVR scheme (34002fb)
+- **supervisor:** Migrate translator host onto shared base (176b661)
+- **supervisor:** Lift sidecar lifecycle into shared HostSupervisorBase (3814450)
+- **facetracking:** Drop CalibrationCache stub, guard publish on shutdown (199de1b)
+- **rename:** Align legacy shmem and pipe names with WKOpenVR brand (583a53c)
+- **smoothing:** Split skeletal lock; shared_mutex for handedness lookup (8a81897)
+- **driver:** Drop hot-path string allocations in detours (cad7ace)
+- **inputhealth:** Drop try_lock from detours; single-pass StageSnapshots (dfa388f)
 
 ### Fixed
 - **smoothing:** Lock out per-tracker prediction on the calibration anchor (e87f318)
@@ -57,6 +68,13 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **smoothing:** Replay predictions on ipc reconnect and device-list change (e34072a)
 - **driver:** Logging fallback errno, TRACE fallthrough, smoothness log throttle (cf78723)
 - **paths:** Multi-candidate LocalAppDataLow with %TEMP% fallback (6eec7a2)
+- **facetracking:** Align vendored UnifiedExpressions with upstream v5.1.1.0 (aaf92fa)
+- **math:** Guard solver and pose inputs against NaN, Inf, and zero-mag (d0530b5)
+- **facetracking:** Job-object + wait-check + read-timeout for host supervisor (72bd95d)
+- **ipc:** Tighten IPCServer error paths and drop short-read dispatch (f6100c1)
+- **ipc:** Null DriverPoseShmem handles after Close to prevent double-free (e1ff392)
+- **facetracking:** Sanitize NaN/Inf face data at host and driver boundary (982592c)
+- **calibration:** Clamp acos input and dedupe AngleFromRotationMatrix3 (160e8b0)
 
 ---
 
