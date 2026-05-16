@@ -607,11 +607,18 @@ void ServerTrackedDeviceProvider::SetDevicePrediction(const protocol::SetDeviceP
 	std::lock_guard<std::mutex> lock(stateMutex);
 
 	auto &tf = transforms[cfg.openVRID];
+	const uint8_t oldSmoothness = tf.predictionSmoothness;
 
 	// Cheap to write unconditionally; HandleDevicePoseUpdated reads it once
 	// per pose update for the velocity / acceleration / poseTimeOffset
 	// scaling. 0 = pose untouched, 100 = predictor fully defeated.
 	tf.predictionSmoothness = cfg.predictionSmoothness;
+	if (oldSmoothness != cfg.predictionSmoothness) {
+		LOG("[prediction] SetDevicePrediction id=%u smoothness=%u old=%u",
+			cfg.openVRID,
+			static_cast<unsigned>(cfg.predictionSmoothness),
+			static_cast<unsigned>(oldSmoothness));
+	}
 }
 
 void ServerTrackedDeviceProvider::SetTrackingSystemFallback(const protocol::SetTrackingSystemFallback& newFallback)

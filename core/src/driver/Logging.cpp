@@ -4,6 +4,7 @@
 #include "DebugLogging.h"
 #include "LogPaths.h"
 
+#include <cerrno>
 #include <chrono>
 
 FILE *LogFile = nullptr;
@@ -18,11 +19,13 @@ void OpenLogFile()
 	// for the driver log under whatever cwd vrserver happened to inherit
 	// from Steam (typically the Steam install dir, sometimes non-writable).
 	std::wstring path = openvr_pair::common::TimestampedLogPath(L"driver_log");
+	int openErrno = 0;
 	if (!path.empty()) {
 		// _wfopen takes a wide path, which lets us cope with usernames
 		// containing non-ASCII characters that fopen would mangle.
 		LogFile = _wfopen(path.c_str(), L"a");
 		if (LogFile) return;
+		openErrno = errno;
 	}
 
 	// Fallback: legacy behavior. Better than nothing if SHGetKnownFolderPath
@@ -30,6 +33,12 @@ void OpenLogFile()
 	LogFile = fopen("wkopenvr_driver.log", "a");
 	if (!LogFile) {
 		LogFile = stderr;
+	}
+	if (LogFile) {
+		fprintf(LogFile,
+			"[log-open] driver log using fallback path; primary_errno=%d primary_path_empty=%d\n",
+			openErrno, path.empty() ? 1 : 0);
+		fflush(LogFile);
 	}
 }
 
