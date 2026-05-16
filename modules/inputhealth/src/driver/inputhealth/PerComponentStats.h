@@ -57,6 +57,15 @@ struct ComponentStats
 	// it on demand via vr::VRProperties() and caches the result here.
 	uint64_t    device_serial_hash = 0;
 
+	// Hot-path retry throttle for device_serial_hash. Some drivers attach
+	// Prop_SerialNumber_String to the property container after the matching
+	// Create{Boolean,Scalar}Component call has already returned, so the
+	// Register helpers see an empty serial and leave device_serial_hash at
+	// zero. The Update detours retry the resolve at most once per second
+	// per component until it succeeds, then never again.
+	uint64_t    last_serial_resolve_attempt_us = 0;
+	bool        serial_resolution_logged       = false;
+
 	// Latched first-update-on-this-handle log so the deploy-validation step
 	// has a clean grep-able signal that hooks fire end-to-end. Reset by
 	// Stage 1A's Init clears the whole map; per-handle reset comes through

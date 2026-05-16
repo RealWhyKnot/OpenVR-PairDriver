@@ -153,11 +153,25 @@ static vr::EVRInputError DetourUpdateBooleanComponent(
 					if (it != g_componentStats.end()) {
 						auto &s = it->second;
 						inputhealth::ObserveBooleanSample(s, bNewValue);
-						if (!cfg.diagnostics_only && s.device_serial_hash != 0) {
-							protocol::InputHealthCompensationEntry entry{};
-							if (driver->LookupInputHealthCompensation(s.device_serial_hash, s.path, entry)
-								&& inputhealth::ShouldSwallowBooleanUpdate(s, entry, bNewValue, now_us)) {
-								swallow = true;
+						if (!cfg.diagnostics_only) {
+							if (s.device_serial_hash == 0
+								&& (now_us - s.last_serial_resolve_attempt_us) > 1000000ULL)
+							{
+								s.last_serial_resolve_attempt_us = now_us;
+								s.device_serial_hash = inputhealth::ResolveSerialHash(s.container_handle);
+								if (s.device_serial_hash != 0 && !s.serial_resolution_logged) {
+									s.serial_resolution_logged = true;
+									LOG("[inputhealth] resolved late serial for boolean handle=%llu path='%s' -> 0x%016llx",
+										(unsigned long long)ulComponent, s.path.c_str(),
+										(unsigned long long)s.device_serial_hash);
+								}
+							}
+							if (s.device_serial_hash != 0) {
+								protocol::InputHealthCompensationEntry entry{};
+								if (driver->LookupInputHealthCompensation(s.device_serial_hash, s.path, entry)
+									&& inputhealth::ShouldSwallowBooleanUpdate(s, entry, bNewValue, now_us)) {
+									swallow = true;
+								}
 							}
 						}
 						if (!swallow && bNewValue != s.last_boolean) {
@@ -256,6 +270,20 @@ static vr::EVRInputError DetourUpdateScalarComponent(
 								fNewValue, (int)s.axis_role);
 						}
 
+						if (!cfg.diagnostics_only) {
+							if (s.device_serial_hash == 0
+								&& (now_us - s.last_serial_resolve_attempt_us) > 1000000ULL)
+							{
+								s.last_serial_resolve_attempt_us = now_us;
+								s.device_serial_hash = inputhealth::ResolveSerialHash(s.container_handle);
+								if (s.device_serial_hash != 0 && !s.serial_resolution_logged) {
+									s.serial_resolution_logged = true;
+									LOG("[inputhealth] resolved late serial for scalar handle=%llu path='%s' -> 0x%016llx",
+										(unsigned long long)ulComponent, s.path.c_str(),
+										(unsigned long long)s.device_serial_hash);
+								}
+							}
+						}
 						if (!cfg.diagnostics_only && s.device_serial_hash != 0) {
 							protocol::InputHealthCompensationEntry entry{};
 							if (driver->LookupInputHealthCompensation(s.device_serial_hash, s.path, entry)

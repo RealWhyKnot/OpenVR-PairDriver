@@ -34,6 +34,10 @@ vr::VRInputComponentHandle_t FindStickPartner_locked(
 	return 0;
 }
 
+} // namespace
+
+namespace inputhealth {
+
 uint64_t ResolveSerialHash(vr::PropertyContainerHandle_t container)
 {
 	if (container == vr::k_ulInvalidPropertyContainer) return 0;
@@ -45,10 +49,6 @@ uint64_t ResolveSerialHash(vr::PropertyContainerHandle_t container)
 	if (err != vr::TrackedProp_Success || serial.empty()) return 0;
 	return inputhealth::Fnv1a64(serial);
 }
-
-} // namespace
-
-namespace inputhealth {
 
 void RegisterBooleanComponent(
 	vr::VRInputComponentHandle_t handle,

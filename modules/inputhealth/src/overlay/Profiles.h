@@ -37,7 +37,7 @@ struct LearnedPathRecord
 struct DeviceProfile
 {
 	std::string serial;       // empty if the profile is from a deleted device
-	uint64_t    serial_hash;  // FNV-1a 64 of `serial`
+	uint64_t    serial_hash = 0; // FNV-1a 64 of `serial`
 	std::string display_name; // last-known controller model name; UI hint only
 
 	// Preferences. Defaults match the driver-side InputHealthConfig
