@@ -3,6 +3,8 @@
 #include "Logging.h"
 #include "ServerTrackedDeviceProvider.h"
 
+#include <vector>
+
 void IPCServer::HandleRequest(const protocol::Request &request, protocol::Response &response)
 {
 	if (!driver->HandleIpcRequest(featureMask, request, response)) {
@@ -68,13 +70,25 @@ void IPCServer::RunThread(IPCServer *_this)
 {
 	_this->running = true;
 
-	// RAII guard: on any exit path (normal or error) clear `running` and close
-	// `connectEvent` once. This prevents Stop() from deadlocking on join() when
-	// the thread exits early due to a WaitForSingleObjectEx or
-	// GetOverlappedResult failure.
+	// RAII guard: on any exit path (normal or error) drain any still-open
+	// PipeInstance objects, clear `running`, and close `connectEvent` once.
+	// This prevents Stop() from deadlocking on join() when the thread exits
+	// early due to a WaitForSingleObjectEx or GetOverlappedResult failure,
+	// and it stops the early-return paths from leaking PipeInstance heap
+	// allocations + their kernel pipe handles.
 	struct ThreadGuard {
 		IPCServer *server;
 		~ThreadGuard() {
+			// Snapshot then close: ClosePipeInstance erases from `pipes`,
+			// which invalidates iterators on std::set during a range-for.
+			std::vector<PipeInstance*> snapshot(server->pipes.begin(), server->pipes.end());
+			server->pipes.clear();
+			for (auto *p : snapshot) {
+				DisconnectNamedPipe(p->pipe);
+				CloseHandle(p->pipe);
+				delete p;
+			}
+
 			server->running = false;
 			// Close and null-out connectEvent using INVALID_HANDLE_VALUE as a
 			// sentinel so Stop() -- which may race here -- does not double-close.
@@ -146,12 +160,8 @@ void IPCServer::RunThread(IPCServer *_this)
 			return;
 		}
 	}
-
-	for (auto &pipeInst : _this->pipes)
-	{
-		_this->ClosePipeInstance(pipeInst);
-	}
-	_this->pipes.clear();
+	// Pipe-instance cleanup runs in the ThreadGuard destructor on all exit
+	// paths (normal + error returns above).
 }
 
 BOOL IPCServer::CreateAndConnectInstance(LPOVERLAPPED overlap, HANDLE &pipe)
@@ -201,7 +211,7 @@ void IPCServer::CompletedReadCallback(DWORD err, DWORD bytesRead, LPOVERLAPPED o
 	PipeInstance *pipeInst = (PipeInstance *) overlap;
 	BOOL success = FALSE;
 
-	if (err == 0 && bytesRead > 0)
+	if (err == 0 && bytesRead == sizeof protocol::Request)
 	{
 		pipeInst->server->HandleRequest(pipeInst->request, pipeInst->response);
 		success = WriteFileEx(
@@ -211,6 +221,15 @@ void IPCServer::CompletedReadCallback(DWORD err, DWORD bytesRead, LPOVERLAPPED o
 			overlap,
 			(LPOVERLAPPED_COMPLETION_ROUTINE) CompletedWriteCallback
 		);
+	}
+	else if (err == 0 && bytesRead > 0)
+	{
+		// Partial message on a PIPE_TYPE_MESSAGE pipe means the peer wrote
+		// fewer bytes than sizeof(Request). The Request union has overlapping
+		// payloads and an unread tail would be uninitialized memory; dispatching
+		// HandleRequest in that state can do anything. Drop and disconnect.
+		LOG("IPC[%s] short read: got=%u expected=%zu, disconnecting client",
+			pipeInst->server->pipeName.c_str(), bytesRead, sizeof protocol::Request);
 	}
 
 	if (!success)
