@@ -53,6 +53,10 @@ public:
                     const char *typetag,
                     const void *args, size_t arg_len);
 
+    // Test harness hook: configure the UDP sink before Init() so fake VRChat
+    // receivers can bind an isolated localhost port.
+    void SetSendEndpointForTesting(const char *host, uint16_t port);
+
 private:
     // Configuration (written at init / config push, read by send thread).
     std::string sendHost_  = "127.0.0.1";

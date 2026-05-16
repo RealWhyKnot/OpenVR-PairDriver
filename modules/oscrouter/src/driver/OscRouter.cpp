@@ -36,6 +36,15 @@ OscRouter::~OscRouter()
     Shutdown();
 }
 
+void OscRouter::SetSendEndpointForTesting(const char *host, uint16_t port)
+{
+    if (host && host[0] != '\0') sendHost_ = host;
+    if (port != 0) sendPort_ = port;
+    if (sender_.IsOpen()) {
+        sender_.Open(sendHost_.c_str(), sendPort_);
+    }
+}
+
 uint32_t OscRouter::FeatureMask() const
 {
     return pairdriver::kFeatureOscRouter;
