@@ -20,6 +20,7 @@ Mirror of the root `CHANGELOG.md`, kept in lock-step by `.github/scripts/Update-
 - **translator:** Reliability pass -- config retry, vrmanifest, phase, ptt status (09409ba)
 - **facetracking:** Reliability pass -- phase, telemetry, ALC, lifecycle, paths (f53b09e)
 - **oscrouter:** Expose test endpoint override for e2e harness (8083e86)
+- **smoothing:** Adaptive prediction smoothing toggle (c286c5d)
 
 ### Changed
 - host(facetracking): extend shmem to v2 with head data (2813401)
