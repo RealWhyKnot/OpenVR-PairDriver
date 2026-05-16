@@ -118,6 +118,13 @@ namespace {
 
 const double CalibrationCalc::AxisVarianceThreshold = 0.001;
 void CalibrationCalc::PushSample(const Sample& sample) {
+	if (!sample.ref.trans.allFinite() || !sample.target.trans.allFinite()
+		|| sample.ref.trans.cwiseAbs().maxCoeff() > 5.0
+		|| sample.target.trans.cwiseAbs().maxCoeff() > 5.0) {
+		Metrics::WriteLogAnnotation(
+			"PushSample_dropped_oversize_or_nonfinite");
+		return;  // drop the sample
+	}
 	m_samples.push_back(sample);
 	if (sample.valid && sample.timestamp > m_lastSampleTime) {
 		m_lastSampleTime = sample.timestamp;

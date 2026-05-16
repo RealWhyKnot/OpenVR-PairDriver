@@ -37,6 +37,23 @@ DirectResult SolveDirect(
         return result;
     }
 
+    // Reject non-finite or physically impossible inputs. A sample translation
+    // component beyond kMaxSampleTranslationM almost certainly indicates a
+    // boundary-frame artifact -- delta computed against pre-restart pose, or
+    // speed = dpos / tiny-dt. Letting these through produces rms=nan and
+    // corrupts the persisted profile.
+    constexpr double kMaxSampleTranslationM = 5.0;
+    for (const auto& s : samples) {
+        if (!s.ref.trans.allFinite() || !s.target.trans.allFinite()
+            || !std::isfinite(s.refSpeed) || !std::isfinite(s.targetSpeed)
+            || s.ref.trans.cwiseAbs().maxCoeff() > kMaxSampleTranslationM
+            || s.target.trans.cwiseAbs().maxCoeff() > kMaxSampleTranslationM) {
+            Metrics::WriteLogAnnotation(
+                "cal_translation_solve_direct_rejected: non_finite_or_oversize_input");
+            return result;
+        }
+    }
+
     std::vector<double> weights(N, 1.0);
     std::vector<double> prevWeights(N, 1.0);
 

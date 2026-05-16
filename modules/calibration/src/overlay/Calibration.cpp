@@ -2652,7 +2652,14 @@ void StartCalibration() {
 	// over from the previous calibration.
 	CalCtx.pairedMotionPosSeeded = false;
 	CalCtx.pairedMotionMismatchCount = 0;
-	Metrics::WriteLogAnnotation("StartCalibration");
+	// Sample-collection boundary state. Reset here so the first post-restart
+	// frame cannot compute a delta against pre-restart pose / time -- that
+	// path produces inf speeds and meter-scale translation deltas which then
+	// drive the translation solver to a NaN result.
+	CalCtx.pairedMotionPrevRefPos = Eigen::Vector3d::Zero();
+	CalCtx.pairedMotionPrevTgtPos = Eigen::Vector3d::Zero();
+	Metrics::WriteLogAnnotation(
+		"StartCalibration_state_reset: pairedMotionPrevRefPos pairedMotionPrevTgtPos");
 }
 
 void StartContinuousCalibration() {
@@ -3455,30 +3462,45 @@ void CalibrationTick(double time)
 	}
 
 	if (calibration.isValid()) {
-		ctx.calibratedRotation = calibration.EulerRotation();
-		ctx.calibratedTranslation = calibration.Transformation().translation() * 100.0; // convert to cm units for profile storage
-		ctx.refToTargetPose = calibration.RelativeTransformation();
-		ctx.relativePosCalibrated = calibration.isRelativeTransformationCalibrated();
+		const Eigen::Matrix3d R = calibration.Transformation().rotation();
+		const Eigen::Vector3d T = calibration.Transformation().translation();
+		const double rotAngle =
+			std::acos(std::clamp((R.trace() - 1.0) * 0.5, -1.0, 1.0));
+		const bool finiteT = T.allFinite();
+		const bool nonTrivialRot = rotAngle > 1e-3;  // > ~0.06 deg from identity
+		if (!finiteT || !nonTrivialRot) {
+			char rejBuf[160];
+			std::snprintf(rejBuf, sizeof rejBuf,
+				"calibration_rejected_degenerate: finiteT=%d rotAngle=%.6f",
+				finiteT ? 1 : 0, rotAngle);
+			Metrics::WriteLogAnnotation(rejBuf);
+			CalCtx.Log("Degenerate solve rejected; keeping previous profile.\n");
+		} else {
+			ctx.calibratedRotation = calibration.EulerRotation();
+			ctx.calibratedTranslation = calibration.Transformation().translation() * 100.0; // convert to cm units for profile storage
+			ctx.refToTargetPose = calibration.RelativeTransformation();
+			ctx.relativePosCalibrated = calibration.isRelativeTransformationCalibrated();
 
-		auto vrTrans = VRTranslationVec(ctx.calibratedTranslation);
-		auto vrRot = VRRotationQuat(Eigen::Quaterniond(calibration.Transformation().rotation()));
+			auto vrTrans = VRTranslationVec(ctx.calibratedTranslation);
+			auto vrRot = VRRotationQuat(Eigen::Quaterniond(calibration.Transformation().rotation()));
 
-		ctx.validProfile = true;
-		SaveProfile(ctx);
+			ctx.validProfile = true;
+			SaveProfile(ctx);
 
-		ScanAndApplyProfile(ctx);
+			ScanAndApplyProfile(ctx);
 
-		CalCtx.hasAppliedCalibrationResult = true;
+			CalCtx.hasAppliedCalibrationResult = true;
 
-		CalCtx.Log("Finished calibration, profile saved\n");
+			CalCtx.Log("Finished calibration, profile saved\n");
 
-		// Runtime wedge detector REMOVED 2026-05-05 -- fired in a 3-fire
-		// reset loop on the user's Quest+Lighthouse setup whose legitimate
-		// continuous-cal convergence values (~265-295 cm) sit above any
-		// fixed magnitude threshold we picked. See
-		// project_wedge_guard_removed_2026-05-05.md (memory). Quest
-		// re-localization auto-recovery in TickHmdRelocalizationDetector
-		// (HMD-jump signal, not magnitude) is unchanged and still active.
+			// Runtime wedge detector REMOVED 2026-05-05 -- fired in a 3-fire
+			// reset loop on the user's Quest+Lighthouse setup whose legitimate
+			// continuous-cal convergence values (~265-295 cm) sit above any
+			// fixed magnitude threshold we picked. See
+			// project_wedge_guard_removed_2026-05-05.md (memory). Quest
+			// re-localization auto-recovery in TickHmdRelocalizationDetector
+			// (HMD-jump signal, not magnitude) is unchanged and still active.
+		}
 	} else {
 		CalCtx.Log("Calibration failed.\n");
 	}
