@@ -30,7 +30,7 @@ Each overlay sends only its own request types. The driver routes by request type
 | Segment | Producer -> consumer | Notes |
 |---|---|---|
 | `OpenVRPairPoseMemoryV1` | driver -> overlay | calibration pose telemetry |
-| `OpenVRPairInputHealthMemoryV1` | driver -> overlay | 10 Hz input-health snapshot ring |
+| `WKOpenVRInputHealthMemoryV1` | driver -> overlay | 10 Hz input-health snapshot ring |
 | `OpenVRPairFaceTrackingFrameRingV1` | host -> driver | 32-slot seqlock ring, ~120 Hz face/eye samples |
 
 The seqlock discipline used by the shmem classes:

@@ -8,7 +8,7 @@ Source: [modules/inputhealth/](https://github.com/RealWhyKnot/WKOpenVR/tree/main
 
 - **`IVRDriverInput` boolean path** -- detour records button-down counts and observed timing.
 - **`IVRDriverInput` scalar path** -- detour records min/max/EWMA/Welford stats per path, applies the active compensation curve before forwarding.
-- A 10 Hz snapshot timer writes per-path stats into `OpenVRPairInputHealthMemoryV1` so the overlay's Diagnostics tab can display live numbers without RPC chatter.
+- A 10 Hz snapshot timer writes per-path stats into `WKOpenVRInputHealthMemoryV1` so the overlay's Diagnostics tab can display live numbers without RPC chatter.
 
 ## Learning model
 

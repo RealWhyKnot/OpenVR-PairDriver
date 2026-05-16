@@ -45,7 +45,7 @@ For local SteamVR iteration, run `./quick.ps1`. It builds, closes SteamVR and St
 - `\\.\pipe\WKOpenVR-InputHealth` -- input-health overlay <-> driver
 - `\\.\pipe\OpenVR-FaceTracking` -- face-tracking overlay <-> driver
 
-Plus the shmem ring `OpenVRPairFaceTrackingFrameRingV1` for high-rate samples from the C# host into the driver, and `OpenVRPairInputHealthMemoryV1` for the input-health snapshot stream.
+Plus the shmem ring `OpenVRPairFaceTrackingFrameRingV1` for high-rate samples from the C# host into the driver, and `WKOpenVRInputHealthMemoryV1` for the input-health snapshot stream.
 
 Wire format is defined in [core/src/common/Protocol.h](core/src/common/Protocol.h) at protocol version 15. Each overlay sends only its own request types; the driver routes by request type and rejects messages on the wrong pipe. The handshake fails fast on version skew so a mismatched pair is caught at startup rather than misrouting bytes.
 

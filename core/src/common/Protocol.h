@@ -38,7 +38,7 @@
 // Input-health snapshot shmem segment. Created by the driver only when the
 // inputhealth feature is enabled; the InputHealth overlay opens it to read
 // per-component statistics published at ~10 Hz from the driver-side worker.
-#define OPENVR_PAIRDRIVER_INPUTHEALTH_SHMEM_NAME "OpenVRPairInputHealthMemoryV1"
+#define OPENVR_PAIRDRIVER_INPUTHEALTH_SHMEM_NAME "WKOpenVRInputHealthMemoryV1"
 
 // Face-tracking per-frame shmem ring. Created by the driver only when the
 // facetracking feature is enabled; the C# FaceModuleHost.exe opens it for
