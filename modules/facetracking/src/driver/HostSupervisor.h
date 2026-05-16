@@ -61,6 +61,12 @@ private:
     mutable std::mutex process_mutex_;
     HANDLE process_handle_ = INVALID_HANDLE_VALUE;
 
+    // Win32 job object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE so the host
+    // process is reaped automatically when the driver process exits, even
+    // on an abnormal exit that bypasses Stop()/Kill(). Spawn() assigns the
+    // newly-created child to the job; the kernel cleans up.
+    HANDLE job_handle_ = nullptr;
+
     std::thread monitor_thread_;
 
     // Circuit breaker: counts consecutive exits within kFastExitThresholdMs.

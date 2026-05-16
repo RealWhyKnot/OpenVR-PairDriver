@@ -77,26 +77,44 @@ public sealed class HostControlPipeServer(
 
     private async Task HandleConnectionAsync(NamedPipeServerStream pipe, CancellationToken ct)
     {
+        // Per-message timeout: after a peer starts sending, the rest of the
+        // message must arrive within 30s. An idle connection that sends
+        // nothing within 30s also gets dropped, on the theory that the
+        // driver only connects when it has something to push -- a long-idle
+        // pipe is more likely a half-open connection (debugger break,
+        // network simulation) than a healthy peer.
+        const int kPerMessageTimeoutMs = 30_000;
+
         byte[] lenBuf = new byte[4];
         while (!ct.IsCancellationRequested && pipe.IsConnected)
         {
-            // Read 4-byte length prefix.
-            int read = await ReadExactAsync(pipe, lenBuf, 4, ct);
-            if (read < 4) break;
+            using var messageCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            messageCts.CancelAfter(kPerMessageTimeoutMs);
 
-            uint msgLen = BitConverter.ToUInt32(lenBuf, 0);
-            if (msgLen == 0 || msgLen > 65536)
+            try
             {
-                logger.Warn($"Control pipe: invalid message length {msgLen}; dropping connection.");
+                int read = await ReadExactAsync(pipe, lenBuf, 4, messageCts.Token);
+                if (read < 4) break;
+
+                uint msgLen = BitConverter.ToUInt32(lenBuf, 0);
+                if (msgLen == 0 || msgLen > 65536)
+                {
+                    logger.Warn($"Control pipe: invalid message length {msgLen}; dropping connection.");
+                    break;
+                }
+
+                byte[] msgBuf = new byte[msgLen];
+                read = await ReadExactAsync(pipe, msgBuf, (int)msgLen, messageCts.Token);
+                if (read < (int)msgLen) break;
+
+                try   { DispatchMessage(msgBuf); }
+                catch (Exception ex) { logger.Warn($"Control pipe: message dispatch error: {ex.Message}"); }
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                logger.Warn($"Control pipe: peer stalled for more than {kPerMessageTimeoutMs / 1000}s mid-message; dropping connection.");
                 break;
             }
-
-            byte[] msgBuf = new byte[msgLen];
-            read = await ReadExactAsync(pipe, msgBuf, (int)msgLen, ct);
-            if (read < (int)msgLen) break;
-
-            try   { DispatchMessage(msgBuf); }
-            catch (Exception ex) { logger.Warn($"Control pipe: message dispatch error: {ex.Message}"); }
         }
     }
 

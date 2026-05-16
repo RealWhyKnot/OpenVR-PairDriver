@@ -42,11 +42,31 @@ void AppendPathArg(std::wstring &commandLine, const wchar_t *name, const std::ws
 
 HostSupervisor::HostSupervisor(const std::string &host_exe_path)
     : host_exe_path_(host_exe_path)
-{}
+{
+    job_handle_ = CreateJobObjectW(nullptr, nullptr);
+    if (job_handle_) {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION info{};
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!SetInformationJobObject(job_handle_,
+                JobObjectExtendedLimitInformation, &info, sizeof(info))) {
+            FT_LOG_DRV("[host-supervisor] SetInformationJobObject failed err=%lu; host will not be auto-killed on driver crash",
+                GetLastError());
+            CloseHandle(job_handle_);
+            job_handle_ = nullptr;
+        }
+    } else {
+        FT_LOG_DRV("[host-supervisor] CreateJobObjectW failed err=%lu; host will not be auto-killed on driver crash",
+            GetLastError());
+    }
+}
 
 HostSupervisor::~HostSupervisor()
 {
     Stop();
+    if (job_handle_) {
+        CloseHandle(job_handle_);
+        job_handle_ = nullptr;
+    }
 }
 
 bool HostSupervisor::Start()
@@ -215,6 +235,19 @@ bool HostSupervisor::Spawn()
                     process_handle_       = pi.hProcess;
                     attached_to_existing_ = false;
                     running_.store(true, std::memory_order_release);
+
+                    // Bind the new child to the kill-on-job-close job. If
+                    // the driver process exits abnormally (crash, force-kill,
+                    // SteamVR teardown failure) the kernel closes our handle,
+                    // the last job reference is released, and the host is
+                    // terminated automatically.
+                    if (job_handle_) {
+                        if (!AssignProcessToJobObject(job_handle_, pi.hProcess)) {
+                            FT_LOG_DRV("[host-supervisor] AssignProcessToJobObject failed err=%lu pid=%lu; host can outlive an abnormal driver exit",
+                                GetLastError(), pi.dwProcessId);
+                        }
+                    }
+
                     FT_LOG_DRV("[facetracking] CreateProcessW OK: pid=%lu path='%s'",
                         pi.dwProcessId, host_exe_path_.c_str());
                     spawned = true;
@@ -250,7 +283,19 @@ void HostSupervisor::Kill()
     // that process manage its own lifetime.
     if (!attached_to_existing_) {
         TerminateProcess(process_handle_, 0);
-        WaitForSingleObject(process_handle_, 5000);
+        DWORD wait_result = WaitForSingleObject(process_handle_, 5000);
+        if (wait_result == WAIT_TIMEOUT) {
+            // The host did not exit within 5s of TerminateProcess. Force a
+            // second termination and wait briefly; if that also times out
+            // we leak the handle here, but the kill-on-job-close binding
+            // will still take it down when the driver process exits.
+            FT_LOG_DRV("[host-supervisor] Kill: host did not exit within 5s of TerminateProcess; retrying", 0);
+            TerminateProcess(process_handle_, 1);
+            WaitForSingleObject(process_handle_, 1000);
+        } else if (wait_result == WAIT_FAILED) {
+            FT_LOG_DRV("[host-supervisor] Kill: WaitForSingleObject failed err=%lu",
+                GetLastError());
+        }
     }
     CloseHandle(process_handle_);
     process_handle_       = INVALID_HANDLE_VALUE;
