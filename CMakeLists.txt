@@ -55,13 +55,6 @@ add_subdirectory(lib)
 # module driver/overlay subdirectories directly.
 add_subdirectory(core/src)
 
-# Unit tests (not pulled in by any core CMakeLists).
-add_subdirectory(modules/calibration/tests)
-add_subdirectory(modules/facetracking/tests)
-add_subdirectory(modules/inputhealth/tests)
-add_subdirectory(modules/oscrouter/tests)
-add_subdirectory(modules/translator/tests)
-
 # Face-tracking C# host sidecar. Built via `dotnet publish` and staged into the
 # artifacts tree by build.ps1. Toggleable via OPENVR_PAIR_BUILD_FACE_HOST so a
 # C++-only contributor doesn't need the .NET SDK to build the driver+overlay.
@@ -69,6 +62,10 @@ add_subdirectory(modules/facetracking/src/host)
 
 # Translator native C++ host sidecar. Toggleable via OPENVR_PAIR_BUILD_TRANSLATOR_HOST.
 add_subdirectory(modules/translator/src/host)
+
+# Test suites. Unit tests stay in their owning module folders; cross-module E2E
+# tests live under tests/e2e and are registered alongside the rest.
+add_subdirectory(tests)
 
 message(STATUS "------ WKOpenVR build configuration ------")
 message(STATUS "  Compiler cache:   ${WKOPENVR_COMPILER_LAUNCHER_DISPLAY}")
