@@ -86,10 +86,15 @@ void HostStatusPoller::ReadFile()
     s.last_exit_description = snapshot_.last_exit_description;
     s.host_pid         = openvr_pair::common::json::IntAt(root, "host_pid");
     s.state            = openvr_pair::common::json::IntAt(root, "state");
+    s.phase            = openvr_pair::common::json::StringAt(root, "phase");
     s.mic_name         = openvr_pair::common::json::StringAt(root, "mic_name");
     s.last_transcript  = openvr_pair::common::json::StringAt(root, "last_transcript");
     s.last_translation = openvr_pair::common::json::StringAt(root, "last_translation");
     s.last_error       = openvr_pair::common::json::StringAt(root, "last_error");
+    s.ptt_available    = openvr_pair::common::json::BoolAt(root, "ptt_available");
+    s.ptt_registered   = openvr_pair::common::json::BoolAt(root, "ptt_registered");
+    s.ptt_app_key      = openvr_pair::common::json::StringAt(root, "ptt_app_key");
+    s.ptt_error        = openvr_pair::common::json::StringAt(root, "ptt_error");
     s.speech_pack_installed = openvr_pair::common::json::BoolAt(root, "speech_pack_installed");
     s.vad_runtime_available = openvr_pair::common::json::BoolAt(root, "vad_runtime_available");
     s.translation_runtime_available = openvr_pair::common::json::BoolAt(root, "translation_runtime_available");

@@ -27,6 +27,10 @@ public:
     void Restart();
     bool IsRunning() const;
 
+    // Queue and send the current host config. If the control pipe is not
+    // available yet, the supervisor retries after spawn/reconnect.
+    void SetHostConfigCommand(const std::string &command);
+
     // True if the circuit breaker has tripped (5 consecutive fast exits).
     // Cleared by Stop() / Start() so a redeployment attempt is not blocked.
     bool IsHalted() const;
@@ -63,10 +67,17 @@ private:
     bool Spawn();
     void Kill();
     void MonitorLoop();
+    bool TrySendCommand(const std::string &command);
+    void RetryPendingCommand();
 
     // True if process_handle_ was NOT spawned by this instance (attached to
     // an existing host from a prior session).
     bool attached_to_existing_ = false;
+
+    std::mutex  command_mutex_;
+    std::string pending_command_;
+    bool        has_pending_command_ = false;
+    bool        command_sent_ = false;
 };
 
 } // namespace translator

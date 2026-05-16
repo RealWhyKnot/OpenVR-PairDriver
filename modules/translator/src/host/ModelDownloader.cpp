@@ -7,6 +7,8 @@
 
 #include "ModelDownloader.h"
 #include "Logging.h"
+#include "Win32Paths.h"
+#include "Win32Text.h"
 
 #include <cstdio>
 #include <cstring>
@@ -16,22 +18,9 @@
 
 std::string ModelDownloader::DefaultModelDir()
 {
-    PWSTR raw = nullptr;
-    if (S_OK != SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &raw)) {
-        if (raw) CoTaskMemFree(raw);
-        return {};
-    }
-    std::wstring root(raw);
-    CoTaskMemFree(raw);
-    root += L"\\WKOpenVR\\translator\\models";
-
-    // Convert to UTF-8.
-    int n = WideCharToMultiByte(CP_UTF8, 0, root.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (n <= 0) return {};
-    std::string utf8(n, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, root.c_str(), -1, utf8.data(), n, nullptr, nullptr);
-    utf8.resize(utf8.size() - 1);
-    return utf8;
+    std::wstring root = openvr_pair::common::WkOpenVrSubdirectoryPath(
+        L"translator\\models", true);
+    return openvr_pair::common::WideToUtf8(root);
 }
 
 static std::wstring Utf8ToWide(const std::string &s)

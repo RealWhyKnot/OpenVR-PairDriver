@@ -18,13 +18,15 @@ public:
         Error        = 5,
     };
 
-    HostStatus();
+    explicit HostStatus(const std::wstring &status_path = L"");
 
     void SetState(State s) noexcept;
     void SetMicName(const std::string &name);
     void SetLastTranscript(const std::string &t);
     void SetLastTranslation(const std::string &t);
     void SetLastError(const std::string &e);
+    void SetPhase(const std::string &phase);
+    void SetPttStatus(bool available, bool registered, const std::string &app_key, const std::string &error);
     void SetSpeechPackInstalled(bool installed) noexcept;
     void SetVadRuntimeAvailable(bool available) noexcept;
     void SetTranslationRuntimeAvailable(bool available) noexcept;
@@ -46,6 +48,11 @@ private:
     std::string  last_transcript_;
     std::string  last_translation_;
     std::string  last_error_;
+    std::string  phase_ = "starting";
+    bool         ptt_available_ = false;
+    bool         ptt_registered_ = false;
+    std::string  ptt_app_key_;
+    std::string  ptt_error_;
     bool         speech_pack_installed_ = false;
     bool         vad_runtime_available_ = false;
     bool         translation_runtime_available_ = false;
@@ -53,7 +60,7 @@ private:
     std::string  active_translation_pair_;
     long long    packets_sent_     = 0;
 
-    void WritePath();
+    void WritePath(const std::wstring &status_path);
     void DoFlush();
 
     // Timing.

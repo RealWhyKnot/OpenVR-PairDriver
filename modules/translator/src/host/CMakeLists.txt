@@ -318,6 +318,9 @@ add_custom_command(TARGET WKOpenVRTranslatorHost POST_BUILD
         "${CMAKE_CURRENT_LIST_DIR}/actions.json"
         "${TRANSLATOR_HOST_STAGE_DIR}/actions.json"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_LIST_DIR}/translator.vrmanifest"
+        "${TRANSLATOR_HOST_STAGE_DIR}/translator.vrmanifest"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_LIST_DIR}/bindings_knuckles.json"
         "${TRANSLATOR_HOST_STAGE_DIR}/bindings_knuckles.json"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

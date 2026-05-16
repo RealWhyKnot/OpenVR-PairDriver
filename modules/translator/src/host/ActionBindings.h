@@ -31,10 +31,14 @@ public:
     bool Poll();
 
     bool IsRegistered() const noexcept { return registered_; }
+    const std::string &LastError() const noexcept { return last_error_; }
+    const std::string &ApplicationKey() const noexcept { return app_key_; }
 
 private:
     vr::VRActionSetHandle_t action_set_ = vr::k_ulInvalidActionSetHandle;
     vr::VRActionHandle_t    ptt_action_ = vr::k_ulInvalidActionHandle;
     bool                    registered_ = false;
     bool                    last_state_ = false;
+    std::string             last_error_;
+    std::string             app_key_;
 };

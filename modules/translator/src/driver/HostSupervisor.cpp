@@ -98,6 +98,10 @@ void HostSupervisor::Restart()
         halted_                 = false;
         consecutive_fast_exits_ = 0;
     }
+    {
+        std::lock_guard<std::mutex> lk(command_mutex_);
+        if (has_pending_command_) command_sent_ = false;
+    }
     Kill();
     if (!stop_requested_.load(std::memory_order_acquire)) {
         Spawn();
@@ -107,6 +111,17 @@ void HostSupervisor::Restart()
 bool HostSupervisor::IsRunning() const
 {
     return running_.load(std::memory_order_acquire);
+}
+
+void HostSupervisor::SetHostConfigCommand(const std::string &command)
+{
+    {
+        std::lock_guard<std::mutex> lk(command_mutex_);
+        pending_command_     = command;
+        has_pending_command_ = !command.empty();
+        command_sent_        = false;
+    }
+    if (!command.empty()) TrySendCommand(command);
 }
 
 bool HostSupervisor::IsHalted() const
@@ -175,12 +190,14 @@ bool HostSupervisor::Spawn()
             if (wlen > 0) {
                 std::wstring wpath(wlen, L'\0');
                 MultiByteToWideChar(CP_UTF8, 0, host_exe_path_.c_str(), -1, wpath.data(), wlen);
+                if (!wpath.empty() && wpath.back() == L'\0') wpath.pop_back();
+                std::wstring commandLine = L"\"" + wpath + L"\"";
 
                 STARTUPINFOW si{};
                 si.cb = sizeof(si);
                 PROCESS_INFORMATION pi{};
 
-                if (!CreateProcessW(wpath.c_str(), nullptr, nullptr, nullptr, FALSE,
+                if (!CreateProcessW(wpath.c_str(), commandLine.data(), nullptr, nullptr, FALSE,
                         CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
                     DWORD cpErr = GetLastError();
                     char errMsg[256] = {};
@@ -204,7 +221,19 @@ bool HostSupervisor::Spawn()
         }
     } // process_mutex_ released
 
-    return already_running || attached || spawned;
+    if (!(already_running || attached || spawned)) return false;
+
+    std::string command_to_send;
+    bool should_send = false;
+    {
+        std::lock_guard<std::mutex> lk(command_mutex_);
+        if (has_pending_command_ && !command_sent_) {
+            command_to_send = pending_command_;
+            should_send = true;
+        }
+    }
+    if (should_send) TrySendCommand(command_to_send);
+    return true;
 }
 
 void HostSupervisor::Kill()
@@ -255,12 +284,17 @@ void HostSupervisor::MonitorLoop()
                         std::lock_guard<std::mutex> lk(process_mutex_);
                         attached_to_existing_ = false;
                     }
+                    {
+                        std::lock_guard<std::mutex> lk(command_mutex_);
+                        if (has_pending_command_) command_sent_ = false;
+                    }
                     std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
                     if (!stop_requested_.load(std::memory_order_acquire)) {
                         if (Spawn()) backoff_ms = 1000;
                         else backoff_ms = std::min(backoff_ms * 2, kMaxBackoffMs);
                     }
                 } else {
+                    RetryPendingCommand();
                     std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 }
             } else {
@@ -271,6 +305,8 @@ void HostSupervisor::MonitorLoop()
 
         // Record spawn time to detect fast exits.
         auto spawn_time = std::chrono::steady_clock::now();
+
+        RetryPendingCommand();
 
         DWORD wait = WaitForSingleObject(cur_handle,
             static_cast<DWORD>(backoff_ms > 1000 ? backoff_ms : 1000));
@@ -294,6 +330,10 @@ void HostSupervisor::MonitorLoop()
                 continue;
             }
             running_.store(false, std::memory_order_release);
+            {
+                std::lock_guard<std::mutex> lk(command_mutex_);
+                if (has_pending_command_) command_sent_ = false;
+            }
 
             auto now = std::chrono::steady_clock::now();
             long long uptime_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -355,6 +395,42 @@ void HostSupervisor::MonitorLoop()
     }
 
     TR_LOG_DRV("[host] monitor thread exiting");
+}
+
+bool HostSupervisor::TrySendCommand(const std::string &command)
+{
+    HANDLE h = CreateFileA(
+        TR_HOST_CONTROL_PIPE_NAME,
+        GENERIC_WRITE, 0, nullptr,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+
+    if (h == INVALID_HANDLE_VALUE) return false;
+
+    DWORD written = 0;
+    BOOL ok = WriteFile(h, command.data(), (DWORD)command.size(), &written, nullptr);
+    CloseHandle(h);
+
+    if (ok && written == (DWORD)command.size()) {
+        std::lock_guard<std::mutex> lk(command_mutex_);
+        if (pending_command_ == command) command_sent_ = true;
+        TR_LOG_DRV("[host] sent translator host config (%lu bytes)", (unsigned long)written);
+        return true;
+    }
+    return false;
+}
+
+void HostSupervisor::RetryPendingCommand()
+{
+    std::string command;
+    bool should_send = false;
+    {
+        std::lock_guard<std::mutex> lk(command_mutex_);
+        if (has_pending_command_ && !command_sent_) {
+            command = pending_command_;
+            should_send = true;
+        }
+    }
+    if (should_send) TrySendCommand(command);
 }
 
 } // namespace translator

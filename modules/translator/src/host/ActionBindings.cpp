@@ -26,14 +26,45 @@ std::string ActionBindings::ResolveManifestPath()
 
 bool ActionBindings::Register(const std::string &manifest_path)
 {
+    last_error_.clear();
+    app_key_.clear();
+
+    if (auto *apps = vr::VRApplications()) {
+        char key[vr::k_unMaxApplicationKeyLength] = {};
+        vr::EVRApplicationError appErr = apps->GetApplicationKeyByProcessId(
+            GetCurrentProcessId(), key, sizeof(key));
+        if (appErr == vr::VRApplicationError_None) {
+            app_key_ = key;
+            TH_LOG("[actions] process app key: %s", key);
+            if (app_key_.rfind("system.generated.", 0) == 0 ||
+                app_key_.rfind("steam.", 0) == 0) {
+                TH_LOG("[actions] app key is not stable for translator bindings; PTT may use a generated binding set");
+            }
+        } else {
+            TH_LOG("[actions] GetApplicationKeyByProcessId failed: %d", (int)appErr);
+        }
+    } else {
+        TH_LOG("[actions] VRApplications() not available");
+    }
+
+    DWORD attr = GetFileAttributesA(manifest_path.c_str());
+    if (attr == INVALID_FILE_ATTRIBUTES || (attr & FILE_ATTRIBUTE_DIRECTORY)) {
+        last_error_ = "actions.json missing at " + manifest_path;
+        TH_LOG("[actions] manifest missing: path='%s' err=%lu",
+            manifest_path.c_str(), (unsigned long)GetLastError());
+        return false;
+    }
+
     auto *input = vr::VRInput();
     if (!input) {
-        TH_LOG("[actions] VRInput() not available");
+        last_error_ = "VRInput() not available";
+        TH_LOG("[actions] %s", last_error_.c_str());
         return false;
     }
 
     vr::EVRInputError err = input->SetActionManifestPath(manifest_path.c_str());
     if (err != vr::VRInputError_None) {
+        last_error_ = "SetActionManifestPath failed: " + std::to_string((int)err);
         TH_LOG("[actions] SetActionManifestPath failed: %d (path='%s')",
             (int)err, manifest_path.c_str());
         return false;
@@ -41,17 +72,20 @@ bool ActionBindings::Register(const std::string &manifest_path)
 
     err = input->GetActionSetHandle("/actions/translator", &action_set_);
     if (err != vr::VRInputError_None) {
+        last_error_ = "GetActionSetHandle failed: " + std::to_string((int)err);
         TH_LOG("[actions] GetActionSetHandle failed: %d", (int)err);
         return false;
     }
 
     err = input->GetActionHandle("/actions/translator/in/push_to_talk", &ptt_action_);
     if (err != vr::VRInputError_None) {
+        last_error_ = "GetActionHandle failed: " + std::to_string((int)err);
         TH_LOG("[actions] GetActionHandle (push_to_talk) failed: %d", (int)err);
         return false;
     }
 
     registered_ = true;
+    last_error_.clear();
     TH_LOG("[actions] manifest registered, action set and handle obtained");
     return true;
 }

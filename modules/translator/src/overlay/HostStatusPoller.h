@@ -15,10 +15,15 @@ struct HostStatusSnapshot
     std::string last_exit_description;
     int         host_pid         = 0;
     int         state            = 0;   // HostStatus::State int value
+    std::string phase;
     std::string mic_name;
     std::string last_transcript;
     std::string last_translation;
     std::string last_error;
+    bool        ptt_available = false;
+    bool        ptt_registered = false;
+    std::string ptt_app_key;
+    std::string ptt_error;
     bool        speech_pack_installed = false;
     bool        vad_runtime_available = false;
     bool        translation_runtime_available = false;

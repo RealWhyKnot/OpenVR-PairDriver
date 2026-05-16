@@ -6,7 +6,9 @@
 
 #include "Logging.h"
 #include "DebugLogging.h"
+#include "LogPaths.h"
 
+#include <cerrno>
 #include <cstdarg>
 #include <cstdio>
 #include <mutex>
@@ -17,21 +19,23 @@ namespace {
 std::mutex  g_logMutex;
 FILE       *g_logFile = nullptr;
 
-// Resolve %LocalAppDataLow%/WKOpenVR/Logs (forward slashes used in this
-// comment to avoid a trailing-backslash line-continuation eating the
-// function signature on the next line).
-std::wstring ResolveLogDir()
+FILE *OpenTimestampedLog()
 {
-    PWSTR raw = nullptr;
-    if (S_OK != SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &raw)) {
-        if (raw) CoTaskMemFree(raw);
-        return {};
+    std::wstring path = openvr_pair::common::TimestampedLogPath(L"translator_host_log");
+    int openErrno = 0;
+    if (!path.empty()) {
+        FILE *f = _wfopen(path.c_str(), L"a");
+        if (f) return f;
+        openErrno = errno;
     }
-    std::wstring root(raw);
-    CoTaskMemFree(raw);
-    root += L"\\WKOpenVR\\Logs";
-    CreateDirectoryW(root.c_str(), nullptr);
-    return root;
+
+    FILE *f = fopen("translator_host.log", "a");
+    if (!f) return nullptr;
+    fprintf(f,
+        "[log-open] translator host log using fallback path; primary_errno=%d primary_path_empty=%d\n",
+        openErrno, path.empty() ? 1 : 0);
+    fflush(f);
+    return f;
 }
 
 } // namespace
@@ -42,18 +46,7 @@ void TranslatorHostOpenLogFile()
     if (!openvr_pair::common::IsDebugLoggingEnabled()) return;
     if (g_logFile) return;
 
-    std::wstring dir = ResolveLogDir();
-    if (dir.empty()) return;
-
-    SYSTEMTIME st{};
-    GetSystemTime(&st);
-    wchar_t namebuf[128];
-    swprintf_s(namebuf, L"translator_host_log.%04d%02d%02d_%02d%02d%02d.txt",
-        st.wYear, st.wMonth, st.wDay,
-        st.wHour, st.wMinute, st.wSecond);
-
-    std::wstring path = dir + L"\\" + namebuf;
-    g_logFile = _wfopen(path.c_str(), L"w");
+    g_logFile = OpenTimestampedLog();
 }
 
 void TranslatorHostFlushLog()
@@ -74,17 +67,7 @@ void TranslatorHostLog(const char *fmt, ...)
 
     std::lock_guard<std::mutex> lk(g_logMutex);
     if (!g_logFile) {
-        std::wstring dir = ResolveLogDir();
-        if (!dir.empty()) {
-            SYSTEMTIME st{};
-            GetSystemTime(&st);
-            wchar_t namebuf[128];
-            swprintf_s(namebuf, L"translator_host_log.%04d%02d%02d_%02d%02d%02d.txt",
-                st.wYear, st.wMonth, st.wDay,
-                st.wHour, st.wMinute, st.wSecond);
-            std::wstring path = dir + L"\\" + namebuf;
-            g_logFile = _wfopen(path.c_str(), L"w");
-        }
+        g_logFile = OpenTimestampedLog();
     }
     if (g_logFile) {
         fputs(buf, g_logFile);

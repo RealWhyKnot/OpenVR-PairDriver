@@ -19,10 +19,6 @@
 #include <mutex>
 #include <string>
 
-// Named pipe for translator host control messages (driver -> host).
-// Wire format: NUL-terminated ASCII command strings, one per write.
-#define TRANSLATOR_HOST_CONTROL_PIPE_NAME "\\\\.\\pipe\\WKOpenVR-Translator.host"
-
 namespace translator {
 namespace {
 
@@ -56,22 +52,6 @@ std::string ResolveHostExePath()
     }
     path += "\\resources\\translator\\host\\WKOpenVR.TranslatorHost.exe";
     return path;
-}
-
-// Push a config command over the host control pipe. Returns true on success.
-bool SendHostCommand(const std::string &cmd)
-{
-    HANDLE h = CreateFileA(
-        TRANSLATOR_HOST_CONTROL_PIPE_NAME,
-        GENERIC_WRITE, 0, nullptr,
-        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-
-    if (h == INVALID_HANDLE_VALUE) return false;
-
-    DWORD written = 0;
-    BOOL ok = WriteFile(h, cmd.data(), (DWORD)cmd.size(), &written, nullptr);
-    CloseHandle(h);
-    return ok && written == (DWORD)cmd.size();
 }
 
 class TranslatorDriverModule final : public DriverModule
@@ -142,27 +122,25 @@ public:
     {
         switch (req.type) {
         case protocol::RequestSetTranslatorConfig: {
+            std::string cmd;
             std::lock_guard<std::mutex> lk(config_mutex_);
             config_ = req.setTranslatorConfig;
             // Forward relevant settings to the host via the control pipe.
             // The host re-reads its config via a simple tagged line protocol.
-            std::string cmd = std::string("config:") +
-                "src=" + config_.source_lang +
-                ",tgt=" + config_.target_lang +
-                ",mode=" + std::to_string((int)config_.mode) +
-                ",addr=" + config_.chatbox_address +
-                ",port=" + std::to_string((int)config_.chatbox_port) +
-                ",log=" + std::to_string((int)config_.transcript_logging) +
-                "\n";
-            if (!SendHostCommand(cmd)) {
-                TR_LOG_DRV("[module] failed to forward config to host (pipe not up yet)");
-            }
+            cmd = BuildHostConfigCommand(config_);
+            if (supervisor_) supervisor_->SetHostConfigCommand(cmd);
             resp.type = protocol::ResponseSuccess;
             return true;
         }
         case protocol::RequestTranslatorRestartHost: {
             TR_LOG_DRV("[module] host restart requested by overlay");
             if (supervisor_) supervisor_->Restart();
+            std::string cmd;
+            {
+                std::lock_guard<std::mutex> lk(config_mutex_);
+                cmd = BuildHostConfigCommand(config_);
+            }
+            if (supervisor_) supervisor_->SetHostConfigCommand(cmd);
             resp.type = protocol::ResponseSuccess;
             return true;
         }
@@ -186,6 +164,18 @@ public:
     }
 
 private:
+    static std::string BuildHostConfigCommand(const protocol::TranslatorConfig &config)
+    {
+        return std::string("config:") +
+            "src=" + config.source_lang +
+            ",tgt=" + config.target_lang +
+            ",mode=" + std::to_string((int)config.mode) +
+            ",addr=" + config.chatbox_address +
+            ",port=" + std::to_string((int)config.chatbox_port) +
+            ",log=" + std::to_string((int)config.transcript_logging) +
+            "\n";
+    }
+
     std::unique_ptr<HostSupervisor> supervisor_;
 
     protocol::TranslatorConfig config_{};

@@ -8,6 +8,7 @@
 #include "DebugLogging.h"
 #include "LogPaths.h"
 
+#include <cerrno>
 #include <atomic>
 #include <cstdarg>
 #include <cstdio>
@@ -28,9 +29,21 @@ void TrDrvOpenLogFile()
     if (g_logFile) return;
 
     std::wstring path = openvr_pair::common::TimestampedLogPath(L"translator_drv_log");
-    if (path.empty()) return;
+    int openErrno = 0;
+    if (!path.empty()) {
+        g_logFile = _wfopen(path.c_str(), L"w");
+        if (g_logFile) return;
+        openErrno = errno;
+    }
 
-    g_logFile = _wfopen(path.c_str(), L"w");
+    g_logFile = fopen("translator_drv.log", "a");
+    if (!g_logFile) g_logFile = stderr;
+    if (g_logFile) {
+        fprintf(g_logFile,
+            "[log-open] translator driver log using fallback path; primary_errno=%d primary_path_empty=%d\n",
+            openErrno, path.empty() ? 1 : 0);
+        fflush(g_logFile);
+    }
 }
 
 void TrLogFlushDrv()
@@ -52,9 +65,9 @@ void TrDrvLog(const char *fmt, ...)
     std::lock_guard<std::mutex> lk(g_logMutex);
     if (!g_logFile) {
         std::wstring path = openvr_pair::common::TimestampedLogPath(L"translator_drv_log");
-        if (!path.empty()) {
-            g_logFile = _wfopen(path.c_str(), L"w");
-        }
+        if (!path.empty()) g_logFile = _wfopen(path.c_str(), L"w");
+        if (!g_logFile) g_logFile = fopen("translator_drv.log", "a");
+        if (!g_logFile) g_logFile = stderr;
     }
     if (g_logFile) {
         fputs(buf, g_logFile);

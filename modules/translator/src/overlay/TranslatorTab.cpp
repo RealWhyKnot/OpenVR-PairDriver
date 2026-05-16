@@ -316,6 +316,15 @@ void DrawTranslatorTab(TranslatorPlugin &plugin)
             snap.mic_name.empty() ? "(unknown)" : snap.mic_name.c_str(),
             StateLabel(snap.state),
             snap.packets_sent);
+        if (!snap.phase.empty()) {
+            ImGui::TextDisabled("Host phase: %s", snap.phase.c_str());
+        }
+        if (plugin.GetMode() == 0 && !snap.ptt_registered) {
+            const char *detail = snap.ptt_error.empty()
+                ? "SteamVR push-to-talk binding is not registered."
+                : snap.ptt_error.c_str();
+            openvr_pair::overlay::ui::DrawWaitingBanner(detail);
+        }
         if (!snap.last_transcript.empty())
             ImGui::Text("Transcript: %s", snap.last_transcript.c_str());
         if (!snap.last_translation.empty())

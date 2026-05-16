@@ -16,6 +16,8 @@
 #include "Translator.h"
 #include "WasapiCapture.h"
 #include "WhisperEngine.h"
+#include "Win32Paths.h"
+#include "Win32Text.h"
 
 #include <openvr.h>
 
@@ -37,25 +39,14 @@
 
 static void WriteEarlyCrashLog(const char *msg)
 {
-    // Resolve %LocalAppDataLow%\WKOpenVR\Logs\ via SHGetKnownFolderPath.
-    PWSTR raw = nullptr;
-    if (S_OK != SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &raw)) {
-        if (raw) CoTaskMemFree(raw);
-        return;
-    }
-    wchar_t path[MAX_PATH];
-    _snwprintf_s(path, MAX_PATH,
-        L"%s\\WKOpenVR\\Logs", raw);
-    CoTaskMemFree(raw);
-
-    CreateDirectoryW(path, nullptr);  // noop if already exists
+    std::wstring path = openvr_pair::common::WkOpenVrLogsPath(true);
+    if (path.empty()) return;
 
     DWORD pid = GetCurrentProcessId();
-    wchar_t fname[MAX_PATH];
-    _snwprintf_s(fname, MAX_PATH,
-        L"%s\\translator_host_crash_%lu.txt", path, (unsigned long)pid);
+    std::wstring fname = path + L"\\translator_host_crash_" +
+        std::to_wstring((unsigned long)pid) + L".txt";
 
-    HANDLE h = CreateFileW(fname,
+    HANDLE h = CreateFileW(fname.c_str(),
         GENERIC_WRITE, FILE_SHARE_READ, nullptr,
         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) return;
@@ -138,6 +129,43 @@ static void ProbeDll(const wchar_t *dll_name)
     }
 }
 
+static bool FileExistsA(const std::string &path);
+
+static std::string HostFilePath(const char *filename)
+{
+    char buf[MAX_PATH] = {};
+    GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    std::string path(buf);
+    size_t sep = path.find_last_of("/\\");
+    if (sep != std::string::npos) path.resize(sep + 1);
+    else path.clear();
+    path += filename;
+    return path;
+}
+
+static void RegisterTranslatorManifest()
+{
+    auto *apps = vr::VRApplications();
+    if (!apps) {
+        TH_LOG("[actions] VRApplications unavailable; translator app manifest not registered");
+        return;
+    }
+
+    const char *appKey = "wk.wkopenvr.translator";
+    std::string manifest = HostFilePath("translator.vrmanifest");
+    if (!FileExistsA(manifest)) {
+        TH_LOG("[actions] translator app manifest missing: %s", manifest.c_str());
+        return;
+    }
+
+    if (!apps->IsApplicationInstalled(appKey)) {
+        vr::EVRApplicationError err = apps->AddApplicationManifest(manifest.c_str());
+        TH_LOG("[actions] AddApplicationManifest(%s) -> %d", manifest.c_str(), (int)err);
+    } else {
+        TH_LOG("[actions] translator app manifest already installed");
+    }
+}
+
 static bool FileExistsA(const std::string &path)
 {
     if (path.empty()) return false;
@@ -173,21 +201,9 @@ static void EnsureDirectoryTreeA(const std::string &path)
 
 static std::string TranslatorDataDir()
 {
-    PWSTR raw = nullptr;
-    if (S_OK != SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0, nullptr, &raw)) {
-        if (raw) CoTaskMemFree(raw);
-        return {};
-    }
-    std::wstring root(raw);
-    CoTaskMemFree(raw);
-    root += L"\\WKOpenVR\\translator";
-
-    int n = WideCharToMultiByte(CP_UTF8, 0, root.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (n <= 0) return {};
-    std::string utf8(n, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, root.c_str(), -1, utf8.data(), n, nullptr, nullptr);
-    utf8.resize(utf8.size() - 1);
-    return utf8;
+    std::wstring root = openvr_pair::common::WkOpenVrSubdirectoryPath(
+        L"translator", true);
+    return openvr_pair::common::WideToUtf8(root);
 }
 
 static std::string TranslatorRuntimeDir()
@@ -378,6 +394,40 @@ static void UpdatePackStatus(HostStatus &status, const HostConfig &cfg)
     status.SetLastError(err.str());
 }
 
+static int RunE2eFakePublish(const std::string &text, HostStatus &status)
+{
+    status.SetPhase("e2e-fake-publishing");
+    status.SetLastTranscript(text);
+    status.SetLastTranslation(text);
+    status.SetState(HostStatus::State::Sending);
+    status.Flush();
+
+    RouterPublisher publisher;
+    bool sent = false;
+    for (int i = 0; i < 8 && !sent; ++i) {
+        sent = publisher.PublishChatbox(text, true, false);
+        if (!sent) Sleep(100);
+    }
+
+    if (sent) {
+        status.IncrementPacketsSent();
+        status.SetState(HostStatus::State::Idle);
+        status.SetPhase("e2e-fake-complete");
+        status.Flush();
+        TH_LOG("[e2e] fake translator output published: %s", text.c_str());
+        TranslatorHostFlushLog();
+        return 0;
+    }
+
+    status.SetState(HostStatus::State::Error);
+    status.SetPhase("e2e-fake-failed");
+    status.SetLastError("OSC router publish pipe unavailable.");
+    status.Flush();
+    TH_LOG("[e2e] fake translator output failed: router publish pipe unavailable");
+    TranslatorHostFlushLog();
+    return 2;
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -425,6 +475,9 @@ try
     TH_LOG("[translator-host] startup-phase=dll-probe-done");
 
     bool self_test = false;
+    bool e2e_fake_publish = false;
+    std::string e2e_fake_text = "WKOpenVR fake translation";
+    std::wstring status_path_override;
 
     // Parse optional command-line overrides: --model <path> --silero <path>
     {
@@ -434,6 +487,15 @@ try
         for (int i = 1; i < argc; ++i) {
             if (strcmp(argv[i], "--self-test") == 0 || strcmp(argv[i], "--healthcheck") == 0) {
                 self_test = true;
+            } else if (i + 1 < argc && (
+                    strcmp(argv[i], "--e2e-fake-chatbox") == 0 ||
+                    strcmp(argv[i], "--e2e-fake-translator-output") == 0)) {
+                e2e_fake_publish = true;
+                e2e_fake_text = argv[i + 1];
+                ++i;
+            } else if (i + 1 < argc && strcmp(argv[i], "--status-file") == 0) {
+                status_path_override = openvr_pair::common::Utf8ToWide(argv[i + 1]);
+                ++i;
             } else if (i + 1 < argc && strcmp(argv[i], "--model") == 0) {
                 g_config.whisper_model_path = argv[i + 1];
                 ++i;
@@ -444,7 +506,8 @@ try
         }
     }
 
-    HostStatus status;
+    HostStatus status(status_path_override);
+    status.SetPhase("config-loaded");
     {
         std::lock_guard<std::mutex> lk(g_config_mutex);
         UpdatePackStatus(status, g_config);
@@ -452,7 +515,13 @@ try
     status.SetState(HostStatus::State::Idle);
     status.Flush();
 
+    if (e2e_fake_publish) {
+        return RunE2eFakePublish(e2e_fake_text, status);
+    }
+
     if (self_test) {
+        status.SetPhase("self-test-complete");
+        status.Flush();
         TH_LOG("[startup] self-test complete");
         TranslatorHostFlushLog();
         return 0;
@@ -467,12 +536,18 @@ try
         g_singletonMutex = CreateMutexW(nullptr, TRUE, mname);
         DWORD merr = GetLastError();
         if (!g_singletonMutex) {
+            status.SetPhase("singleton-failed");
+            status.SetLastError("Translator singleton mutex could not be created.");
+            status.Flush();
             TH_LOG("[singleton] CreateMutexW failed err=%lu; exiting", (unsigned long)merr);
             TranslatorHostFlushLog();
             return 1;
         }
         if (merr == ERROR_ALREADY_EXISTS) {
             // Another instance already holds the mutex; exit cleanly.
+            status.SetPhase("singleton-owned");
+            status.SetLastError("Another translator host is already running.");
+            status.Flush();
             TH_LOG("[singleton] another host already owns mutex; exiting cleanly (code 3)");
             TranslatorHostFlushLog();
             CloseHandle(g_singletonMutex);
@@ -481,8 +556,12 @@ try
         TH_LOG("[singleton] acquired mutex '%ls'; proceeding as sole instance", mname);
     }
     TH_LOG("[startup] phase=singleton-acquired");
+    status.SetPhase("singleton-acquired");
+    status.Flush();
 
     TH_LOG("[startup] phase=opening-control-pipe");
+    status.SetPhase("opening-control-pipe");
+    status.Flush();
     // Start control pipe thread.
     std::thread ctrl_thread(ControlPipeThread);
 
@@ -494,8 +573,12 @@ try
         vr_ok = (vr_err == vr::VRInitError_None);
         if (!vr_ok) TH_LOG("[main] VR_Init failed (%d); PTT will be unavailable", (int)vr_err);
     }
+    status.SetPttStatus(vr_ok, false, "", vr_ok ? "" : "VR_Init failed; push-to-talk unavailable.");
+    if (vr_ok) RegisterTranslatorManifest();
 
     TH_LOG("[startup] phase=initializing-vad");
+    status.SetPhase("initializing-vad");
+    status.Flush();
     // Load Silero VAD.
     std::unique_ptr<SileroVad> vad;
     {
@@ -515,6 +598,8 @@ try
     }
 
     TH_LOG("[startup] phase=initializing-translation");
+    status.SetPhase("initializing-translation");
+    status.Flush();
     // Load Whisper.
     WhisperEngine whisper;
     {
@@ -530,7 +615,9 @@ try
 
     // Translation model loaded on demand when target_lang changes.
     Translator translator;
+    std::string loaded_src_lang;
     std::string loaded_tgt_lang;
+    std::string loaded_model_dir;
 
     // Action bindings for PTT.
     ActionBindings actions;
@@ -539,6 +626,12 @@ try
         if (!actions.Register(manifest)) {
             TH_LOG("[main] PTT action binding failed; push-to-talk unavailable");
         }
+        status.SetPttStatus(
+            true,
+            actions.IsRegistered(),
+            actions.ApplicationKey(),
+            actions.LastError());
+        status.Flush();
     }
 
     // Router publisher.
@@ -557,6 +650,8 @@ try
     std::vector<float> speech_buf;
 
     TH_LOG("[startup] phase=initializing-audio-capture");
+    status.SetPhase("initializing-audio-capture");
+    status.Flush();
     // WASAPI capture: 30 ms chunks fed through a thread-safe queue.
     std::mutex              audio_mutex;
     std::vector<std::vector<float>> audio_queue;
@@ -573,6 +668,8 @@ try
     status.SetState(HostStatus::State::Idle);
 
     TH_LOG("[startup] phase=running");
+    status.SetPhase("running");
+    status.Flush();
 
     // ---------------------------------------------------------------------------
     // Main loop
@@ -599,18 +696,48 @@ try
         // Update whisper language hint.
         whisper.SetLanguage(cfg.source_lang == "auto" ? "" : cfg.source_lang);
 
-        // Load translation model if target changed.
-        if (cfg.target_lang != loaded_tgt_lang) {
-            if (!cfg.target_lang.empty()) {
-                std::string model_dir = ResolveTranslatorModelDir(
-                    cfg.source_lang, cfg.target_lang);
-                if (!model_dir.empty() && Translator::RuntimeAvailable()) {
-                    translator.Load(model_dir);
-                }
-            } else {
+        // Load/unload translation model as packs appear, disappear, or the
+        // selected pair changes. Pack install/uninstall can happen while this
+        // host is running, so target_lang alone is not enough to decide.
+        if (cfg.target_lang.empty()) {
+            if (translator.IsLoaded()) {
                 translator.Unload();
+                TH_LOG("[translator] unloaded model; target language disabled");
             }
-            loaded_tgt_lang = cfg.target_lang;
+            loaded_src_lang.clear();
+            loaded_tgt_lang.clear();
+            loaded_model_dir.clear();
+        } else {
+            std::string model_dir = ResolveTranslatorModelDir(
+                cfg.source_lang, cfg.target_lang);
+            const bool runtime_available = Translator::RuntimeAvailable();
+            const bool model_available =
+                !model_dir.empty() && DirectoryExistsA(model_dir);
+
+            if (!runtime_available || !model_available) {
+                if (translator.IsLoaded()) {
+                    translator.Unload();
+                    TH_LOG("[translator] unloaded model for %s->%s; runtime_available=%d model_available=%d",
+                        cfg.source_lang.c_str(), cfg.target_lang.c_str(),
+                        runtime_available ? 1 : 0, model_available ? 1 : 0);
+                }
+                loaded_src_lang.clear();
+                loaded_tgt_lang.clear();
+                loaded_model_dir.clear();
+            } else if (!translator.IsLoaded() ||
+                       cfg.source_lang != loaded_src_lang ||
+                       cfg.target_lang != loaded_tgt_lang ||
+                       model_dir != loaded_model_dir) {
+                if (translator.Load(model_dir)) {
+                    loaded_src_lang = cfg.source_lang;
+                    loaded_tgt_lang = cfg.target_lang;
+                    loaded_model_dir = model_dir;
+                } else {
+                    loaded_src_lang.clear();
+                    loaded_tgt_lang.clear();
+                    loaded_model_dir.clear();
+                }
+            }
         }
 
         const bool always_on = (cfg.mode == 1);

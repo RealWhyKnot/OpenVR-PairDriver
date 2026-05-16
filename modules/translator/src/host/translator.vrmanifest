@@ -1,0 +1,17 @@
+{
+  "source": "builtin",
+  "applications": [
+    {
+      "app_key": "wk.wkopenvr.translator",
+      "launch_type": "binary",
+      "binary_path_windows": "WKOpenVR.TranslatorHost.exe",
+      "is_dashboard_overlay": false,
+      "strings": {
+        "en_us": {
+          "name": "WKOpenVR Translator",
+          "description": "Speech transcription and translation sidecar for WKOpenVR"
+        }
+      }
+    }
+  ]
+}
