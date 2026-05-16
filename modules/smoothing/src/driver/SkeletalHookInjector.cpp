@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstring>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
 
 #define WIN32_LEAN_AND_MEAN
@@ -46,11 +47,15 @@ static HandState g_handState[2];
 // skeletal device whose path doesn't match.
 static std::unordered_map<vr::VRInputComponentHandle_t, int> g_handleToHandedness;
 
-// Single mutex protects g_handState and g_handleToHandedness. The hot path
-// is one acquire+release per UpdateSkeletonComponent call (~340 Hz/hand);
-// the writer (CreateSkeletonComponent) fires twice per session. Single mutex
-// keeps the design obvious; if profiling later shows contention we can split.
-static std::mutex g_skeletalMutex;
+// Split locks: handedness is read on every UpdateSkeletonComponent (340 Hz/hand
+// = 680 Hz total) and written only on CreateSkeletonComponent (twice per
+// session) -- shared_mutex lets the two hot detours run their lookups in
+// parallel. HandState is mutated by UpdateSkeletonComponent and reset by the
+// rare diagnostic/lifecycle paths, so a plain mutex is enough.
+//
+// Lock ordering when both are needed: handedness before state.
+static std::shared_mutex g_handednessMutex;
+static std::mutex        g_handStateMutex;
 
 // =============================================================================
 // Diagnostic counters. UpdateSkeletonComponent fires ~340 Hz/hand, so a per-
@@ -168,7 +173,7 @@ static void MaybeLogDeepState(const char *callerTag)
     uint64_t r_smooth = g_stats[1].smoothedCalls.load();
     bool l_init, r_init;
     {
-        std::lock_guard<std::mutex> lk(g_skeletalMutex);
+        std::lock_guard<std::mutex> lk(g_handStateMutex);
         l_init = g_handState[0].initialized;
         r_init = g_handState[1].initialized;
     }
@@ -212,7 +217,7 @@ static void MaybeLogDeepState(const char *callerTag)
 // handle log).
 static void DumpHandleMap(const char *callerTag)
 {
-    std::lock_guard<std::mutex> lk(g_skeletalMutex);
+    std::shared_lock<std::shared_mutex> lk(g_handednessMutex);
     if (g_handleToHandedness.empty()) {
         LOG("[skeletal]   handle_map(%s): EMPTY -- CreateSkeleton never matched /left or /right",
             callerTag);
@@ -364,7 +369,9 @@ static vr::EVRInputError DetourPublicCreateSkeletonComponent(
         if (std::strstr(pchSkeletonPath, "/left"))       handedness = 0;
         else if (std::strstr(pchSkeletonPath, "/right")) handedness = 1;
         if (handedness >= 0) {
-            std::lock_guard<std::mutex> lk(g_skeletalMutex);
+            // Lock order: handedness before state.
+            std::unique_lock<std::shared_mutex> hlk(g_handednessMutex);
+            std::lock_guard<std::mutex>         slk(g_handStateMutex);
             g_handleToHandedness[*pHandle] = handedness;
             // A re-create for the same hand needs to re-seed from incoming.
             // Mark uninitialised so the first UpdateSkeleton after this snaps
@@ -421,7 +428,9 @@ static vr::EVRInputError DetourPublicUpdateSkeletonComponent(
     // actually receiving the lighthouse skeleton stream.
     int handedness = -1;
     {
-        std::lock_guard<std::mutex> lk(g_skeletalMutex);
+        // Hot-path lookup. shared_lock lets the two per-hand detours run
+        // in parallel; CreateSkeleton (the only writer) takes a unique_lock.
+        std::shared_lock<std::shared_mutex> lk(g_handednessMutex);
         auto it = g_handleToHandedness.find(ulComponent);
         if (it != g_handleToHandedness.end()) handedness = it->second;
     }
@@ -514,7 +523,7 @@ static vr::EVRInputError DetourPublicUpdateSkeletonComponent(
     vr::VRBoneTransform_t smoothed[31];
 
     {
-        std::lock_guard<std::mutex> lk(g_skeletalMutex);
+        std::lock_guard<std::mutex> lk(g_handStateMutex);
         HandState &state = g_handState[handedness];
         if (!state.initialized) {
             // First frame for this hand: seed previous-state from the incoming
@@ -582,7 +591,9 @@ void Init(ServerTrackedDeviceProvider *driver)
         g_verboseCallsRemaining[h].store(kVerboseFirstCalls);
     }
     {
-        std::lock_guard<std::mutex> lk(g_skeletalMutex);
+        // Lock order: handedness before state.
+        std::unique_lock<std::shared_mutex> hlk(g_handednessMutex);
+        std::lock_guard<std::mutex>         slk(g_handStateMutex);
         g_handleToHandedness.clear();
         for (int h = 0; h < 2; ++h) {
             g_handState[h].initialized = false;
@@ -623,7 +634,9 @@ void Shutdown()
     // to this file in case a future detour is added without the scope
     // guard.
     {
-        std::lock_guard<std::mutex> lk(g_skeletalMutex);
+        // Lock order: handedness before state.
+        std::unique_lock<std::shared_mutex> hlk(g_handednessMutex);
+        std::lock_guard<std::mutex>         slk(g_handStateMutex);
         g_handleToHandedness.clear();
         for (int h = 0; h < 2; ++h) g_handState[h].initialized = false;
     }
