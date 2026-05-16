@@ -6,6 +6,7 @@
 #include "RobustScale.h"        // Qn, TukeyWeight, kQnConsistency, kTukeyTune (opt-in IRLS path)
 #include "BlendFilter.h"        // Kalman-filter blend (opt-in publish path)
 #include "TranslationSolveDirect.h"
+#include "RotationMatrix3.h"    // AngleFromRotationMatrix3 / AxisFromRotationMatrix3 (clamped).
 
 #include <chrono>  // steady_clock for throttled diagnostic logs in
                    // CalibrateRotation / CalibrateTranslation. The throttle
@@ -53,17 +54,6 @@ namespace {
 			return false;
 
 		return str.compare(str.length() - suffix.length(), suffix.length(), suffix) == 0;
-	}
-
-	Eigen::Vector3d AxisFromRotationMatrix3(Eigen::Matrix3d rot)
-	{
-		return Eigen::Vector3d(rot(2, 1) - rot(1, 2), rot(0, 2) - rot(2, 0), rot(1, 0) - rot(0, 1));
-	}
-
-	double AngleFromRotationMatrix3(Eigen::Matrix3d rot)
-	{
-		const double c = (rot(0, 0) + rot(1, 1) + rot(2, 2) - 1.0) * 0.5;
-		return std::acos(std::clamp(c, -1.0, 1.0));
 	}
 
 	vr::HmdQuaternion_t VRRotationQuat(Eigen::Vector3d eulerdeg)

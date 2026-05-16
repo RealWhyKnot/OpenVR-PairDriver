@@ -21,6 +21,7 @@
 #include "TrackerLiveness.h" // spacecal::liveness::* -- detect non-HMD calibration anchor
                              // going silent under SteamVR's "Running_OK + poseIsValid stays true
                              // while pose hash is frozen" disconnect path.
+#include "RotationMatrix3.h" // AngleFromRotationMatrix3 / AxisFromRotationMatrix3 (clamped).
 
 #include <string>
 #include <vector>
@@ -384,16 +385,6 @@ namespace {
 			return false;
 
 		return str.compare(str.length() - suffix.length(), suffix.length(), suffix) == 0;
-	}
-
-	Eigen::Vector3d AxisFromRotationMatrix3(Eigen::Matrix3d rot)
-	{
-		return Eigen::Vector3d(rot(2, 1) - rot(1, 2), rot(0, 2) - rot(2, 0), rot(1, 0) - rot(0, 1));
-	}
-
-	double AngleFromRotationMatrix3(Eigen::Matrix3d rot)
-	{
-		return acos((rot(0, 0) + rot(1, 1) + rot(2, 2) - 1.0) / 2.0);
 	}
 
 	vr::HmdQuaternion_t VRRotationQuat(const Eigen::Quaterniond& rotQuat)
