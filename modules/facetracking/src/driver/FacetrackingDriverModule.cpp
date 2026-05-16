@@ -337,7 +337,65 @@ private:
         uint64_t last_idx = 0;
         const DWORD self_pid = GetCurrentProcessId();
 
+        // Wedge-detector: rising edge bookkeeping so the warning logs only
+        // once per wedge episode and the restart fires only once per
+        // detection. Cleared as soon as the heartbeat or state recovers.
+        bool wedge_restart_pending = false;
+        auto last_wedge_restart_time = std::chrono::steady_clock::time_point{};
+
         while (!worker_stop_.load(std::memory_order_acquire)) {
+            // Heartbeat-based wedge detector: an active host that is alive
+            // but no longer publishing frames is just as bad as a dead one.
+            // The host's state byte plus heartbeat-age give the driver a way
+            // to distinguish "idle, not pushing -- fine" from "wedged".
+            //
+            // Pre-heartbeat (legacy) hosts write zero for both fields; in
+            // that case HostState() is HostStateLegacy and HeartbeatAgeMs()
+            // is UINT64_MAX, so the check below is a no-op.
+            const uint32_t host_state = reader_.HostState();
+            const uint64_t hb_age_ms  = reader_.HeartbeatAgeMs();
+            uint64_t       wedge_threshold_ms = UINT64_MAX;
+            if (host_state == protocol::HostStatePublishing)
+                wedge_threshold_ms = 2000;
+            else if (host_state == protocol::HostStateIdle)
+                wedge_threshold_ms = 5000;
+            // HostStateDraining and HostStateLegacy intentionally never wedge-kill.
+
+            const bool is_wedged = (host_state != protocol::HostStateLegacy) &&
+                                   (hb_age_ms != UINT64_MAX) &&
+                                   (hb_age_ms > wedge_threshold_ms);
+            if (is_wedged) {
+                // Rate-limit restarts to once per 10 s; otherwise a host
+                // that takes a few seconds to come back up could chain
+                // restarts and never settle.
+                const auto now = std::chrono::steady_clock::now();
+                const bool restart_allowed = !wedge_restart_pending ||
+                    std::chrono::duration_cast<std::chrono::seconds>(
+                        now - last_wedge_restart_time).count() >= 10;
+                if (restart_allowed) {
+                    FT_LOG_DRV("[worker] WEDGE: host_state=%u heartbeat_age=%llums "
+                               "threshold=%llums -- restarting host",
+                               host_state,
+                               static_cast<unsigned long long>(hb_age_ms),
+                               static_cast<unsigned long long>(wedge_threshold_ms));
+                    if (supervisor_) supervisor_->Restart();
+                    // Zero the heartbeat fields so the stale value left by
+                    // the dead host does not re-trigger the detector
+                    // before the new host writes its first tick.
+                    reader_.ResetHostLiveness();
+                    wedge_restart_pending     = true;
+                    last_wedge_restart_time   = now;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                continue;
+            } else if (wedge_restart_pending && hb_age_ms != UINT64_MAX) {
+                // New host wrote a fresh heartbeat -- clear the rate-limit
+                // so a future wedge gets handled promptly.
+                FT_LOG_DRV("[worker] wedge cleared: heartbeat resumed (age=%llums state=%u)",
+                           static_cast<unsigned long long>(hb_age_ms), host_state);
+                wedge_restart_pending = false;
+            }
+
             uint64_t idx = reader_.LastPublishIndex();
             if (idx == last_idx) {
                 // No new frame; sleep briefly so we don't busy-spin.

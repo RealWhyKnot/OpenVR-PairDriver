@@ -1577,6 +1577,17 @@ namespace protocol
 		FaceTrackingFrameBody body;
 	};
 
+	// host_state byte values written into ShmemData::host_state by the host's
+	// FrameWriter. The driver uses this to interpret heartbeat-age semantics:
+	// "no publish for 2 s" is fatal when publishing, fine when idle.
+	enum HostState : uint32_t
+	{
+		HostStateLegacy     = 0, // pre-heartbeat host; ignore heartbeat field
+		HostStatePublishing = 1, // active module pushing frames at full rate
+		HostStateIdle       = 2, // host alive but no module selected / paused
+		HostStateDraining   = 3, // host shutting down cleanly; final frames in flight
+	};
+
 	class FaceTrackingFrameShmem
 	{
 	public:
@@ -1587,22 +1598,35 @@ namespace protocol
 	private:
 		struct ShmemData
 		{
-			uint32_t magic;
-			uint32_t shmem_version;
-			uint32_t ring_size;
-			// Header padding so the slot table starts on an 8-byte boundary and
-			// the publish_index that precedes it is naturally aligned. Reserved
-			// for future header growth (driver-host capability negotiation, etc.)
-			// without bumping SHMEM_VERSION if the fields stay zero on old hosts.
-			uint32_t _reserved_header[5];
+			uint32_t magic;            // @  0
+			uint32_t shmem_version;    // @  4
+			uint32_t ring_size;        // @  8
+
+			// Host-side liveness signals. Hosts that pre-date this field write
+			// zero, which we treat as HostStateLegacy and skip the heartbeat
+			// check (so the layout change does not require SHMEM_VERSION bump).
+			uint32_t              host_state;          // @ 12 -- HostState enum
+			std::atomic<uint64_t> host_heartbeat_qpc;  // @ 16 -- QueryPerformanceCounter at last tick
+
+			// Reserved for future header expansion (capability negotiation,
+			// per-host stats, etc.). Kept zero by every current writer.
+			uint32_t _reserved_header[2];              // @ 24..31
 
 			// Monotonically increasing publish counter. The slot the writer just
 			// finished is at index (publish_index - 1) % RING_SIZE. 0 means no
 			// frame has been published since shmem creation.
-			std::atomic<uint64_t> publish_index;
+			std::atomic<uint64_t> publish_index;       // @ 32
 
-			FaceTrackingFrameSlot slots[RING_SIZE];
+			FaceTrackingFrameSlot slots[RING_SIZE];    // @ 40
 		};
+		// Compile-time sanity on the field offsets the C# host depends on.
+		// FrameWriter.cs hardcodes 12 / 16 / 32 / 40; if anything shifts here
+		// the host writes through the wrong pointer and we get torn / zero
+		// data, with no immediate error.
+		static_assert(offsetof(ShmemData, host_state)         == 12, "host_state offset");
+		static_assert(offsetof(ShmemData, host_heartbeat_qpc) == 16, "host_heartbeat_qpc offset");
+		static_assert(offsetof(ShmemData, publish_index)      == 32, "publish_index offset");
+		static_assert(offsetof(ShmemData, slots)              == 40, "slots offset");
 
 		HANDLE     hMapFile = INVALID_HANDLE_VALUE;
 		ShmemData *pData    = nullptr;
@@ -1706,6 +1730,42 @@ namespace protocol
 		uint64_t PublishIndex() const
 		{
 			return pData ? pData->publish_index.load(std::memory_order_acquire) : 0;
+		}
+
+		// Reader: host's last heartbeat timestamp in QueryPerformanceCounter
+		// ticks. Zero means the host either has not written a heartbeat yet
+		// or is a pre-heartbeat (legacy) build; either way the driver should
+		// fall back to handle-only liveness detection.
+		uint64_t HostHeartbeatQpc() const
+		{
+			return pData
+				? pData->host_heartbeat_qpc.load(std::memory_order_acquire)
+				: 0;
+		}
+
+		// Reader: host's self-reported activity state. Used to interpret
+		// HostHeartbeatQpc -- a "no heartbeat for 2 s" gap is wedge-level
+		// only when state == HostStatePublishing.
+		uint32_t HostStateField() const
+		{
+			// Plain uint32 load is atomic on x64; acquire fence below pairs
+			// with the host's release fence in WriteHostState.
+			if (!pData) return HostStateLegacy;
+			uint32_t v = pData->host_state;
+			std::atomic_thread_fence(std::memory_order_acquire);
+			return v;
+		}
+
+		// Driver (writer-side): reset the heartbeat fields back to "no
+		// signal". Called after the supervisor kills a wedged host so the
+		// stale heartbeat the dead host left in the segment does not
+		// re-trigger the wedge detector before the new host writes its
+		// first heartbeat tick.
+		void ResetHostLiveness()
+		{
+			if (!pData) return;
+			pData->host_state = HostStateLegacy;
+			pData->host_heartbeat_qpc.store(0, std::memory_order_release);
 		}
 
 		// Reader: copy the most recently published frame's body into `out`. The

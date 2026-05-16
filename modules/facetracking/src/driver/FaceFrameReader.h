@@ -42,6 +42,22 @@ public:
     // The worker uses this to detect new frames without repeated seqlock reads.
     uint64_t LastPublishIndex() const;
 
+    // Host's last self-reported activity state (HostStateLegacy /
+    // HostStatePublishing / HostStateIdle / HostStateDraining). Used to
+    // interpret HeartbeatAgeMs.
+    uint32_t HostState() const;
+
+    // Time since the host last bumped its heartbeat field, in milliseconds.
+    // Returns UINT64_MAX when the host has never written a heartbeat (pre-
+    // heartbeat build or the segment was just opened), which the caller
+    // should treat as "no signal -- skip the wedge check".
+    uint64_t HeartbeatAgeMs() const;
+
+    // Driver: zero out the host_state and host_heartbeat_qpc fields. Call
+    // after the supervisor terminates a wedged host so the stale heartbeat
+    // does not re-trigger the wedge detector before the new host writes.
+    void ResetHostLiveness();
+
 private:
     protocol::FaceTrackingFrameShmem shmem_;
     uint64_t last_index_ = 0;

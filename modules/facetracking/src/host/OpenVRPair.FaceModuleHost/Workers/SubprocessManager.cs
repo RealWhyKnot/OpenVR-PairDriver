@@ -71,6 +71,15 @@ public sealed class SubprocessManager : IDisposable
     private int                 _lastExitCode;
     private DateTime?           _lastRestartTime;
 
+    // Host activity classification mirrored into the shmem header so the
+    // driver-side supervisor can interpret heartbeat-age. Updated in
+    // SetPhase; read by the heartbeat-publishing loop in Program.cs.
+    // Values match FrameWriter.HostState* constants.
+    private int _hostState = (int)FrameWriter.HostStateLegacy;
+    public uint CurrentHostState => (uint)Volatile.Read(ref _hostState);
+    public void SetHostStateDraining() =>
+        Volatile.Write(ref _hostState, (int)FrameWriter.HostStateDraining);
+
     // Serializes SelectActive calls: teardown must finish before next spawn.
     private readonly SemaphoreSlim _selectLock = new(1, 1);
 
@@ -804,7 +813,27 @@ public sealed class SubprocessManager : IDisposable
                 _lastError = "";
             }
         }
+
+        // Mirror the phase into the shmem heartbeat state byte so the
+        // driver can decide whether stalled publish_index is a wedge or
+        // legitimate idle. Keep this outside the status lock; Volatile.Write
+        // is itself atomic and SetHostStateDraining races on the same field.
+        Volatile.Write(ref _hostState, (int)MapPhaseToHostState(phase));
     }
+
+    /// <summary>
+    /// Classify a SetPhase string into the four-value HostState enum the
+    /// shmem heartbeat header uses. Any phase that means "actively pumping
+    /// frames out to the driver" -> Publishing; everything else where the
+    /// host is alive but quiet -> Idle. Failure phases stay Idle because
+    /// the supervisor is already tracking failures via exit codes.
+    /// </summary>
+    private static uint MapPhaseToHostState(string phase) => phase switch
+    {
+        "publishing-frames" => FrameWriter.HostStatePublishing,
+        "module-active"     => FrameWriter.HostStatePublishing,
+        _                   => FrameWriter.HostStateIdle,
+    };
 
     private void RecordExit(int exitCode)
     {

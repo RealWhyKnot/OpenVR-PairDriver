@@ -107,6 +107,7 @@ try
         RunRegistryPollAsync(registry, logger, ct),
         loader.RunActiveAsync(writer, ct),
         status.RunAsync(ct),
+        RunHostHeartbeatAsync(loader, writer, ct),
     };
 
     logger.Info("[startup] phase=running");
@@ -148,6 +149,12 @@ catch (Exception ex)
     return 1;
 }
 
+// Mark the shmem header so the driver-side supervisor distinguishes a
+// graceful shutdown (heartbeat stale because we're going away) from a wedge
+// (heartbeat stale because the CLR hung).
+loader.SetHostStateDraining();
+try { writer.WriteHostState(FrameWriter.HostStateDraining); } catch { }
+
 oscQuery.Stop();
 await loader.UnloadAllAsync();
 writer.Dispose();
@@ -155,6 +162,26 @@ logger.Info("Shutdown complete.");
 logger.Flush();
 logger.Dispose();
 return 0;
+
+// Publish the host's current state + a heartbeat into the shmem header
+// every 100 ms. The driver compares the heartbeat against the publish-
+// state to decide whether a stalled publish_index is a wedge or normal
+// idle. Keeping this loop separate from the per-frame publish path means
+// the driver still sees a fresh heartbeat when no module is selected.
+static async Task RunHostHeartbeatAsync(
+    SubprocessManager loader, FrameWriter writer, CancellationToken ct)
+{
+    try
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            writer.WriteHostState(loader.CurrentHostState);
+            writer.WriteHeartbeatTick();
+            await Task.Delay(100, ct);
+        }
+    }
+    catch (OperationCanceledException) { /* shutdown */ }
+}
 
 static async Task RunRegistryPollAsync(
     RegistryClient registry, HostLogger logger, CancellationToken ct)

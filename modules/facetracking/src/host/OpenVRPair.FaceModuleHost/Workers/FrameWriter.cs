@@ -69,17 +69,25 @@ public sealed class FrameWriter(string shmemName, HostLogger logger) : IDisposab
     private const uint  ShmemVersion = 2; // v2: added head_yaw/pitch/roll/pos_x/y/z/head_flags
     private const int   RingSize     = 32;
 
-    // Byte offset of publish_index within ShmemData.
-    // C++ ShmemData layout (x64 MSVC defaults, Pack=8):
-    //   uint32_t magic            @ 0
-    //   uint32_t shmem_version    @ 4
-    //   uint32_t ring_size        @ 8
-    //   uint32_t _reserved_header[5] @ 12..31  (5 * 4 = 20 bytes)
-    //   std::atomic<uint64_t> publish_index @ 32  (8-byte aligned, after 32 bytes)
+    // Byte offsets inside ShmemData. Layout must match Protocol.h exactly:
+    //   uint32_t magic                        @  0
+    //   uint32_t shmem_version                @  4
+    //   uint32_t ring_size                    @  8
+    //   uint32_t host_state                   @ 12 -- HostState enum (this side writes)
+    //   atomic<uint64_t> host_heartbeat_qpc   @ 16 -- QPC at last tick (this side writes)
+    //   uint32_t _reserved_header[2]          @ 24..31
+    //   atomic<uint64_t> publish_index        @ 32
+    //   FaceTrackingFrameSlot slots[RING_SIZE] @ 40
+    private const int   HostStateOffset    = 12;
+    private const int   HostHeartbeatOffset = 16;
     private const int   PublishIndexOffset = 32;
-
-    // Byte offset of the first FaceTrackingFrameSlot.
     private const int   SlotsOffset        = PublishIndexOffset + 8; // 40
+
+    // host_state values mirror Protocol.h HostState enum.
+    public const uint   HostStateLegacy     = 0;
+    public const uint   HostStatePublishing = 1;
+    public const uint   HostStateIdle       = 2;
+    public const uint   HostStateDraining   = 3;
 
     private static readonly int SlotSize = UnsafeHelper.SizeOf<FaceTrackingFrameSlotNative>();
     private static readonly int BodyOffsetInSlot =
@@ -271,6 +279,40 @@ public sealed class FrameWriter(string shmemName, HostLogger logger) : IDisposab
         // Publish the new slot index so the driver's reader picks it up.
         long* publishPtr = (long*)(_basePtr + PublishIndexOffset);
         Volatile.Write(ref *publishPtr, Interlocked.Read(ref _localPublishIndex));
+
+        // Heartbeat: bump the host's QPC stamp every published frame so the
+        // driver can distinguish "host alive at 120 Hz" from "host wedged".
+        WriteHeartbeatUnlocked();
+    }
+
+    /// <summary>
+    /// Publish the host's current activity state. Atomic 32-bit write at
+    /// the documented offset; the driver reads this with the heartbeat to
+    /// decide whether stalled publish_index counts as a wedge.
+    /// </summary>
+    public unsafe void WriteHostState(uint state)
+    {
+        if (_disposed || !_ptrAcquired || _basePtr == null) return;
+        int* statePtr = (int*)(_basePtr + HostStateOffset);
+        Volatile.Write(ref *statePtr, (int)state);
+    }
+
+    /// <summary>
+    /// Bump the heartbeat field without publishing a frame. Used by the
+    /// idle-mode tick so a host with no module selected still proves it's
+    /// alive within the driver's heartbeat threshold.
+    /// </summary>
+    public unsafe void WriteHeartbeatTick()
+    {
+        if (_disposed || !_ptrAcquired || _basePtr == null) return;
+        WriteHeartbeatUnlocked();
+    }
+
+    private unsafe void WriteHeartbeatUnlocked()
+    {
+        long qpc = System.Diagnostics.Stopwatch.GetTimestamp();
+        long* hbPtr = (long*)(_basePtr + HostHeartbeatOffset);
+        Volatile.Write(ref *hbPtr, qpc);
     }
 
     public unsafe void Dispose()
