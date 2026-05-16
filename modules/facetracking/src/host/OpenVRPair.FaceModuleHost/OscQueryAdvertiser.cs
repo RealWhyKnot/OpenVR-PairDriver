@@ -14,24 +14,38 @@ namespace OpenVRPair.FaceModuleHost;
 /// </summary>
 public sealed class OscQueryAdvertiser : IDisposable
 {
-    // Eye parameters emitted by the driver under both legacy and v2 paths.
-    // Source: driver OSC emission code + project_vrcft_v2_osc_paths_2026-05-14.md
-    private static readonly string[] EyeParamNames =
+    // Eye parameters emitted by the driver at /avatar/parameters/<name>.
+    // Source: modules/facetracking/src/driver/FaceOscPublisher.cpp::PublishEye.
+    private static readonly string[] EyeParamNamesLegacy =
     [
+        "LeftEyeX",
+        "LeftEyeY",
+        "RightEyeX",
+        "RightEyeY",
         "LeftEyeLid",
         "RightEyeLid",
-        "EyeLidExpandedSqueeze",
-        "LeftEyeX",
-        "RightEyeX",
-        "EyesY",
-        "LeftEyeLidExpandedSqueeze",
-        "RightEyeLidExpandedSqueeze",
+        "EyesDilation",
     ];
 
-    // Unified Expression v2 parameter names derived from UnifiedExpression enum.
-    // Enum defined in OpenVRPair.FaceTracking.ModuleSdk/UnifiedExpression.cs (indices 0-62,
-    // Count=63). The names below are the enum member names verbatim; they are the canonical
-    // v2 OSC parameter names for VRChat avatar avatars.
+    // Eye parameters emitted by the driver at /avatar/parameters/v2/<name>.
+    // Modern VRCFaceTracking-v5 avatars bind to these; the names differ
+    // from the legacy set (EyeOpenLeft vs LeftEyeLid, EyeLeftX vs LeftEyeX).
+    private static readonly string[] EyeParamNamesV2 =
+    [
+        "EyeLeftX",
+        "EyeLeftY",
+        "EyeRightX",
+        "EyeRightY",
+        "EyeOpenLeft",
+        "EyeOpenRight",
+        "PupilDilation",
+    ];
+
+    // Unified Expression parameter names emitted at both
+    // /avatar/parameters/<name> AND /avatar/parameters/v2/<name>. Order
+    // mirrors OpenVRPair.FaceTracking.ModuleSdk.UnifiedExpression enum
+    // (indices 0-62, Count=63). FaceOscPublisher.cpp's kExprParamNames
+    // is the lockstep counterpart; both lists are identical by intent.
     private static readonly string[] ExprParamNames =
     [
         "EyeLookOutLeft",     // 0
@@ -97,6 +111,19 @@ public sealed class OscQueryAdvertiser : IDisposable
         "TongueUp",           // 60
         "TongueDown",         // 61
         "TongueLeft",         // 62
+    ];
+
+    // Upstream VRCFaceTracking-v5 alias names emitted alongside the
+    // pre-rename names for five slots so avatars built against either
+    // naming convention discover the parameter. FaceOscPublisher.cpp's
+    // kExprParamUpstreamAliases is the lockstep counterpart.
+    private static readonly string[] ExprParamUpstreamAliases =
+    [
+        "MouthClosed",            // <-> MouthClose
+        "MouthCornerPullLeft",    // <-> MouthSmileLeft
+        "MouthCornerPullRight",   // <-> MouthSmileRight
+        "MouthFrownLeft",         // <-> MouthSadLeft
+        "MouthFrownRight",        // <-> MouthSadRight
     ];
 
     private const int OscUdpPort = 9000;
@@ -166,7 +193,9 @@ public sealed class OscQueryAdvertiser : IDisposable
             logger.Warn($"[ftq] mDNS advertise failed (port 5353 may be in use): {ex.Message}; HTTP-only mode.");
         }
 
-        int totalParams = EyeParamNames.Length * 2 + ExprParamNames.Length * 2;
+        int totalParams = EyeParamNamesLegacy.Length + EyeParamNamesV2.Length
+                        + ExprParamNames.Length * 2
+                        + ExprParamUpstreamAliases.Length * 2;
         logger.Info($"[ftq] OSCQuery advertised: name={_serviceName} httpPort={_httpPort} oscPort={OscUdpPort} params={totalParams} mdns={mdnsOk}");
     }
 
@@ -257,16 +286,21 @@ public sealed class OscQueryAdvertiser : IDisposable
 
         bool first = true;
 
-        // Eye params (legacy bare name)
-        foreach (string name in EyeParamNames)
+        // Legacy eye params (LeftEyeX/Y, RightEyeX/Y, LeftEyeLid, RightEyeLid, EyesDilation)
+        foreach (string name in EyeParamNamesLegacy)
         {
             if (!first) sb.Append(',');
             first = false;
             AppendLeafNode(sb, $"/avatar/parameters/{name}", name);
         }
 
-        // Expr params (legacy bare name)
+        // Expression params (our names) + upstream aliases for the 5 renamed slots.
         foreach (string name in ExprParamNames)
+        {
+            sb.Append(',');
+            AppendLeafNode(sb, $"/avatar/parameters/{name}", name);
+        }
+        foreach (string name in ExprParamUpstreamAliases)
         {
             sb.Append(',');
             AppendLeafNode(sb, $"/avatar/parameters/{name}", name);
@@ -276,13 +310,18 @@ public sealed class OscQueryAdvertiser : IDisposable
         sb.Append(""","v2":{"FULL_PATH":"/avatar/parameters/v2","ACCESS":0,"CONTENTS":{""");
 
         bool firstV2 = true;
-        foreach (string name in EyeParamNames)
+        foreach (string name in EyeParamNamesV2)
         {
             if (!firstV2) sb.Append(',');
             firstV2 = false;
             AppendLeafNode(sb, $"/avatar/parameters/v2/{name}", name);
         }
         foreach (string name in ExprParamNames)
+        {
+            sb.Append(',');
+            AppendLeafNode(sb, $"/avatar/parameters/v2/{name}", name);
+        }
+        foreach (string name in ExprParamUpstreamAliases)
         {
             sb.Append(',');
             AppendLeafNode(sb, $"/avatar/parameters/v2/{name}", name);

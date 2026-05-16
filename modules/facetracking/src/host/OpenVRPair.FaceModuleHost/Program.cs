@@ -232,13 +232,15 @@ static async Task<int> RunE2eFakeFramesAsync(
         eye.Right.Confidence = 0.96f;
 
         // Wire format is upstream VRCFaceTracking.UnifiedExpressions order.
-        // JawOpen is upstream index 22. MouthSmile has no upstream-name match
-        // (upstream uses MouthCornerPull*), so this fake feed leaves those
-        // slots at zero on the wire; downstream consumers using our 63-slot
-        // ordering see zero for MouthSmile -- match the e2e expectations.
+        // Anchor a few well-known shapes so the e2e harness can verify the
+        // host->wire->driver remap chain end to end, including the semantic
+        // aliases that bridge upstream's later renames to our pre-rename
+        // names (MouthCornerPull -> MouthSmile).
         float[] upstreamShapes = new float[FrameWriter.UpstreamShapeCount];
-        const int kUpstreamJawOpenIndex = 22;
-        upstreamShapes[kUpstreamJawOpenIndex] = 0.75f;
+        const int kUpstreamJawOpenIndex            = 22;
+        const int kUpstreamMouthCornerPullLeftIdx  = 57; // upstream v5 name
+        upstreamShapes[kUpstreamJawOpenIndex]           = 0.75f;
+        upstreamShapes[kUpstreamMouthCornerPullLeftIdx] = 0.25f;
 
         for (int i = 0; i < opts.E2eFakeFrameCount; ++i)
         {

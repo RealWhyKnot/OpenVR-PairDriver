@@ -523,6 +523,11 @@ TEST(E2E, FaceHostFakeFramesReachFakeVrchat)
     EXPECT_NE(frame.flags & 0x2u, 0u);
     EXPECT_NEAR(frame.eye_openness_l, 0.62f, 0.001f);
     EXPECT_NEAR(frame.expressions[26], 0.75f, 0.001f);
+    // Upstream MouthCornerPullLeft (slot 57 in v5) bridges via the semantic
+    // alias to ours.MouthSmileLeft (slot 45). End-to-end verification that
+    // the host->wire->driver->remap chain delivers the value to the right
+    // ours-slot.
+    EXPECT_NEAR(frame.expressions[45], 0.25f, 0.001f);
 
     facetracking::FaceOscPublishCounts counts =
         facetracking::PublishFaceFrameOsc(frame);
@@ -546,6 +551,25 @@ TEST(E2E, FaceHostFakeFramesReachFakeVrchat)
     EXPECT_NEAR(jawV2, 0.75f, 0.001f);
     EXPECT_NEAR(lidLegacy, 0.62f, 0.001f);
     EXPECT_NEAR(lidV2, 0.62f, 0.001f);
+
+    // Dual-emit smoke check: an avatar built against legacy VRCFT binds to
+    // MouthSmileLeft, an avatar built against modern v5 VRCFT binds to
+    // MouthCornerPullLeft. Both names must carry the value the upstream
+    // module wrote so neither avatar style gets stuck at zero.
+    float smileLegacy = 0.0f, smileV2 = 0.0f;
+    float cornerLegacy = 0.0f, cornerV2 = 0.0f;
+    ASSERT_TRUE(harness.receiver.WaitForFloat(
+        "/avatar/parameters/MouthSmileLeft", smileLegacy, 5000ms));
+    ASSERT_TRUE(harness.receiver.WaitForFloat(
+        "/avatar/parameters/v2/MouthSmileLeft", smileV2, 5000ms));
+    ASSERT_TRUE(harness.receiver.WaitForFloat(
+        "/avatar/parameters/MouthCornerPullLeft", cornerLegacy, 5000ms));
+    ASSERT_TRUE(harness.receiver.WaitForFloat(
+        "/avatar/parameters/v2/MouthCornerPullLeft", cornerV2, 5000ms));
+    EXPECT_NEAR(smileLegacy,  0.25f, 0.001f);
+    EXPECT_NEAR(smileV2,      0.25f, 0.001f);
+    EXPECT_NEAR(cornerLegacy, 0.25f, 0.001f);
+    EXPECT_NEAR(cornerV2,     0.25f, 0.001f);
 
     harness.Stop();
 }

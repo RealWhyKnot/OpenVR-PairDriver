@@ -111,6 +111,40 @@ static_assert(
         protocol::FACETRACKING_EXPRESSION_COUNT,
     "kExprParamNames length must match FACETRACKING_EXPRESSION_COUNT");
 
+// Upstream VRCFaceTracking-v5 alias names for slots where our enum kept
+// the pre-rename label (MouthSmile, MouthSad, MouthClose). Emitting the
+// upstream name in parallel lets avatars built against modern VRCFT
+// receive the same value as legacy avatars without the avatar author
+// having to support both naming conventions. nullptr = no alias.
+static const char *const kExprParamUpstreamAliases[protocol::FACETRACKING_EXPRESSION_COUNT] = {
+    nullptr, nullptr, nullptr, nullptr, // EyeLook* (no upstream equivalents)
+    nullptr, nullptr, nullptr, nullptr,
+    nullptr, nullptr, nullptr, nullptr, // EyeWide/Squint
+    nullptr, nullptr, nullptr, nullptr, // Brow Lowerer/InnerUp
+    nullptr, nullptr, nullptr, nullptr, // Brow OuterUp/Pinch
+    nullptr, nullptr, nullptr, nullptr, // CheekPuff/CheekSuck
+    nullptr, nullptr,                   // NoseSneer (name unchanged)
+    nullptr, nullptr, nullptr, nullptr, // Jaw Open/Forward/Left/Right
+    nullptr, nullptr, nullptr, nullptr, // LipSuckUpper/Lower
+    nullptr, nullptr, nullptr, nullptr, // LipFunnelUpper/Lower
+    nullptr, nullptr,                   // LipPuckerUpper
+    "MouthClosed",                       // [40] MouthClose <-> MouthClosed (upstream v5 trailing 'd')
+    nullptr, nullptr, nullptr, nullptr, // MouthUpper/Lower direction
+    "MouthCornerPullLeft",               // [45] MouthSmileLeft  <-> MouthCornerPullLeft
+    "MouthCornerPullRight",              // [46] MouthSmileRight <-> MouthCornerPullRight
+    "MouthFrownLeft",                    // [47] MouthSadLeft    <-> MouthFrownLeft
+    "MouthFrownRight",                   // [48] MouthSadRight   <-> MouthFrownRight
+    nullptr, nullptr, nullptr, nullptr, // MouthStretch/Dimple
+    nullptr, nullptr,                   // MouthRaiser
+    nullptr, nullptr, nullptr, nullptr, // MouthPress/Tightener
+    nullptr, nullptr, nullptr, nullptr, // TongueOut/Up/Down/Left
+};
+
+static_assert(
+    sizeof(kExprParamUpstreamAliases) / sizeof(kExprParamUpstreamAliases[0]) ==
+        protocol::FACETRACKING_EXPRESSION_COUNT,
+    "kExprParamUpstreamAliases length must match FACETRACKING_EXPRESSION_COUNT");
+
 static OscCounts PublishEye(const protocol::FaceTrackingFrameBody &frame)
 {
     OscCounts counts;
@@ -145,20 +179,30 @@ static OscCounts PublishExpressions(const protocol::FaceTrackingFrameBody &frame
     char legacy[64];
     char v2addr[64];
 
-    for (uint32_t i = 0; i < protocol::FACETRACKING_EXPRESSION_COUNT; ++i) {
-        const char *name = kExprParamNames[i];
+    auto emitBoth = [&](const char *name, float value)
+    {
         const size_t nameLen = std::strlen(name);
-        if (kLegacyPrefixLen + nameLen + 1 > sizeof(legacy)) continue;
-        if (kV2PrefixLen     + nameLen + 1 > sizeof(v2addr)) continue;
-
+        if (kLegacyPrefixLen + nameLen + 1 > sizeof(legacy)) return;
+        if (kV2PrefixLen     + nameLen + 1 > sizeof(v2addr)) return;
         std::memcpy(legacy, kLegacyPrefix, kLegacyPrefixLen);
         std::memcpy(legacy + kLegacyPrefixLen, name, nameLen + 1);
         std::memcpy(v2addr, kV2Prefix, kV2PrefixLen);
         std::memcpy(v2addr + kV2PrefixLen, name, nameLen + 1);
-
-        const float value = frame.expressions[i];
         counts.Add(OscPublishFloat(legacy, value));
         counts.Add(OscPublishFloat(v2addr, value));
+    };
+
+    for (uint32_t i = 0; i < protocol::FACETRACKING_EXPRESSION_COUNT; ++i) {
+        const float value = frame.expressions[i];
+        emitBoth(kExprParamNames[i], value);
+        // Modern VRCFaceTracking-v5 avatars bind to the renamed parameter
+        // names (MouthClosed, MouthCornerPull*, MouthFrown*) instead of
+        // the pre-rename ones we keep in our internal enum. Publish the
+        // upstream alias side-by-side so avatars built against either
+        // naming convention receive data.
+        if (kExprParamUpstreamAliases[i] != nullptr) {
+            emitBoth(kExprParamUpstreamAliases[i], value);
+        }
     }
     return counts;
 }
