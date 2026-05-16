@@ -17,16 +17,28 @@ inline constexpr int kUpstreamShapeCount = 88;
 
 // Index into protocol::FACETRACKING_EXPRESSION_COUNT slots for each
 // upstream shape, or -1 if the upstream shape has no equivalent in our
-// enum (silently dropped). The table is the result of a case-insensitive
-// name match against:
+// enum (silently dropped).
+//
+// Sources of truth in lockstep with this table:
 //   upstream: VRCFaceTracking.Core.Params.Expressions.UnifiedExpressions
-//             (modules/facetracking/src/host/OpenVRPair.FaceTracking.UpstreamRuntime/
-//              Params/Expressions/UnifiedExpressions.cs)
+//             vendored at
+//             modules/facetracking/src/host/OpenVRPair.FaceTracking.UpstreamRuntime/
+//             Params/Expressions/UnifiedExpressions.cs
+//             (mirrors upstream v5.1.1.0 order including NoseSneer at 48-49).
 //   ours:     OpenVRPair.FaceTracking.ModuleSdk.UnifiedExpression
-//             (modules/facetracking/src/host/OpenVRPair.FaceTracking.ModuleSdk/
-//              UnifiedExpression.cs)
-// Hand-computed; verified by a unit test against both enum lists. If
-// either enum gains entries, this table needs a matching pass.
+//             modules/facetracking/src/host/OpenVRPair.FaceTracking.ModuleSdk/
+//             UnifiedExpression.cs
+//
+// Most entries are direct case-insensitive name matches. Five entries are
+// semantic aliases bridging upstream's later-renamed shapes to our
+// pre-rename enum names so VRChat avatars built against either naming
+// convention receive data:
+//   - MouthClosed (upstream) -> MouthClose (ours)
+//   - MouthCornerPull* (upstream) -> MouthSmile* (ours)
+//   - MouthFrown*     (upstream) -> MouthSad*   (ours)
+// These five are flagged in the comments below. The remaining -1 entries
+// are upstream shapes with no equivalent in our 63-slot enum (drop
+// silently; the avatar parameter, if bound, stays at zero).
 inline constexpr int kUpstreamToOurs[kUpstreamShapeCount] = {
     // 0..3 Eye Squint/Wide
     11, // [ 0] EyeSquintRight       -> EyeSquintRight (11)
@@ -42,19 +54,19 @@ inline constexpr int kUpstreamToOurs[kUpstreamShapeCount] = {
     14, // [ 9] BrowInnerUpLeft      -> BrowInnerUpLeft (14)
     17, // [10] BrowOuterUpRight     -> BrowOuterUpRight (17)
     16, // [11] BrowOuterUpLeft      -> BrowOuterUpLeft (16)
-    // 12..15 Nose (we have NoseSneer, not NasalDilation/NasalConstrict)
+    // 12..15 Nose (no equivalents: we have NoseSneer at 24/25, not Nasal*)
     -1, // [12] NasalDilationRight
     -1, // [13] NasalDilationLeft
     -1, // [14] NasalConstrictRight
     -1, // [15] NasalConstrictLeft
     // 16..21 Cheek
-    -1, // [16] CheekSquintRight     (we don't have a cheek-squint shape)
+    -1, // [16] CheekSquintRight     (no cheek-squint in ours)
     -1, // [17] CheekSquintLeft
     21, // [18] CheekPuffRight       -> CheekPuffRight (21)
     20, // [19] CheekPuffLeft        -> CheekPuffLeft (20)
     23, // [20] CheekSuckRight       -> CheekSuckRight (23)
     22, // [21] CheekSuckLeft        -> CheekSuckLeft (22)
-    // 22..29 Jaw / Mouth closed
+    // 22..28 Jaw
     26, // [22] JawOpen              -> JawOpen (26)
     29, // [23] JawRight             -> JawRight (29)
     28, // [24] JawLeft              -> JawLeft (28)
@@ -62,14 +74,15 @@ inline constexpr int kUpstreamToOurs[kUpstreamShapeCount] = {
     -1, // [26] JawBackward
     -1, // [27] JawClench
     -1, // [28] JawMandibleRaise
-    -1, // [29] MouthClosed          (we have MouthClose with no trailing 'd';
-                                  //  the rename loses the case-insensitive match)
-    // 30..35 Lip Suck Upper/Lower
+    // 29 MouthClosed -- SEMANTIC ALIAS to ours.MouthClose (40). Upstream
+    //    added the trailing 'd' in v5.x; legacy avatars use MouthClose.
+    40, // [29] MouthClosed          -> MouthClose (40) (alias)
+    // 30..35 Lip Suck Upper/Lower/Corner
     31, // [30] LipSuckUpperRight    -> LipSuckUpperRight (31)
     30, // [31] LipSuckUpperLeft     -> LipSuckUpperLeft (30)
     33, // [32] LipSuckLowerRight    -> LipSuckLowerRight (33)
     32, // [33] LipSuckLowerLeft     -> LipSuckLowerLeft (32)
-    -1, // [34] LipSuckCornerRight
+    -1, // [34] LipSuckCornerRight   (no corner-suck in ours)
     -1, // [35] LipSuckCornerLeft
     // 36..43 Lip Funnel/Pucker
     35, // [36] LipFunnelUpperRight  -> LipFunnelUpperRight (35)
@@ -78,29 +91,38 @@ inline constexpr int kUpstreamToOurs[kUpstreamShapeCount] = {
     36, // [39] LipFunnelLowerLeft   -> LipFunnelLowerLeft (36)
     39, // [40] LipPuckerUpperRight  -> LipPuckerUpperRight (39)
     38, // [41] LipPuckerUpperLeft   -> LipPuckerUpperLeft (38)
-    -1, // [42] LipPuckerLowerRight  (our enum has Upper only)
+    -1, // [42] LipPuckerLowerRight  (ours has Upper only)
     -1, // [43] LipPuckerLowerLeft
-    // 44..51 Mouth Upper/Lower Up/Down/Deepen (no equivalents)
+    // 44..47 Mouth Upper Up + Deepen (no equivalents in ours)
     -1, // [44] MouthUpperUpRight
     -1, // [45] MouthUpperUpLeft
-    -1, // [46] MouthLowerDownRight
-    -1, // [47] MouthLowerDownLeft
-    -1, // [48] MouthUpperDeepenRight
-    -1, // [49] MouthUpperDeepenLeft
-    -1, // [50] MouthLowerDeepenRight
-    -1, // [51] MouthLowerDeepenLeft
-    // 52..55 Mouth Upper/Lower Direction
-    41, // [52] MouthUpperLeft       -> MouthUpperLeft (41)
-    42, // [53] MouthUpperRight      -> MouthUpperRight (42)
-    43, // [54] MouthLowerLeft       -> MouthLowerLeft (43)
-    44, // [55] MouthLowerRight      -> MouthLowerRight (44)
-    // 56..61 Corner / Slant / Frown (we have MouthSmile/MouthSad in those roles)
-    -1, // [56] MouthCornerPullRight
-    -1, // [57] MouthCornerPullLeft
+    -1, // [46] MouthUpperDeepenRight
+    -1, // [47] MouthUpperDeepenLeft
+    // 48..49 NoseSneer (upstream v5.x position; ours has NoseSneer at 24/25)
+    25, // [48] NoseSneerRight       -> NoseSneerRight (25)
+    24, // [49] NoseSneerLeft        -> NoseSneerLeft (24)
+    // 50..51 Mouth Lower Down (no equivalents in ours)
+    -1, // [50] MouthLowerDownRight
+    -1, // [51] MouthLowerDownLeft
+    // 52..55 Mouth Upper/Lower Direction (upstream pairs Right-then-Left)
+    42, // [52] MouthUpperRight      -> MouthUpperRight (42)
+    41, // [53] MouthUpperLeft       -> MouthUpperLeft (41)
+    44, // [54] MouthLowerRight      -> MouthLowerRight (44)
+    43, // [55] MouthLowerLeft       -> MouthLowerLeft (43)
+    // 56..57 MouthCornerPull -- SEMANTIC ALIAS to ours.MouthSmile
+    //    Upstream renamed Smile to CornerPull in v5.x. Legacy avatars
+    //    use MouthSmile; route the same value into our slot so OSC
+    //    publishes /avatar/parameters/MouthSmile* for them.
+    46, // [56] MouthCornerPullRight -> MouthSmileRight (46) (alias)
+    45, // [57] MouthCornerPullLeft  -> MouthSmileLeft  (45) (alias)
+    // 58..59 MouthCornerSlant (no equivalent in ours)
     -1, // [58] MouthCornerSlantRight
     -1, // [59] MouthCornerSlantLeft
-    -1, // [60] MouthFrownRight
-    -1, // [61] MouthFrownLeft
+    // 60..61 MouthFrown -- SEMANTIC ALIAS to ours.MouthSad
+    //    Same story: upstream renamed Sad to Frown. Legacy avatars
+    //    use MouthSad.
+    48, // [60] MouthFrownRight      -> MouthSadRight (48) (alias)
+    47, // [61] MouthFrownLeft       -> MouthSadLeft  (47) (alias)
     // 62..71 Stretch / Dimple / Raiser / Press / Tightener
     50, // [62] MouthStretchRight    -> MouthStretchRight (50)
     49, // [63] MouthStretchLeft     -> MouthStretchLeft (49)
@@ -116,7 +138,7 @@ inline constexpr int kUpstreamToOurs[kUpstreamShapeCount] = {
     59, // [72] TongueOut            -> TongueOut (59)
     60, // [73] TongueUp             -> TongueUp (60)
     61, // [74] TongueDown           -> TongueDown (61)
-    -1, // [75] TongueRight          (our enum has TongueLeft only)
+    -1, // [75] TongueRight          (ours has TongueLeft only)
     62, // [76] TongueLeft           -> TongueLeft (62)
     -1, // [77] TongueRoll
     -1, // [78] TongueBendDown
