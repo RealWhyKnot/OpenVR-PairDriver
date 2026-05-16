@@ -15,6 +15,8 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **scripts:** Split local deploy and test paths (e14fd17)
 - **osc:** Coordinate router-backed module outputs (2026.5.15.0-TEST) (8b2483c)
 - **overlay:** Integrate Discord rich presence (770d457)
+- **translator:** Speech and translation pack install flow (30f82ae)
+- **overlay:** Per-module Discord presence composer (a0b7a3c)
 
 ### Changed
 - host(facetracking): extend shmem to v2 with head data (2813401)
@@ -25,6 +27,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - host(facetracking): robustness + diagnostic logging pass on SubprocessManager (70397b0)
 - **facetracking:** Back out v2 shmem extension until driver rebuild (222f83b)
 - Improve diagnostics and deploy flow (6048e4f)
+- **build:** Wire compiler cache via sccache or ccache (29e4a64)
 
 ### Fixed
 - **smoothing:** Lock out per-tracker prediction on the calibration anchor (e87f318)
@@ -40,6 +43,7 @@ The `release.yml` body for each tag is composed mechanically from the slice betw
 - **facetracking-host:** Force-load MELA so InjectNullLogger finds it (c5db8c7)
 - **facetracking-host:** Force-load MELA via static member; resolve Eye as field-or-property (1f4435e)
 - **smoothing:** Hide internal calibration devices (482ee0a)
+- **inputhealth:** Persist global toggles and correct trigger compensation (da16380)
 
 ---
 
