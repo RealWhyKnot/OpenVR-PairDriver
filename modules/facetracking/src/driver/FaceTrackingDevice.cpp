@@ -110,6 +110,14 @@ vr::DriverPose_t FaceTrackingDevice::LoadCachedPose() const
 
 static vr::HmdQuaternion_t GazeToOrientation(const float g[3])
 {
+    // Defense-in-depth: the host should already replace non-finite floats
+    // with zero, but a path that bypasses FrameWriter::SanitizeNonFinite
+    // (manual shmem writes during testing, third-party producers) would
+    // otherwise feed NaN through every relational gate below and on into
+    // TrackedDevicePoseUpdated as a NaN quaternion.
+    if (!std::isfinite(g[0]) || !std::isfinite(g[1]) || !std::isfinite(g[2]))
+        return { 1.0, 0.0, 0.0, 0.0 };
+
     float gx = g[0], gy = g[1], gz = g[2];
     float len = std::sqrt(gx*gx + gy*gy + gz*gz);
     if (len < 1e-6f) return { 1.0, 0.0, 0.0, 0.0 };
@@ -184,10 +192,25 @@ void FaceTrackingDevice::PublishFrame(const protocol::FaceTrackingFrameBody &fra
 {
     if (object_id_ == vr::k_unTrackedDeviceIndexInvalid) return;
 
+    auto finite_or_zero = [](float v) { return std::isfinite(v) ? v : 0.0f; };
+
     if (frame.flags & 1u) {
         // Publish the left-eye gaze as the device pose (representative single
-        // gaze; right-eye data is in the scalar components below).
-        vr::DriverPose_t pose = BuildGazePose(frame.eye_origin_l, frame.eye_gaze_l);
+        // gaze; right-eye data is in the scalar components below). Host-side
+        // FrameWriter::SanitizeNonFinite is the primary defense; the local
+        // sanitize here covers producers that bypass the C# host (test
+        // harnesses, future native publishers).
+        const float origin[3] = {
+            finite_or_zero(frame.eye_origin_l[0]),
+            finite_or_zero(frame.eye_origin_l[1]),
+            finite_or_zero(frame.eye_origin_l[2]),
+        };
+        const float gaze[3] = {
+            finite_or_zero(frame.eye_gaze_l[0]),
+            finite_or_zero(frame.eye_gaze_l[1]),
+            finite_or_zero(frame.eye_gaze_l[2]),
+        };
+        vr::DriverPose_t pose = BuildGazePose(origin, gaze);
         SetCachedPose(pose);
         vr::VRServerDriverHost()->TrackedDevicePoseUpdated(
             object_id_, pose, sizeof(pose));
@@ -195,13 +218,13 @@ void FaceTrackingDevice::PublishFrame(const protocol::FaceTrackingFrameBody &fra
         // Scalar openness and pupil dilation.
         vr::IVRDriverInput *input = vr::VRDriverInput();
         if (h_open_left_  != vr::k_ulInvalidInputComponentHandle)
-            input->UpdateScalarComponent(h_open_left_,  frame.eye_openness_l,   0.0);
+            input->UpdateScalarComponent(h_open_left_,  finite_or_zero(frame.eye_openness_l),   0.0);
         if (h_open_right_ != vr::k_ulInvalidInputComponentHandle)
-            input->UpdateScalarComponent(h_open_right_, frame.eye_openness_r,   0.0);
+            input->UpdateScalarComponent(h_open_right_, finite_or_zero(frame.eye_openness_r),   0.0);
         if (h_pupil_left_ != vr::k_ulInvalidInputComponentHandle)
-            input->UpdateScalarComponent(h_pupil_left_,  frame.pupil_dilation_l, 0.0);
+            input->UpdateScalarComponent(h_pupil_left_,  finite_or_zero(frame.pupil_dilation_l), 0.0);
         if (h_pupil_right_ != vr::k_ulInvalidInputComponentHandle)
-            input->UpdateScalarComponent(h_pupil_right_, frame.pupil_dilation_r, 0.0);
+            input->UpdateScalarComponent(h_pupil_right_, finite_or_zero(frame.pupil_dilation_r), 0.0);
     }
 }
 

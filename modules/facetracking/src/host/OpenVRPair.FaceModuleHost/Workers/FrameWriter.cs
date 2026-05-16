@@ -88,6 +88,7 @@ public sealed class FrameWriter(string shmemName, HostLogger logger) : IDisposab
     private MemoryMappedFile?         _mmf;
     private MemoryMappedViewAccessor? _view;
     private long                      _localPublishIndex;
+    private bool                      _sanitizationLogged;
 
     // Pinned base pointer acquired once at open, valid until Dispose.
     // All seqlock generation and publish_index reads/writes go through this
@@ -180,8 +181,52 @@ public sealed class FrameWriter(string shmemName, HostLogger logger) : IDisposab
         for (int i = 0; i < count; i++)
             body.expressions[i] = shapes[i];
 
+        SanitizeNonFinite(ref body);
         WriteUnderSeqlock(ref body);
         return ValueTask.CompletedTask;
+    }
+
+    // A buggy module returning NaN or Inf for any expression parameter
+    // (common during partial-face init) would otherwise propagate straight
+    // through the shmem ring into the driver and on into SteamVR input
+    // components; sanitize at the publisher boundary so the rest of the
+    // pipeline can assume finite floats.
+    private void SanitizeNonFinite(ref FaceTrackingFrameBodyNative body)
+    {
+        int replaced = 0;
+
+        if (!float.IsFinite(body.eye_openness_l))   { body.eye_openness_l = 0f;   replaced++; }
+        if (!float.IsFinite(body.eye_openness_r))   { body.eye_openness_r = 0f;   replaced++; }
+        if (!float.IsFinite(body.pupil_dilation_l)) { body.pupil_dilation_l = 0f; replaced++; }
+        if (!float.IsFinite(body.pupil_dilation_r)) { body.pupil_dilation_r = 0f; replaced++; }
+        if (!float.IsFinite(body.eye_confidence_l)) { body.eye_confidence_l = 0f; replaced++; }
+        if (!float.IsFinite(body.eye_confidence_r)) { body.eye_confidence_r = 0f; replaced++; }
+
+        for (int i = 0; i < 3; i++)
+        {
+            if (!float.IsFinite(body.eye_origin_l[i])) { body.eye_origin_l[i] = 0f; replaced++; }
+            if (!float.IsFinite(body.eye_origin_r[i])) { body.eye_origin_r[i] = 0f; replaced++; }
+            if (!float.IsFinite(body.eye_gaze_l[i]))   { body.eye_gaze_l[i]   = 0f; replaced++; }
+            if (!float.IsFinite(body.eye_gaze_r[i]))   { body.eye_gaze_r[i]   = 0f; replaced++; }
+        }
+
+        for (int i = 0; i < 63; i++)
+        {
+            if (!float.IsFinite(body.expressions[i])) { body.expressions[i] = 0f; replaced++; }
+        }
+
+        if (!float.IsFinite(body.head_yaw))   { body.head_yaw   = 0f; replaced++; }
+        if (!float.IsFinite(body.head_pitch)) { body.head_pitch = 0f; replaced++; }
+        if (!float.IsFinite(body.head_roll))  { body.head_roll  = 0f; replaced++; }
+        if (!float.IsFinite(body.head_pos_x)) { body.head_pos_x = 0f; replaced++; }
+        if (!float.IsFinite(body.head_pos_y)) { body.head_pos_y = 0f; replaced++; }
+        if (!float.IsFinite(body.head_pos_z)) { body.head_pos_z = 0f; replaced++; }
+
+        if (replaced > 0 && !_sanitizationLogged)
+        {
+            _sanitizationLogged = true;
+            logger.Warn($"FrameWriter: sanitized {replaced} non-finite float(s) in module frame; further occurrences suppressed.");
+        }
     }
 
     private unsafe void WriteUnderSeqlock(ref FaceTrackingFrameBodyNative body)
