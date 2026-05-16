@@ -974,8 +974,19 @@ namespace protocol
 		}
 
 		void Close() {
-			if (pData) UnmapViewOfFile(pData);
-			if (hMapFile) CloseHandle(hMapFile);
+			// Null the members after release so that a second Close() call
+			// (the destructor running after Create() already invoked Close()
+			// for re-init, then failing partway through) does not double-free
+			// stale pointers. The other shmem classes in this file follow
+			// the same pattern.
+			if (pData) {
+				UnmapViewOfFile(pData);
+				pData = nullptr;
+			}
+			if (hMapFile && hMapFile != INVALID_HANDLE_VALUE) {
+				CloseHandle(hMapFile);
+				hMapFile = INVALID_HANDLE_VALUE;
+			}
 		}
 
 		bool Create(LPCSTR segment_name) {
