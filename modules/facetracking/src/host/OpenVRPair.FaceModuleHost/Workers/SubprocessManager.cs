@@ -21,9 +21,10 @@ public sealed record HostRuntimeStatus(
     DateTime? LastRestartTime);
 
 /// <summary>
-/// Drop-in replacement for <see cref="ModuleLoader"/> using upstream's subprocess-per-module
-/// architecture. Spawns one <c>WKOpenVR.FaceModuleProcess.exe</c> at a time; tears the old one
-/// down before starting a new one when <see cref="SelectActive"/> is called.
+/// Module loader using upstream's subprocess-per-module architecture.
+/// Spawns one <c>WKOpenVR.FaceModuleProcess.exe</c> at a time; tears the
+/// old one down before starting a new one when <see cref="SelectActive"/>
+/// is called.
 /// </summary>
 public sealed class SubprocessManager : IDisposable
 {
@@ -126,7 +127,7 @@ public sealed class SubprocessManager : IDisposable
     }
 
     // -------------------------------------------------------------------------
-    // Public surface (mirrors ModuleLoader)
+    // Public surface
     // -------------------------------------------------------------------------
 
     public DiscoveredModule? Active => _activeModule;
@@ -582,8 +583,10 @@ public sealed class SubprocessManager : IDisposable
             _logger.Info($"[ftp/spawn] SelectActive done in {selectSw.ElapsedMilliseconds}ms; " +
                          $"module={module.Manifest.Name} eye={initReply.eyeSuccess} expr={initReply.expressionSuccess}");
 
-            // Pull loop at ~120 Hz.
-            var exprSink = new ExpressionFrameSink();
+            // Pull loop at ~120 Hz. Expression shapes flow as the dense
+            // upstream UnifiedExpressions array straight through to the
+            // wire; the driver remaps to our 63-slot ordering on read.
+            float[] upstreamShapes = new float[FrameWriter.UpstreamShapeCount];
             var eyeSink  = new EyeFrameSink();
             long frameNum         = 0;
             int  noDataRun        = 0;
@@ -635,9 +638,13 @@ public sealed class SubprocessManager : IDisposable
                 lastUpdateTime = DateTime.UtcNow;
 
                 var decoded = snap.DecodedData;
-                float[] shapes = decoded.GetExpressionShapes();
+                float[]? shapes = decoded.GetExpressionShapes();
+                Array.Clear(upstreamShapes);
                 if (shapes is not null)
-                    UpstreamExpressionMap.CopyShapes(shapes, exprSink);
+                {
+                    int n = Math.Min(shapes.Length, upstreamShapes.Length);
+                    Array.Copy(shapes, upstreamShapes, n);
+                }
 
                 // Eye data.
                 const float kInvalid = unchecked((float)0xFFFFFFFF);
@@ -648,11 +655,14 @@ public sealed class SubprocessManager : IDisposable
 
                 frameNum++;
                 framesInPeriod++;
-                ReadOnlySpan<float> s = exprSink.Values;
+                // Telemetry runs against the upstream array directly now.
+                // Upstream's JawOpen index is 22 (UnifiedExpressions.JawOpen).
+                ReadOnlySpan<float> s = upstreamShapes;
                 int nonZero = 0;
                 foreach (float v in s) if (v != 0f) nonZero++;
-                float jawOpen = s.Length > (int)UnifiedExpression.JawOpen
-                    ? s[(int)UnifiedExpression.JawOpen]
+                const int kUpstreamJawOpenIndex = 22;
+                float jawOpen = s.Length > kUpstreamJawOpenIndex
+                    ? s[kUpstreamJawOpenIndex]
                     : 0f;
                 lastJawOpen = jawOpen;
 
@@ -699,7 +709,7 @@ public sealed class SubprocessManager : IDisposable
                 }
 
                 await writer.PublishAsync(
-                    eyeSink, exprSink,
+                    eyeSink, upstreamShapes,
                     initReply.eyeSuccess, initReply.expressionSuccess,
                     module.UuidHash, ct);
                 Interlocked.Increment(ref _framesWritten);

@@ -17,8 +17,11 @@ namespace OpenVRPair.FaceModuleHost.Workers;
 [InlineArray(3)]
 internal struct Float3 { private float _e0; }
 
-[InlineArray(63)]
-internal struct Float63 { private float _e0; }
+// Wire-side expression array carries upstream VRCFaceTracking.UnifiedExpressions
+// order (88 entries excluding Max). The driver remaps to our 63-slot ordering
+// inside FaceFrameReader before any consumer touches the frame.
+[InlineArray(88)]
+internal struct Float88 { private float _e0; }
 
 [StructLayout(LayoutKind.Sequential, Pack = 8)]
 internal struct FaceTrackingFrameBodyNative
@@ -35,7 +38,7 @@ internal struct FaceTrackingFrameBodyNative
     public float   pupil_dilation_r;
     public float   eye_confidence_l;
     public float   eye_confidence_r;
-    public Float63 expressions;
+    public Float88 expressions;
     public uint    flags;
 
     // v2 head pose fields. head_flags bit 0 = head valid this frame.
@@ -66,8 +69,12 @@ internal struct FaceTrackingFrameSlotNative
 public sealed class FrameWriter(string shmemName, HostLogger logger) : IDisposable
 {
     private const uint  Magic        = 0x46544652u; // 'FTFR'
-    private const uint  ShmemVersion = 2; // v2: added head_yaw/pitch/roll/pos_x/y/z/head_flags
+    private const uint  ShmemVersion = 3; // v3: expressions grown to upstream-format 88 slots
     private const int   RingSize     = 32;
+
+    // Public constant so callers can size their upstream-shape buffers
+    // consistently. Mirrors protocol::FACETRACKING_UPSTREAM_EXPRESSION_COUNT.
+    public const int    UpstreamShapeCount = 88;
 
     // Byte offsets inside ShmemData. Layout must match Protocol.h exactly:
     //   uint32_t magic                        @  0
@@ -146,14 +153,16 @@ public sealed class FrameWriter(string shmemName, HostLogger logger) : IDisposab
     }
 
     /// <summary>
-    /// Assembles a frame from the active module's sinks and publishes it under seqlock.
-    /// The <paramref name="moduleUuidHash"/> must be pre-computed (FNV-1a-64 of the UUID)
-    /// by the caller and cached -- do not recompute per frame.
-    /// Must be called from a single producer thread.
+    /// Publish a frame to the shmem ring. The expression array is passed in
+    /// upstream VRCFaceTracking.UnifiedExpressions order (88 entries); the
+    /// driver remaps to our 63-slot ordering on the read side. The
+    /// <paramref name="moduleUuidHash"/> must be pre-computed (FNV-1a-64 of
+    /// the UUID) by the caller -- do not recompute per frame. Must be called
+    /// from a single producer thread.
     /// </summary>
     public ValueTask PublishAsync(
         EyeFrameSink eye,
-        ExpressionFrameSink expr,
+        ReadOnlySpan<float> upstreamShapes,
         bool eyeValid,
         bool exprValid,
         ulong moduleUuidHash,
@@ -190,10 +199,9 @@ public sealed class FrameWriter(string shmemName, HostLogger logger) : IDisposab
         body.eye_gaze_r[1]   = eye.Right.DirHmd.Y;
         body.eye_gaze_r[2]   = eye.Right.DirHmd.Z;
 
-        ReadOnlySpan<float> shapes = expr.Values;
-        int count = Math.Min(shapes.Length, 63);
+        int count = Math.Min(upstreamShapes.Length, UpstreamShapeCount);
         for (int i = 0; i < count; i++)
-            body.expressions[i] = shapes[i];
+            body.expressions[i] = upstreamShapes[i];
 
         SanitizeNonFinite(ref body);
         WriteUnderSeqlock(ref body);
@@ -224,7 +232,7 @@ public sealed class FrameWriter(string shmemName, HostLogger logger) : IDisposab
             if (!float.IsFinite(body.eye_gaze_r[i]))   { body.eye_gaze_r[i]   = 0f; replaced++; }
         }
 
-        for (int i = 0; i < 63; i++)
+        for (int i = 0; i < UpstreamShapeCount; i++)
         {
             if (!float.IsFinite(body.expressions[i])) { body.expressions[i] = 0f; replaced++; }
         }

@@ -97,7 +97,8 @@ try
     logger.Info($"[startup] phase=discovering-modules path={opts.ModulesInstallDir}");
     var loadedModules = await loader.LoadAllAsync();
     logger.Info($"[startup] phase=modules-loaded count={loadedModules.Count}");
-    UpstreamExpressionMap.LogTo(logger.Info);
+    // (Expression remap moved to the driver; the host now forwards the
+    // upstream UnifiedExpressions array on the wire.)
 
     logger.Info("[startup] phase=starting-workers");
     // Start I/O workers concurrently.
@@ -230,16 +231,20 @@ static async Task<int> RunE2eFakeFramesAsync(
         eye.Left.Confidence = 0.95f;
         eye.Right.Confidence = 0.96f;
 
-        var expr = new ExpressionFrameSink();
-        expr[UnifiedExpression.JawOpen] = 0.75f;
-        expr[UnifiedExpression.MouthSmileLeft] = 0.25f;
-        expr[UnifiedExpression.MouthSmileRight] = 0.30f;
+        // Wire format is upstream VRCFaceTracking.UnifiedExpressions order.
+        // JawOpen is upstream index 22. MouthSmile has no upstream-name match
+        // (upstream uses MouthCornerPull*), so this fake feed leaves those
+        // slots at zero on the wire; downstream consumers using our 63-slot
+        // ordering see zero for MouthSmile -- match the e2e expectations.
+        float[] upstreamShapes = new float[FrameWriter.UpstreamShapeCount];
+        const int kUpstreamJawOpenIndex = 22;
+        upstreamShapes[kUpstreamJawOpenIndex] = 0.75f;
 
         for (int i = 0; i < opts.E2eFakeFrameCount; ++i)
         {
             await writer.PublishAsync(
                 eye,
-                expr,
+                upstreamShapes,
                 eyeValid: true,
                 exprValid: true,
                 moduleUuidHash: 0xE2E0FACADE123456UL,

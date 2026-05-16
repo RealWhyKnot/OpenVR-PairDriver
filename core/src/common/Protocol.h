@@ -210,7 +210,7 @@ namespace protocol
 	// (uint32_t) and last_exit_description (char[128]) so the overlay can
 	// surface a halted host's exit reason in the Translator tab instead of
 	// just showing the halt flag. _pad shrinks from 7 to 3 bytes.
-	const uint32_t Version = 17;
+	const uint32_t Version = 18;
 
 	// Maximum length of a tracking-system-name string (e.g., "lighthouse", "oculus",
 	// "Pimax Crystal HMD"). 32 bytes is more than enough for known systems and keeps
@@ -1494,10 +1494,19 @@ namespace protocol
 	// generation so a reader can detect torn reads.
 	// =========================================================================
 
-	// Number of facial-expression shapes carried per frame. Mirrors the Unified
-	// Expressions v2 enum order in the SDK; the wire ABI is the ordering, NOT
-	// the C# enum, so the host MUST serialise into this fixed index space.
+	// Number of facial-expression shapes the driver and its consumers (OSC
+	// publisher, native SteamVR sink, CalibrationEngine) work with. This is
+	// our internal/consumer-facing layout; the wire-side carries upstream's
+	// FACETRACKING_UPSTREAM_EXPRESSION_COUNT and the reader remaps before
+	// returning a frame to consumers.
 	static const uint32_t FACETRACKING_EXPRESSION_COUNT = 63;
+
+	// Number of facial-expression shapes carried on the wire. Matches
+	// VRCFaceTracking.Core.Params.Expressions.UnifiedExpressions excluding
+	// the Max sentinel. The host writes this many floats dense; the driver
+	// remaps to FACETRACKING_EXPRESSION_COUNT via
+	// core/src/common/facetracking/UpstreamShapeMap.h before consumption.
+	static const uint32_t FACETRACKING_UPSTREAM_EXPRESSION_COUNT = 88;
 
 	struct FaceTrackingFrameBody
 	{
@@ -1571,10 +1580,64 @@ namespace protocol
 	static_assert(std::is_standard_layout<FaceTrackingFrameBody>::value,
 		"FaceTrackingFrameBody must be standard-layout for stable wire format");
 
+	// Wire-format body. Same field shape as FaceTrackingFrameBody except the
+	// expression array carries FACETRACKING_UPSTREAM_EXPRESSION_COUNT (88)
+	// entries in upstream VRCFaceTracking.UnifiedExpressions order rather
+	// than FACETRACKING_EXPRESSION_COUNT (63) entries in our internal order.
+	// The host writes this struct; FaceTrackingFrameShmem::TryReadLatest
+	// translates into FaceTrackingFrameBody before returning to consumers.
+	struct FaceTrackingFrameBodyWire
+	{
+		uint64_t qpc_sample_time;
+		uint64_t source_module_uuid_hash;
+
+		float    eye_origin_l[3];
+		float    eye_origin_r[3];
+		float    eye_gaze_l[3];
+		float    eye_gaze_r[3];
+
+		float    eye_openness_l;
+		float    eye_openness_r;
+		float    pupil_dilation_l;
+		float    pupil_dilation_r;
+		float    eye_confidence_l;
+		float    eye_confidence_r;
+
+		float    expressions[FACETRACKING_UPSTREAM_EXPRESSION_COUNT];
+
+		uint32_t flags;
+
+		float    head_yaw;
+		float    head_pitch;
+		float    head_roll;
+		float    head_pos_x;
+		float    head_pos_y;
+		float    head_pos_z;
+		uint32_t head_flags;
+	};
+
+	static_assert(std::is_trivially_copyable<FaceTrackingFrameBodyWire>::value,
+		"FaceTrackingFrameBodyWire must be trivially copyable for shmem use");
+	static_assert(std::is_standard_layout<FaceTrackingFrameBodyWire>::value,
+		"FaceTrackingFrameBodyWire must be standard-layout for stable wire format");
+
+	// Sanity-check that the wire body matches the consumer-facing body
+	// everywhere except expressions[]. If a field is added/reordered to
+	// FaceTrackingFrameBody, the same change has to land in the wire body
+	// or the host writes through the wrong offsets.
+	static_assert(
+		offsetof(FaceTrackingFrameBodyWire, qpc_sample_time)
+		    == offsetof(FaceTrackingFrameBody, qpc_sample_time),
+		"qpc_sample_time offset mismatch");
+	static_assert(
+		offsetof(FaceTrackingFrameBodyWire, expressions)
+		    == offsetof(FaceTrackingFrameBody, expressions),
+		"expressions offset mismatch");
+
 	struct FaceTrackingFrameSlot
 	{
 		std::atomic<uint64_t> generation;
-		FaceTrackingFrameBody body;
+		FaceTrackingFrameBodyWire body; // wire format -- 88 upstream shapes
 	};
 
 	// host_state byte values written into ShmemData::host_state by the host's
@@ -1592,7 +1655,7 @@ namespace protocol
 	{
 	public:
 		static const uint32_t SHMEM_MAGIC   = 0x46544652; // 'FTFR'
-		static const uint32_t SHMEM_VERSION = 2; // v2: added head_yaw/pitch/roll/pos_x/y/z/head_flags
+		static const uint32_t SHMEM_VERSION = 3; // v3: expressions grown to upstream-format 88 slots; driver remaps via UpstreamShapeMap
 		static const uint32_t RING_SIZE     = 32;
 
 	private:
@@ -1768,12 +1831,13 @@ namespace protocol
 			pData->host_heartbeat_qpc.store(0, std::memory_order_release);
 		}
 
-		// Reader: copy the most recently published frame's body into `out`. The
-		// per-slot seqlock detects torn reads; up to `max_retries` retries are
-		// attempted. Returns false if no frame has been published yet OR if the
-		// retry budget was exceeded (writer is hot-looping faster than reader,
-		// which is harmless -- caller skips this frame).
-		bool TryReadLatest(FaceTrackingFrameBody &out, int max_retries = 8) const
+		// Reader: copy the most recently published wire-format frame into
+		// `out`. The wire body carries 88 upstream-ordered expression
+		// shapes; the caller is expected to remap to our 63-slot ordering
+		// via facetracking::RemapUpstreamShapes (UpstreamShapeMap.h) before
+		// consumption. FaceFrameReader::TryRead is the production caller
+		// and does that remap automatically.
+		bool TryReadLatestWire(FaceTrackingFrameBodyWire &out, int max_retries = 8) const
 		{
 			if (!pData) return false;
 			const uint64_t idx = pData->publish_index.load(std::memory_order_acquire);
@@ -1782,13 +1846,10 @@ namespace protocol
 			for (int attempt = 0; attempt < max_retries; ++attempt) {
 				const uint64_t g1 = slot.generation.load(std::memory_order_acquire);
 				if ((g1 & 1ULL) != 0ULL) {
-					// Writer mid-update. Hint the CPU to back off so a
-					// hyperthread sharing the same physical core lets the
-					// writer run.
 					YieldProcessor();
 					continue;
 				}
-				std::memcpy(&out, &slot.body, sizeof(FaceTrackingFrameBody));
+				std::memcpy(&out, &slot.body, sizeof(FaceTrackingFrameBodyWire));
 				std::atomic_thread_fence(std::memory_order_acquire);
 				const uint64_t g2 = slot.generation.load(std::memory_order_acquire);
 				if (g1 == g2) return true;
@@ -1797,12 +1858,10 @@ namespace protocol
 			return false;
 		}
 
-		// Reader: copy a specific historical slot (by absolute publish index).
-		// Returns false if the requested index has already been overwritten
-		// (target_index + RING_SIZE < current publish_index) or if a torn read
-		// can't be resolved. Lets the driver's continuous-calibration code look
-		// at a few frames of history without a private buffer.
-		bool TryReadByIndex(uint64_t target_index, FaceTrackingFrameBody &out, int max_retries = 8) const
+		// Reader: copy a specific historical wire slot (by absolute publish
+		// index). Returns false if the requested index has already been
+		// overwritten or if a torn read can't be resolved.
+		bool TryReadWireByIndex(uint64_t target_index, FaceTrackingFrameBodyWire &out, int max_retries = 8) const
 		{
 			if (!pData || target_index == 0) return false;
 			const uint64_t now = pData->publish_index.load(std::memory_order_acquire);
@@ -1812,13 +1871,10 @@ namespace protocol
 			for (int attempt = 0; attempt < max_retries; ++attempt) {
 				const uint64_t g1 = slot.generation.load(std::memory_order_acquire);
 				if ((g1 & 1ULL) != 0ULL) {
-					// Writer mid-update. Hint the CPU to back off so a
-					// hyperthread sharing the same physical core lets the
-					// writer run.
 					YieldProcessor();
 					continue;
 				}
-				std::memcpy(&out, &slot.body, sizeof(FaceTrackingFrameBody));
+				std::memcpy(&out, &slot.body, sizeof(FaceTrackingFrameBodyWire));
 				std::atomic_thread_fence(std::memory_order_acquire);
 				const uint64_t g2 = slot.generation.load(std::memory_order_acquire);
 				if (g1 == g2) return true;
@@ -1828,18 +1884,16 @@ namespace protocol
 		}
 
 		// Writer-side helper for unit tests and any future C++ first-party
-		// publisher. The C# host writes the same layout directly via
-		// MemoryMappedFile + Volatile.Write; production code path never calls
-		// this. Bumps the slot generation odd before memcpy and even after,
-		// then publishes the new index.
-		void Publish(const FaceTrackingFrameBody &body)
+		// publisher. Accepts the wire body (88 upstream shapes) directly; the
+		// host's C# FrameWriter writes this same layout via MemoryMappedFile.
+		void Publish(const FaceTrackingFrameBodyWire &body)
 		{
 			if (!pData) return;
 			const uint64_t next = pData->publish_index.load(std::memory_order_relaxed) + 1;
 			FaceTrackingFrameSlot &slot = pData->slots[(next - 1) % RING_SIZE];
 			const uint64_t prev_gen = slot.generation.load(std::memory_order_relaxed);
 			slot.generation.store(prev_gen + 1, std::memory_order_release);
-			std::memcpy(&slot.body, &body, sizeof(FaceTrackingFrameBody));
+			std::memcpy(&slot.body, &body, sizeof(FaceTrackingFrameBodyWire));
 			slot.generation.store(prev_gen + 2, std::memory_order_release);
 			pData->publish_index.store(next, std::memory_order_release);
 		}
