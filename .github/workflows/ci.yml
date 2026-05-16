@@ -94,7 +94,7 @@ jobs:
         # The minhook submodule declares cmake_minimum_required(2.8.12) which
         # CMake 4.x rejects. -DCMAKE_POLICY_VERSION_MINIMUM=3.5 lets us configure
         # without forking. -Wno-dev silences developer-mode warnings from minhook.
-        run: cmake -G "Visual Studio 17 2022" -A x64 -B build -S . -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DWKOPENVR_TRANSLATOR_CUDA=OFF -Wno-dev
+        run: cmake -G "Visual Studio 17 2022" -A x64 -B build -S . -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DWKOPENVR_CAPTIONS_CUDA=OFF -Wno-dev
 
       - name: Build
         run: cmake --build build --config Release --parallel
@@ -110,15 +110,15 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "$($t.Name) failed (exit $LASTEXITCODE)" }
           }
 
-      - name: Run translator host self-test
+      - name: Run captions host self-test
         shell: pwsh
         run: |
-          $hostExe = 'build/driver_wkopenvr/resources/translator/host/WKOpenVR.TranslatorHost.exe'
+          $hostExe = 'build/driver_wkopenvr/resources/captions/host/WKOpenVR.CaptionsHost.exe'
           if (-not (Test-Path -LiteralPath $hostExe)) {
-            throw "Translator host missing at $hostExe"
+            throw "Captions host missing at $hostExe"
           }
           & $hostExe --self-test
-          if ($LASTEXITCODE -ne 0) { throw "Translator host self-test failed (exit $LASTEXITCODE)" }
+          if ($LASTEXITCODE -ne 0) { throw "Captions host self-test failed (exit $LASTEXITCODE)" }
 
       - name: Install NSIS
         # No-op when the NSIS cache step above restored the install tree.
@@ -147,10 +147,10 @@ jobs:
             'build/driver_wkopenvr/resources/settings/default.vrsettings',
             'build/driver_wkopenvr/bin/win64/driver_wkopenvr.dll',
             'build/driver_wkopenvr/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe',
-            'build/driver_wkopenvr/resources/translator/host/WKOpenVR.TranslatorHost.exe',
-            'build/driver_wkopenvr/resources/translator/host/openvr_api.dll',
-            'build/driver_wkopenvr/resources/translator/host/resources/translator-packs.json',
-            'build/driver_wkopenvr/resources/translator/host/resources/install-translator-pack.ps1'
+            'build/driver_wkopenvr/resources/captions/host/WKOpenVR.CaptionsHost.exe',
+            'build/driver_wkopenvr/resources/captions/host/openvr_api.dll',
+            'build/driver_wkopenvr/resources/captions/host/resources/captions-packs.json',
+            'build/driver_wkopenvr/resources/captions/host/resources/install-captions-pack.ps1'
           )
           $missing = @()
           foreach ($p in $required) {

@@ -14,8 +14,8 @@ param(
 	[switch]$Release,
 
 	# Developer opt-in for the CUDA whisper backend. Public/local builds force
-	# CPU-only unless this switch or WKOPENVR_TRANSLATOR_CUDA=ON is explicit.
-	[switch]$TranslatorCuda
+	# CPU-only unless this switch or WKOPENVR_CAPTIONS_CUDA=ON is explicit.
+	[switch]$CaptionsCuda
 )
 
 $ErrorActionPreference = "Stop"
@@ -161,16 +161,16 @@ function Invoke-NativeQuiet {
 
 if (-not $SkipConfigure) {
 	Clear-StaleCMakeGeneratorInstance -BuildDir "build"
-	$translatorCudaValue = "OFF"
-	if ($TranslatorCuda -or $env:WKOPENVR_TRANSLATOR_CUDA -eq "ON") {
-		$translatorCudaValue = "ON"
+	$captionsCudaValue = "OFF"
+	if ($CaptionsCuda -or $env:WKOPENVR_CAPTIONS_CUDA -eq "ON") {
+		$captionsCudaValue = "ON"
 	}
 	$configureArgs = @(
 		"-S", ".",
 		"-B", "build",
 		"-A", "x64",
 		"-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
-		"-DWKOPENVR_TRANSLATOR_CUDA=$translatorCudaValue",
+		"-DWKOPENVR_CAPTIONS_CUDA=$captionsCudaValue",
 		"-Wno-dev"
 	)
 	Invoke-NativeQuiet { cmake @configureArgs }

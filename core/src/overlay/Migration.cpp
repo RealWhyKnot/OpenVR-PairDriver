@@ -264,6 +264,40 @@ write_sentinel:
     }
 }
 
+// Step 4: rename %LocalAppDataLow%\WKOpenVR\translator\ ->
+//         %LocalAppDataLow%\WKOpenVR\captions\ on upgrade. The translator
+// subtree holds downloaded whisper.cpp model packs (often 300 MB+) that we
+// must not force the user to re-download. fs::rename is same-filesystem,
+// instant, and preserves host_status.json plus any in-flight pack-extract
+// state. Idempotent: short-circuits when the new dir already exists.
+static void MigrateTranslatorToCaptions()
+{
+    std::wstring root = openvr_pair::common::LocalAppDataLowPath();
+    if (root.empty()) return;
+
+    namespace fs = std::filesystem;
+    fs::path oldDir = fs::path(root) / L"WKOpenVR" / L"translator";
+    fs::path newDir = fs::path(root) / L"WKOpenVR" / L"captions";
+
+    if (!fs::exists(oldDir)) return; // nothing to migrate (fresh install)
+    if (fs::exists(newDir))  return; // already migrated
+
+    fprintf(stderr,
+        "[Migration] Renaming %%LocalAppDataLow%%\\WKOpenVR\\translator -> "
+        "%%LocalAppDataLow%%\\WKOpenVR\\captions\n");
+
+    std::error_code ec;
+    fs::rename(oldDir, newDir, ec);
+    if (ec) {
+        fprintf(stderr,
+            "[Migration] Translator->Captions rename failed: %s\n",
+            ec.message().c_str());
+        return;
+    }
+
+    fprintf(stderr, "[Migration] Captions data migrated in place\n");
+}
+
 } // namespace
 
 void RunFirstLaunchMigration()
@@ -271,6 +305,7 @@ void RunFirstLaunchMigration()
     MigrateAppData();
     MigrateScRegistryKey();
     MigrateFtOscPort();
+    MigrateTranslatorToCaptions();
 }
 
 } // namespace openvr_pair::overlay

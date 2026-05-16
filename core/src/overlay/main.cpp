@@ -49,8 +49,8 @@ std::unique_ptr<FeaturePlugin> CreateFaceTrackingPlugin();
 #if OPENVR_PAIR_HAS_OSCROUTER_OVERLAY
 std::unique_ptr<FeaturePlugin> CreateOscRouterPlugin();
 #endif
-#if OPENVR_PAIR_HAS_TRANSLATOR_OVERLAY
-std::unique_ptr<FeaturePlugin> CreateTranslatorPlugin();
+#if OPENVR_PAIR_HAS_CAPTIONS_OVERLAY
+std::unique_ptr<FeaturePlugin> CreateCaptionsPlugin();
 #endif
 
 } // namespace openvr_pair::overlay
@@ -81,8 +81,8 @@ std::vector<std::unique_ptr<openvr_pair::overlay::FeaturePlugin>> CreatePlugins(
 #if OPENVR_PAIR_HAS_OSCROUTER_OVERLAY
 	plugins.push_back(CreateOscRouterPlugin());
 #endif
-#if OPENVR_PAIR_HAS_TRANSLATOR_OVERLAY
-	plugins.push_back(CreateTranslatorPlugin());
+#if OPENVR_PAIR_HAS_CAPTIONS_OVERLAY
+	plugins.push_back(CreateCaptionsPlugin());
 #endif
 	return plugins;
 }
@@ -245,7 +245,7 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 			// in flight, disable the checkbox and surface the reason on
 			// hover so the user is not staring at an unresponsive control.
 			// Also block disabling the OSC Router while Face Tracking or
-			// Translator are enabled: those features publish OSC through the
+			// Captions are enabled: those features publish OSC through the
 			// router, so turning it off would silently kill their output to
 			// VRChat.
 			ImGui::TableNextColumn();
@@ -255,7 +255,7 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 			const bool isRouterRow = (key == "enable_oscrouter.flag");
 			const bool routerDependentOn = isRouterRow && displayState &&
 				(context.IsFlagPresent("enable_facetracking.flag") ||
-				 context.IsFlagPresent("enable_translator.flag"));
+				 context.IsFlagPresent("enable_captions.flag"));
 			const char *blockReason = nullptr;
 			bool blocked = isPending;
 			if (isPending) {
@@ -263,7 +263,7 @@ void DrawModules(openvr_pair::overlay::ShellContext &context,
 			} else if (routerDependentOn) {
 				blocked = true;
 				blockReason =
-					"Face Tracking and Translator publish through the OSC Router. "
+					"Face Tracking and Captions publish through the OSC Router. "
 					"Disable those modules first if you really want to turn the router off.";
 			}
 			openvr_pair::overlay::ui::DisabledSection disabled(

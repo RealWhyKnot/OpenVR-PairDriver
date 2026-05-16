@@ -72,10 +72,10 @@ std::filesystem::path FaceHostPath()
         L"host" / L"OpenVRPair.FaceModuleHost.exe";
 }
 
-std::filesystem::path TranslatorHostPath()
+std::filesystem::path CaptionsHostPath()
 {
-    return BuildRoot() / L"driver_wkopenvr" / L"resources" / L"translator" /
-        L"host" / L"WKOpenVR.TranslatorHost.exe";
+    return BuildRoot() / L"driver_wkopenvr" / L"resources" / L"captions" /
+        L"host" / L"WKOpenVR.CaptionsHost.exe";
 }
 
 std::filesystem::path MakeTempDir(const wchar_t *name)
@@ -642,19 +642,19 @@ TEST(E2E, FaceHostReloadsInstalledModulesAndDisablesSelection)
     EXPECT_EQ(host.ExitCode(), 0u);
 }
 
-TEST(E2E, TranslatorFakeOutputReachesFakeVrchat)
+TEST(E2E, CaptionsFakeOutputReachesFakeVrchat)
 {
-    ASSERT_TRUE(std::filesystem::exists(TranslatorHostPath()))
-        << "Translator host missing at " << TranslatorHostPath().string();
+    ASSERT_TRUE(std::filesystem::exists(CaptionsHostPath()))
+        << "Captions host missing at " << CaptionsHostPath().string();
 
     RouterHarness harness;
     ASSERT_TRUE(harness.Start());
 
-    auto temp = MakeTempDir(L"translator");
-    auto statusPath = temp / L"translator_status.json";
+    auto temp = MakeTempDir(L"captions");
+    auto statusPath = temp / L"captions_status.json";
     const std::string expected = "WKOpenVR E2E translated line";
 
-    ProcessResult result = RunProcess(TranslatorHostPath(), {
+    ProcessResult result = RunProcess(CaptionsHostPath(), {
         L"--e2e-fake-chatbox", Utf8ToWide(expected),
         L"--status-file", statusPath.wstring(),
     }, 15000);

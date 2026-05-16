@@ -26,9 +26,9 @@
 // Publish pipe: fire-and-forget from out-of-process sidecars. Wire format:
 // 32-byte source-id, 4-byte LE frame length, then `length` bytes of raw OSC.
 #define OPENVR_PAIRDRIVER_OSCROUTER_PUB_PIPE_NAME "\\\\.\\pipe\\WKOpenVR-OscRouterPub"
-// Translator module. Driver opens this pipe gated on enable_translator.flag.
-// Accepts RequestSetTranslatorConfig and RequestTranslatorRestartHost.
-#define OPENVR_PAIRDRIVER_TRANSLATOR_PIPE_NAME   "\\\\.\\pipe\\WKOpenVR-Translator"
+// Captions module. Driver opens this pipe gated on enable_captions.flag.
+// Accepts RequestSetCaptionsConfig and RequestCaptionsRestartHost.
+#define OPENVR_PAIRDRIVER_CAPTIONS_PIPE_NAME   "\\\\.\\pipe\\WKOpenVR-Captions"
 
 // Pose telemetry shmem segment. Created by the driver only when the calibration
 // feature is enabled; the calibration overlay opens it to read driver-side
@@ -206,9 +206,9 @@ namespace protocol
 	// consistency; a full paired reinstall is required regardless due to the
 	// version bump.
 	//
-	// v17 (2026-05-15): TranslatorSupervisorStatus grows last_exit_code
+	// v17 (2026-05-15): CaptionsSupervisorStatus grows last_exit_code
 	// (uint32_t) and last_exit_description (char[128]) so the overlay can
-	// surface a halted host's exit reason in the Translator tab instead of
+	// surface a halted host's exit reason in the Captions tab instead of
 	// just showing the halt flag. _pad shrinks from 7 to 3 bytes.
 	const uint32_t Version = 18;
 
@@ -272,13 +272,13 @@ namespace protocol
 		RequestOscRouteUnsubscribe,
 		RequestOscPublish,
 		RequestOscGetStats,
-		// Translator module (appended after v16 entries; no version bump).
-		// Driver routes these on \\.\pipe\WKOpenVR-Translator, gated on
-		// kFeatureTranslator. SetTranslatorConfig pushes mic/language/mode
-		// settings; TranslatorRestartHost terminates and respawns the sidecar.
-		RequestSetTranslatorConfig,
-		RequestTranslatorRestartHost,
-		RequestTranslatorGetSupervisorStatus,
+		// Captions module (appended after v16 entries; no version bump).
+		// Driver routes these on \\.\pipe\WKOpenVR-Captions, gated on
+		// kFeatureCaptions. SetCaptionsConfig pushes mic/language/mode
+		// settings; CaptionsRestartHost terminates and respawns the sidecar.
+		RequestSetCaptionsConfig,
+		RequestCaptionsRestartHost,
+		RequestCaptionsGetSupervisorStatus,
 	};
 
 	enum ResponseType
@@ -288,8 +288,8 @@ namespace protocol
 		ResponseSuccess,
 		// v16: sent in reply to RequestOscGetStats. Payload is OscRouterStats.
 		ResponseOscRouterStats,
-		// Translator: sent in reply to RequestTranslatorGetSupervisorStatus.
-		ResponseTranslatorSupervisorStatus,
+		// Captions: sent in reply to RequestCaptionsGetSupervisorStatus.
+		ResponseCaptionsSupervisorStatus,
 	};
 
 	struct Protocol
@@ -717,22 +717,22 @@ namespace protocol
 	};
 
 	// =========================================================================
-	// Translator module protocol additions (no version bump; appended after v16)
+	// Captions module protocol additions (no version bump; appended after v16)
 	// =========================================================================
 
-	// Maximum field widths for translator config strings.
-	// These are kept small so TranslatorConfig fits inside SetDeviceTransform.
-	static const size_t TRANSLATOR_LANG_LEN = 16;  // BCP-47 code, e.g. "en", "zh", "auto"
-	static const size_t TRANSLATOR_ADDR_LEN = 48;  // OSC address, e.g. "/chatbox/input"
+	// Maximum field widths for captions config strings.
+	// These are kept small so CaptionsConfig fits inside SetDeviceTransform.
+	static const size_t CAPTIONS_LANG_LEN = 16;  // BCP-47 code, e.g. "en", "zh", "auto"
+	static const size_t CAPTIONS_ADDR_LEN = 48;  // OSC address, e.g. "/chatbox/input"
 
-	// Translator operating mode.
-	enum TranslatorMode : uint8_t
+	// Captions operating mode.
+	enum CaptionsMode : uint8_t
 	{
-		TranslatorModePushToTalk = 0,
-		TranslatorModeAlwaysOn   = 1,
+		CaptionsModePushToTalk = 0,
+		CaptionsModeAlwaysOn   = 1,
 	};
 
-	// POD payload for RequestSetTranslatorConfig. The overlay pushes this
+	// POD payload for RequestSetCaptionsConfig. The overlay pushes this
 	// whenever the user changes any setting. The driver caches and forwards
 	// it to the sidecar over the host control pipe. All string fields are
 	// NUL-terminated; the driver truncates silently on overflow.
@@ -740,15 +740,15 @@ namespace protocol
 	// Model paths are not carried over IPC (they are large and change
 	// infrequently); the host reads them from a local config JSON file.
 	//
-	// sizeof(TranslatorConfig) must not exceed sizeof(SetDeviceTransform)
+	// sizeof(CaptionsConfig) must not exceed sizeof(SetDeviceTransform)
 	// -- enforced by the static_assert below.
-	struct TranslatorConfig
+	struct CaptionsConfig
 	{
 		// Master enable. 0 = sidecar runs but produces no output (muted).
 		uint8_t  master_enabled;
 
 		// Operating mode: PTT or always-on.
-		uint8_t  mode;                      // TranslatorMode
+		uint8_t  mode;                      // CaptionsMode
 
 		// Notification sound on chatbox send. 0 = silent.
 		uint8_t  notify_sound;
@@ -763,17 +763,17 @@ namespace protocol
 		uint8_t  _pad[2];
 
 		// Source language code ("auto" = whisper auto-detect).
-		char     source_lang[TRANSLATOR_LANG_LEN];
+		char     source_lang[CAPTIONS_LANG_LEN];
 
 		// Target language code ("" = transcribe only, no translation).
-		char     target_lang[TRANSLATOR_LANG_LEN];
+		char     target_lang[CAPTIONS_LANG_LEN];
 
 		// Chatbox OSC address (default "/chatbox/input").
-		char     chatbox_address[TRANSLATOR_ADDR_LEN];
+		char     chatbox_address[CAPTIONS_ADDR_LEN];
 	};
 
-	// Response payload for RequestTranslatorGetSupervisorStatus.
-	struct TranslatorSupervisorStatus
+	// Response payload for RequestCaptionsGetSupervisorStatus.
+	struct CaptionsSupervisorStatus
 	{
 		// 1 if the circuit breaker has tripped (5 consecutive fast exits);
 		// 0 otherwise. When 1, the host will not be respawned until the
@@ -820,9 +820,9 @@ namespace protocol
 			OscRouteSubscribe   oscRouteSubscribe;
 			OscRouteUnsubscribe oscRouteUnsubscribe;
 			OscPublish          oscPublish;
-			// Translator: config push. Smaller than SetDeviceTransform;
+			// Captions: config push. Smaller than SetDeviceTransform;
 			// static_assert below enforces it.
-			TranslatorConfig    setTranslatorConfig;
+			CaptionsConfig    setCaptionsConfig;
 		};
 
 		Request() : type(RequestInvalid), setAlignmentSpeedParams({}) { }
@@ -844,8 +844,8 @@ namespace protocol
 		"OscRouteUnsubscribe must not grow Request");
 	static_assert(sizeof(OscPublish) <= sizeof(SetDeviceTransform),
 		"OscPublish must not grow Request");
-	static_assert(sizeof(TranslatorConfig) <= sizeof(SetDeviceTransform),
-		"TranslatorConfig must not grow Request");
+	static_assert(sizeof(CaptionsConfig) <= sizeof(SetDeviceTransform),
+		"CaptionsConfig must not grow Request");
 
 	struct Response
 	{
@@ -854,7 +854,7 @@ namespace protocol
 		union {
 			Protocol                  protocol;
 			OscRouterStats            oscRouterStats;           // v16: ResponseOscRouterStats
-			TranslatorSupervisorStatus translatorSupervisorStatus; // Translator: supervisor state
+			CaptionsSupervisorStatus captionsSupervisorStatus; // Captions: supervisor state
 		};
 
 		Response() : type(ResponseInvalid), protocol({}) {}

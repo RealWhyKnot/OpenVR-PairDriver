@@ -1,0 +1,36 @@
+{
+  "default_bindings": [
+    {
+      "controller_type": "knuckles",
+      "binding_url": "bindings_knuckles.json"
+    },
+    {
+      "controller_type": "oculus_touch",
+      "binding_url": "bindings_touch.json"
+    },
+    {
+      "controller_type": "vive_controller",
+      "binding_url": "bindings_vive.json"
+    }
+  ],
+  "actions": [
+    {
+      "name": "/actions/translator/in/push_to_talk",
+      "type": "boolean",
+      "requirement": "optional"
+    }
+  ],
+  "action_sets": [
+    {
+      "name": "/actions/translator",
+      "usage": "leftright"
+    }
+  ],
+  "localization": [
+    {
+      "language_tag": "en_US",
+      "/actions/translator": "WKOpenVR Captions",
+      "/actions/translator/in/push_to_talk": "Push to Talk"
+    }
+  ]
+}

@@ -18,7 +18,7 @@ bool PublishOsc(const char *source_id,
         // One-shot per session. Every other module that calls PublishOsc
         // would otherwise drop packets silently when the router feature flag
         // is absent; this line tells the user (and the next bug report)
-        // exactly why their face tracking / translator output is invisible.
+        // exactly why their face tracking / captions output is invisible.
         static std::atomic<bool> warned{false};
         bool expected = false;
         if (warned.compare_exchange_strong(expected, true,

@@ -36,8 +36,8 @@ if(TARGET openvr_pair_feature_facetracking_host)
     add_dependencies(e2e_tests openvr_pair_feature_facetracking_host)
 endif()
 
-if(TARGET WKOpenVRTranslatorHost)
-    add_dependencies(e2e_tests WKOpenVRTranslatorHost)
+if(TARGET WKOpenVRCaptionsHost)
+    add_dependencies(e2e_tests WKOpenVRCaptionsHost)
 endif()
 
 target_compile_definitions(e2e_tests PRIVATE

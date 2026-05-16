@@ -5,7 +5,7 @@ param(
 	# Pass through to build.ps1 when building.
 	[switch]$SkipConfigure,
 
-	# Optional GoogleTest filter, for example "Translator*".
+	# Optional GoogleTest filter, for example "Captions*".
 	[string]$Filter = ""
 )
 
@@ -56,15 +56,15 @@ foreach ($test in $tests) {
 	}
 }
 
-$translatorHost = Join-Path $PSScriptRoot "build\driver_wkopenvr\resources\translator\host\WKOpenVR.TranslatorHost.exe"
-if (-not (Test-Path -LiteralPath $translatorHost)) {
-	throw "Translator host missing at $translatorHost"
+$captionsHost = Join-Path $PSScriptRoot "build\driver_wkopenvr\resources\captions\host\WKOpenVR.CaptionsHost.exe"
+if (-not (Test-Path -LiteralPath $captionsHost)) {
+	throw "Captions host missing at $captionsHost"
 }
 Write-Host ""
-Write-Host "== Running WKOpenVR.TranslatorHost.exe --self-test =="
-Invoke-NativeQuiet { & $translatorHost --self-test }
+Write-Host "== Running WKOpenVR.CaptionsHost.exe --self-test =="
+Invoke-NativeQuiet { & $captionsHost --self-test }
 if ($LASTEXITCODE -ne 0) {
-	throw "Translator host self-test failed (exit $LASTEXITCODE)"
+	throw "Captions host self-test failed (exit $LASTEXITCODE)"
 }
 
 Write-Host ""

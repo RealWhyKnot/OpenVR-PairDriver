@@ -273,7 +273,7 @@ const wchar_t *ShortcutLabelFor(const char *flagFileName)
 		{ "enable_inputhealth.flag",  L"Input Health"     },
 		{ "enable_facetracking.flag", L"Face Tracking"    },
 		{ "enable_oscrouter.flag",    L"OSC Router"       },
-		{ "enable_translator.flag",   L"Translator" },
+		{ "enable_captions.flag",     L"Captions"         },
 	};
 	for (const auto &e : kEntries) {
 		if (strcmp(e.flag, flagFileName) == 0) return e.label;
@@ -296,7 +296,7 @@ const wchar_t *ShortcutArgFor(const char *flagFileName)
 		{ "enable_inputhealth.flag",  L"--launch=inputhealth"  },
 		{ "enable_facetracking.flag", L"--launch=facetracking" },
 		{ "enable_oscrouter.flag",    L"--launch=oscrouter"    },
-		{ "enable_translator.flag",   L"--launch=translator"   },
+		{ "enable_captions.flag",     L"--launch=captions"     },
 	};
 	for (const auto &e : kEntries) {
 		if (strcmp(e.flag, flagFileName) == 0) return e.arg;

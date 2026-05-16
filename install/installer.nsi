@@ -9,6 +9,7 @@
 ;   makensis /DFEATURE=Smoothing    installer.nsi
 ;   makensis /DFEATURE=InputHealth  installer.nsi
 ;   makensis /DFEATURE=FaceTracking installer.nsi
+;   makensis /DFEATURE=Captions     installer.nsi
 ;       -> WKOpenVR-<Feature>-Setup.exe  (single feature pre-enabled)
 
 !include "MUI2.nsh"
@@ -48,6 +49,10 @@
     !if "${FEATURE}" == "FaceTracking"
         Name "WKOpenVR (FaceTracking)"
         OutFile "..\build\artifacts\Release\WKOpenVR-FaceTracking-Setup.exe"
+    !endif
+    !if "${FEATURE}" == "Captions"
+        Name "WKOpenVR (Captions)"
+        OutFile "..\build\artifacts\Release\WKOpenVR-Captions-Setup.exe"
     !endif
 !endif
 
@@ -200,6 +205,9 @@ Section "Install"
     !if "${FEATURE}" == "FaceTracking"
         CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR - Face Tracking.lnk"    "$INSTDIR\WKOpenVR.exe" "--launch=facetracking" "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Face Tracking in WKOpenVR"
     !endif
+    !if "${FEATURE}" == "Captions"
+        CreateShortCut "$SMPROGRAMS\WKOpenVR\WKOpenVR - Captions.lnk"         "$INSTDIR\WKOpenVR.exe" "--launch=captions"     "$INSTDIR\WKOpenVR.exe" 0 SW_SHOWNORMAL "" "Live Captions in WKOpenVR"
+    !endif
 
     SetOutPath "$vrRuntimePath\drivers\01wkopenvr"
     File "${DRIVER_BASEDIR}\driver.vrdrivermanifest"
@@ -226,17 +234,17 @@ Section "Install"
         DetailPrint "FaceModuleHost not embedded in this installer (build host had no .NET 10 SDK); FaceTracking feature will run inert until the host is staged manually."
     !endif
 
-    ; Translator host sidecar (native Win64 exe + dependencies). Driver's
-    ; HostSupervisor spawns WKOpenVR.TranslatorHost.exe from this directory
-    ; when enable_translator.flag is present. Same /FileExists guard as
+    ; Captions host sidecar (native Win64 exe + dependencies). Driver's
+    ; HostSupervisor spawns WKOpenVR.CaptionsHost.exe from this directory
+    ; when enable_captions.flag is present. Same /FileExists guard as
     ; FaceModuleHost: omits the File directive silently when the build host
-    ; produced no translator host (OPENVR_PAIR_BUILD_TRANSLATOR_HOST=OFF),
+    ; produced no captions host (OPENVR_PAIR_BUILD_CAPTIONS_HOST=OFF),
     ; rather than aborting makensis with "no files found".
-    !if /FileExists "${DRIVER_BASEDIR}\resources\translator\host\WKOpenVR.TranslatorHost.exe"
-        SetOutPath "$vrRuntimePath\drivers\01wkopenvr\resources\translator\host"
-        File /r "${DRIVER_BASEDIR}\resources\translator\host\*.*"
+    !if /FileExists "${DRIVER_BASEDIR}\resources\captions\host\WKOpenVR.CaptionsHost.exe"
+        SetOutPath "$vrRuntimePath\drivers\01wkopenvr\resources\captions\host"
+        File /r "${DRIVER_BASEDIR}\resources\captions\host\*.*"
     !else
-        DetailPrint "TranslatorHost not embedded in this installer (OPENVR_PAIR_BUILD_TRANSLATOR_HOST=OFF or build missing); Translator feature will run inert until the host is staged manually."
+        DetailPrint "CaptionsHost not embedded in this installer (OPENVR_PAIR_BUILD_CAPTIONS_HOST=OFF or build missing); Captions feature will run inert until the host is staged manually."
     !endif
 
     ; Drop the feature enable flag when building a per-feature installer.
@@ -265,6 +273,12 @@ Section "Install"
         FileWrite $0 "enabled"
         FileClose $0
         DetailPrint "Enabled feature: FaceTracking"
+    !endif
+    !if "${FEATURE}" == "Captions"
+        FileOpen $0 "$vrRuntimePath\drivers\01wkopenvr\resources\enable_captions.flag" w
+        FileWrite $0 "enabled"
+        FileClose $0
+        DetailPrint "Enabled feature: Captions"
     !endif
 
     WriteRegStr HKLM "Software\WKOpenVR\Main" "" "$INSTDIR"
@@ -355,8 +369,10 @@ Section "Uninstall"
     Delete "$vrRuntimePath\drivers\01wkopenvr\resources\enable_smoothing.flag"
     Delete "$vrRuntimePath\drivers\01wkopenvr\resources\enable_inputhealth.flag"
     Delete "$vrRuntimePath\drivers\01wkopenvr\resources\enable_facetracking.flag"
+    Delete "$vrRuntimePath\drivers\01wkopenvr\resources\enable_captions.flag"
     RMDir /r "$vrRuntimePath\drivers\01wkopenvr\resources\facetracking"
     RMDir /r "$vrRuntimePath\drivers\01wkopenvr\resources\translator"
+    RMDir /r "$vrRuntimePath\drivers\01wkopenvr\resources\captions"
     RMDir /r "$vrRuntimePath\drivers\01wkopenvr"
 
     ; ---- Best-effort legacy driver cleanup (pre-rename product) -----------

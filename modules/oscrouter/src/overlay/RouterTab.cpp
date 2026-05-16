@@ -99,7 +99,7 @@ void RouterTab::DrawConnectedModules(openvr_pair::overlay::ShellContext &ctx)
     static const Entry kEntries[] = {
         { "enable_facetracking.flag", "Face Tracking",
           "legacy and v2 avatar parameters" },
-        { "enable_translator.flag",   "Translator",
+        { "enable_captions.flag",     "Captions",
           "chatbox text and transcripts" },
     };
 

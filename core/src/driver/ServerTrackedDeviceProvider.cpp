@@ -27,8 +27,8 @@
 #ifndef OPENVR_PAIR_HAS_OSCROUTER_DRIVER
 #define OPENVR_PAIR_HAS_OSCROUTER_DRIVER 0
 #endif
-#ifndef OPENVR_PAIR_HAS_TRANSLATOR_DRIVER
-#define OPENVR_PAIR_HAS_TRANSLATOR_DRIVER 0
+#ifndef OPENVR_PAIR_HAS_CAPTIONS_DRIVER
+#define OPENVR_PAIR_HAS_CAPTIONS_DRIVER 0
 #endif
 
 namespace {
@@ -138,8 +138,8 @@ vr::EVRInitError ServerTrackedDeviceProvider::Init(vr::IVRDriverContext *pDriver
 #if OPENVR_PAIR_HAS_FACETRACKING_DRIVER
 	activateModule(facetracking::CreateDriverModule());
 #endif
-#if OPENVR_PAIR_HAS_TRANSLATOR_DRIVER
-	activateModule(translator::CreateDriverModule());
+#if OPENVR_PAIR_HAS_CAPTIONS_DRIVER
+	activateModule(captions::CreateDriverModule());
 #endif
 
 	if (featureFlags & pairdriver::kFeatureCalibration) {
@@ -210,12 +210,12 @@ vr::EVRInitError ServerTrackedDeviceProvider::Init(vr::IVRDriverContext *pDriver
 		oscRouterServer->Run();
 	}
 
-	if (featureFlags & pairdriver::kFeatureTranslator) {
-		translatorServer = std::make_unique<IPCServer>(
+	if (featureFlags & pairdriver::kFeatureCaptions) {
+		captionsServer = std::make_unique<IPCServer>(
 			this,
-			OPENVR_PAIRDRIVER_TRANSLATOR_PIPE_NAME,
-			pairdriver::kFeatureTranslator);
-		translatorServer->Run();
+			OPENVR_PAIRDRIVER_CAPTIONS_PIPE_NAME,
+			pairdriver::kFeatureCaptions);
+		captionsServer->Run();
 	}
 
 	// Hook installation is gated inside the injector by the same feature
@@ -232,7 +232,7 @@ vr::EVRInitError ServerTrackedDeviceProvider::Init(vr::IVRDriverContext *pDriver
 		if (inputHealthServer) inputHealthServer->Stop();
 		if (faceTrackingServer) faceTrackingServer->Stop();
 		if (oscRouterServer) oscRouterServer->Stop();
-		if (translatorServer) translatorServer->Stop();
+		if (captionsServer) captionsServer->Stop();
 		shmem.Close();
 		VR_CLEANUP_SERVER_DRIVER_CONTEXT();
 		return vr::VRInitError_Driver_Failed;
@@ -269,7 +269,7 @@ void ServerTrackedDeviceProvider::Cleanup()
 		(*it)->Shutdown();
 	}
 	activeModules.clear();
-	if (translatorServer) translatorServer->Stop();
+	if (captionsServer) captionsServer->Stop();
 	if (oscRouterServer) oscRouterServer->Stop();
 	if (faceTrackingServer) faceTrackingServer->Stop();
 	if (inputHealthServer) inputHealthServer->Stop();

@@ -66,18 +66,23 @@ uint32_t DetectFeatureFlags()
 	const bool ihOn  = FlagFileExists(dir, L"enable_inputhealth.flag");
 	const bool ftOn  = FlagFileExists(dir, L"enable_facetracking.flag");
 	const bool orOn  = FlagFileExists(dir, L"enable_oscrouter.flag");
-	const bool trOn  = FlagFileExists(dir, L"enable_translator.flag");
+	// Legacy alias: pre-rename installs dropped enable_translator.flag. Treat
+	// either name as the same signal so an upgrade-in-place keeps the feature
+	// enabled without forcing the user to re-toggle. Future release can drop
+	// the legacy name.
+	const bool capOn = FlagFileExists(dir, L"enable_captions.flag")
+		|| FlagFileExists(dir, L"enable_translator.flag");
 	if (calOn) flags |= kFeatureCalibration;
 	if (smoOn) flags |= kFeatureSmoothing;
 	if (ihOn)  flags |= kFeatureInputHealth;
 	if (ftOn)  flags |= kFeatureFaceTracking;
 	if (orOn)  flags |= kFeatureOscRouter;
-	if (trOn)  flags |= kFeatureTranslator;
+	if (capOn) flags |= kFeatureCaptions;
 
 	// %ls expects wide string on MSVC's CRT. Cap the printed length so a
 	// pathological install path doesn't blow the log line.
-	LOG("DetectFeatureFlags: resources=%.260ls calibration=%d smoothing=%d inputhealth=%d facetracking=%d oscrouter=%d translator=%d (mask=0x%x)",
-		dir.c_str(), (int)calOn, (int)smoOn, (int)ihOn, (int)ftOn, (int)orOn, (int)trOn, (unsigned)flags);
+	LOG("DetectFeatureFlags: resources=%.260ls calibration=%d smoothing=%d inputhealth=%d facetracking=%d oscrouter=%d captions=%d (mask=0x%x)",
+		dir.c_str(), (int)calOn, (int)smoOn, (int)ihOn, (int)ftOn, (int)orOn, (int)capOn, (unsigned)flags);
 	return flags;
 }
 

@@ -51,6 +51,6 @@ namespace oscrouter {
 std::unique_ptr<DriverModule> CreateDriverModule();
 }
 
-namespace translator {
+namespace captions {
 std::unique_ptr<DriverModule> CreateDriverModule();
 }

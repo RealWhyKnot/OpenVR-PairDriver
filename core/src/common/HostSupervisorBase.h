@@ -15,7 +15,7 @@
 namespace openvr_pair::common {
 
 // Shared base for the C++ supervisors that spawn and manage feature-host
-// sidecar processes -- currently the facetracking C# host and the translator
+// sidecar processes -- currently the facetracking C# host and the captions
 // C++ host.
 //
 // The base owns:
@@ -86,7 +86,7 @@ protected:
     // "sent" flags so the queued message is retried against the next host.
     virtual void OnHostExited() {}
 
-    // Default returns empty. Translator overrides to provide a table of
+    // Default returns empty. Captions overrides to provide a table of
     // known exit codes.
     virtual std::string DescribeExitCode(DWORD code) const { (void)code; return {}; }
 

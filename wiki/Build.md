@@ -44,7 +44,7 @@ The default Windows shell is PowerShell 5.1, which wraps every stderr line from 
 
 ## Tests
 
-The gtest suite covers calibration, inputhealth, facetracking, OSC routing, and translator logic. Run:
+The gtest suite covers calibration, inputhealth, facetracking, OSC routing, and captions logic. Run:
 
 ```
 ./test.ps1

@@ -6,5 +6,5 @@ add_subdirectory("${CMAKE_SOURCE_DIR}/modules/calibration/tests" "${CMAKE_BINARY
 add_subdirectory("${CMAKE_SOURCE_DIR}/modules/facetracking/tests" "${CMAKE_BINARY_DIR}/tests/facetracking")
 add_subdirectory("${CMAKE_SOURCE_DIR}/modules/inputhealth/tests" "${CMAKE_BINARY_DIR}/tests/inputhealth")
 add_subdirectory("${CMAKE_SOURCE_DIR}/modules/oscrouter/tests" "${CMAKE_BINARY_DIR}/tests/oscrouter")
-add_subdirectory("${CMAKE_SOURCE_DIR}/modules/translator/tests" "${CMAKE_BINARY_DIR}/tests/translator")
+add_subdirectory("${CMAKE_SOURCE_DIR}/modules/captions/tests" "${CMAKE_BINARY_DIR}/tests/captions")
 add_subdirectory(e2e)

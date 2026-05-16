@@ -60,8 +60,8 @@ add_subdirectory(core/src)
 # C++-only contributor doesn't need the .NET SDK to build the driver+overlay.
 add_subdirectory(modules/facetracking/src/host)
 
-# Translator native C++ host sidecar. Toggleable via OPENVR_PAIR_BUILD_TRANSLATOR_HOST.
-add_subdirectory(modules/translator/src/host)
+# Captions native C++ host sidecar. Toggleable via OPENVR_PAIR_BUILD_CAPTIONS_HOST.
+add_subdirectory(modules/captions/src/host)
 
 # Test suites. Unit tests stay in their owning module folders; cross-module E2E
 # tests live under tests/e2e and are registered alongside the rest.
@@ -69,8 +69,8 @@ add_subdirectory(tests)
 
 message(STATUS "------ WKOpenVR build configuration ------")
 message(STATUS "  Compiler cache:   ${WKOPENVR_COMPILER_LAUNCHER_DISPLAY}")
-message(STATUS "  Translator CUDA:  ${WKOPENVR_TRANSLATOR_CUDA}")
-message(STATUS "  Translator host:  ${OPENVR_PAIR_BUILD_TRANSLATOR_HOST}")
+message(STATUS "  Captions CUDA:    ${WKOPENVR_CAPTIONS_CUDA}")
+message(STATUS "  Captions host:    ${OPENVR_PAIR_BUILD_CAPTIONS_HOST}")
 message(STATUS "------------------------------------------")
 
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC" OR "${CMAKE_C_COMPILER_ID}" STREQUAL "MSVC")

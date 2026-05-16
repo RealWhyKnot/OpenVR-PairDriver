@@ -1,11 +1,12 @@
 # This workflow publishes a release on this repo AND mirrors per-feature
-# zips to the four sibling repos (WKOpenVR-SpaceCalibrator,
-# WKOpenVR-Smoothing, WKOpenVR-InputHealth, WKOpenVR-VRCFT). The mirror
-# step needs a token with contents:write on all four repos, stored as the
-# secret MIRROR_RELEASE_TOKEN. Provision via:
+# zips to the five sibling repos (WKOpenVR-SpaceCalibrator,
+# WKOpenVR-Smoothing, WKOpenVR-InputHealth, WKOpenVR-VRCFT,
+# WKOpenVR-Captions). The mirror step needs a token with contents:write
+# on all five repos, stored as the secret MIRROR_RELEASE_TOKEN. Provision via:
 #   1. github.com -> Settings -> Developer settings -> Fine-grained PAT
 #   2. Resource owner: RealWhyKnot. Repos: WKOpenVR-SpaceCalibrator,
-#      WKOpenVR-Smoothing, WKOpenVR-InputHealth, WKOpenVR-VRCFT.
+#      WKOpenVR-Smoothing, WKOpenVR-InputHealth, WKOpenVR-VRCFT,
+#      WKOpenVR-Captions.
 #   3. Permissions: Contents = Read and write.
 #   4. Copy token, then in this repo: Settings -> Secrets and variables
 #      -> Actions -> New repository secret -> name MIRROR_RELEASE_TOKEN.
@@ -16,9 +17,9 @@ name: Release
 
 # Triggered by pushing a tag like v2026.5.12.0. Builds the umbrella binary
 # (WKOpenVR.exe), driver (driver_wkopenvr.dll), the C# face-tracking host
-# (OpenVRPair.FaceModuleHost.exe), and the native translator host
-# (WKOpenVR.TranslatorHost.exe) via CMake + MSVC + dotnet publish, runs
-# the test suite, packages an umbrella zip and four per-feature mirror zips,
+# (OpenVRPair.FaceModuleHost.exe), and the native captions host
+# (WKOpenVR.CaptionsHost.exe) via CMake + MSVC + dotnet publish, runs
+# the test suite, packages an umbrella zip and five per-feature mirror zips,
 # publishes the umbrella release on this repo, and pushes a mirror release
 # to each sibling repo.
 #
@@ -125,7 +126,7 @@ jobs:
         # The minhook submodule declares cmake_minimum_required(2.8.12) which
         # CMake 4.x rejects. -DCMAKE_POLICY_VERSION_MINIMUM=3.5 lets us configure
         # without forking. -Wno-dev silences developer-mode warnings from minhook.
-        run: cmake -G "Visual Studio 17 2022" -A x64 -B build -S . -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DWKOPENVR_TRANSLATOR_CUDA=OFF -Wno-dev
+        run: cmake -G "Visual Studio 17 2022" -A x64 -B build -S . -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DWKOPENVR_CAPTIONS_CUDA=OFF -Wno-dev
 
       - name: Stamp version and build
         shell: pwsh
@@ -187,15 +188,15 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "$($t.Name) failed (exit $LASTEXITCODE)" }
           }
 
-      - name: Run translator host self-test
+      - name: Run captions host self-test
         shell: pwsh
         run: |
-          $hostExe = 'build/driver_wkopenvr/resources/translator/host/WKOpenVR.TranslatorHost.exe'
+          $hostExe = 'build/driver_wkopenvr/resources/captions/host/WKOpenVR.CaptionsHost.exe'
           if (-not (Test-Path -LiteralPath $hostExe)) {
-            throw "Translator host missing at $hostExe"
+            throw "Captions host missing at $hostExe"
           }
           & $hostExe --self-test
-          if ($LASTEXITCODE -ne 0) { throw "Translator host self-test failed (exit $LASTEXITCODE)" }
+          if ($LASTEXITCODE -ne 0) { throw "Captions host self-test failed (exit $LASTEXITCODE)" }
 
       - name: Package umbrella and mirror zips
         id: zips
@@ -235,9 +236,9 @@ jobs:
             Copy-Item -Recurse -Path $srcFt -Destination "$stage/driver_wkopenvr/resources/facetracking"
           }
 
-          $srcTr = "$driverSrc/resources/translator"
+          $srcTr = "$driverSrc/resources/captions"
           if (Test-Path $srcTr) {
-            Copy-Item -Recurse -Path $srcTr -Destination "$stage/driver_wkopenvr/resources/translator"
+            Copy-Item -Recurse -Path $srcTr -Destination "$stage/driver_wkopenvr/resources/captions"
           }
 
           if (-not (Test-Path "$artifacts/dashboard_icon.png")) {
@@ -274,24 +275,24 @@ jobs:
             throw "Staged OpenVRPair.FaceModuleHost.exe missing under $faceHostStageDir."
           }
 
-          # Stage the native translator host. CMake emits it to
-          # build/driver_wkopenvr/resources/translator/host/ (same driver-tree
+          # Stage the native captions host. CMake emits it to
+          # build/driver_wkopenvr/resources/captions/host/ (same driver-tree
           # layout that quick.ps1 deploys). The $srcTr block above already
-          # copied the translator resources tree into the stage; this block
-          # verifies the host exe landed correctly so a missing TranslatorHost
-          # build (OPENVR_PAIR_BUILD_TRANSLATOR_HOST=OFF) is caught early with
+          # copied the captions resources tree into the stage; this block
+          # verifies the host exe landed correctly so a missing CaptionsHost
+          # build (OPENVR_PAIR_BUILD_CAPTIONS_HOST=OFF) is caught early with
           # a clear message rather than a silent gap in the release zip.
-          $trHostStageExe = "$stage/driver_wkopenvr/resources/translator/host/WKOpenVR.TranslatorHost.exe"
+          $trHostStageExe = "$stage/driver_wkopenvr/resources/captions/host/WKOpenVR.CaptionsHost.exe"
           if (-not (Test-Path $trHostStageExe)) {
-            throw "WKOpenVR.TranslatorHost.exe missing from stage at $trHostStageExe. Check that OPENVR_PAIR_BUILD_TRANSLATOR_HOST is ON and the translator host CMake target built successfully."
+            throw "WKOpenVR.CaptionsHost.exe missing from stage at $trHostStageExe. Check that OPENVR_PAIR_BUILD_CAPTIONS_HOST is ON and the captions host CMake target built successfully."
           }
-          $trHostOpenVr = "$stage/driver_wkopenvr/resources/translator/host/openvr_api.dll"
+          $trHostOpenVr = "$stage/driver_wkopenvr/resources/captions/host/openvr_api.dll"
           if (-not (Test-Path $trHostOpenVr)) {
-            throw "openvr_api.dll missing beside TranslatorHost at $trHostOpenVr."
+            throw "openvr_api.dll missing beside CaptionsHost at $trHostOpenVr."
           }
-          $trPackManifest = "$stage/driver_wkopenvr/resources/translator/host/resources/translator-packs.json"
+          $trPackManifest = "$stage/driver_wkopenvr/resources/captions/host/resources/captions-packs.json"
           if (-not (Test-Path $trPackManifest)) {
-            throw "Translator pack manifest missing from stage at $trPackManifest."
+            throw "Captions pack manifest missing from stage at $trPackManifest."
           }
 
           New-Item -ItemType Directory -Force -Path "release" | Out-Null
@@ -335,6 +336,7 @@ jobs:
             [pscustomobject]@{ Name = 'Smoothing';    Flag = 'enable_smoothing.flag';    Repo = 'RealWhyKnot/WKOpenVR-Smoothing' }
             [pscustomobject]@{ Name = 'InputHealth';  Flag = 'enable_inputhealth.flag';  Repo = 'RealWhyKnot/WKOpenVR-InputHealth' }
             [pscustomobject]@{ Name = 'FaceTracking'; Flag = 'enable_facetracking.flag'; Repo = 'RealWhyKnot/WKOpenVR-VRCFT' }
+            [pscustomobject]@{ Name = 'Captions';     Flag = 'enable_captions.flag';     Repo = 'RealWhyKnot/WKOpenVR-Captions' }
           )
 
           $mirrorPaths = @{}
@@ -360,6 +362,7 @@ jobs:
           "mirror_smoothing=$($mirrorPaths['Smoothing'])"       >> $env:GITHUB_OUTPUT
           "mirror_inputhealth=$($mirrorPaths['InputHealth'])"   >> $env:GITHUB_OUTPUT
           "mirror_facetracking=$($mirrorPaths['FaceTracking'])" >> $env:GITHUB_OUTPUT
+          "mirror_captions=$($mirrorPaths['Captions'])"         >> $env:GITHUB_OUTPUT
 
       - name: Verify NSIS input artifacts staged
         # makensis errors with an obscure "no files found" when File /r is
@@ -379,10 +382,10 @@ jobs:
             'build/driver_wkopenvr/resources/settings/default.vrsettings',
             'build/driver_wkopenvr/bin/win64/driver_wkopenvr.dll',
             'build/driver_wkopenvr/resources/facetracking/host/OpenVRPair.FaceModuleHost.exe',
-            'build/driver_wkopenvr/resources/translator/host/WKOpenVR.TranslatorHost.exe',
-            'build/driver_wkopenvr/resources/translator/host/openvr_api.dll',
-            'build/driver_wkopenvr/resources/translator/host/resources/translator-packs.json',
-            'build/driver_wkopenvr/resources/translator/host/resources/install-translator-pack.ps1'
+            'build/driver_wkopenvr/resources/captions/host/WKOpenVR.CaptionsHost.exe',
+            'build/driver_wkopenvr/resources/captions/host/openvr_api.dll',
+            'build/driver_wkopenvr/resources/captions/host/resources/captions-packs.json',
+            'build/driver_wkopenvr/resources/captions/host/resources/install-captions-pack.ps1'
           )
           $missing = @()
           foreach ($p in $required) {
@@ -442,7 +445,7 @@ jobs:
           $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
           if (-not (Test-Path $makensis)) { $makensis = "C:\Program Files\NSIS\makensis.exe" }
           if (-not (Test-Path $makensis)) { throw "makensis.exe not found." }
-          $features = @('Calibration', 'Smoothing', 'InputHealth', 'FaceTracking')
+          $features = @('Calibration', 'Smoothing', 'InputHealth', 'FaceTracking', 'Captions')
           $outputs = @{}
           foreach ($feat in $features) {
             Push-Location install
@@ -463,6 +466,7 @@ jobs:
           "installer_smoothing=$($outputs['Smoothing'])"       >> $env:GITHUB_OUTPUT
           "installer_inputhealth=$($outputs['InputHealth'])"   >> $env:GITHUB_OUTPUT
           "installer_facetracking=$($outputs['FaceTracking'])" >> $env:GITHUB_OUTPUT
+          "installer_captions=$($outputs['Captions'])"         >> $env:GITHUB_OUTPUT
 
       - name: Generate release body
         id: changelog
@@ -628,6 +632,19 @@ jobs:
           $notes = "Mirror of WKOpenVR release $tag. Zip includes enable_facetracking.flag so face and eye tracking activate immediately. Source: https://github.com/RealWhyKnot/WKOpenVR/commit/$env:GITHUB_SHA"
           gh release create $tag $zip $installer --repo $repo --title $tag --notes $notes
 
+      - name: Mirror release to WKOpenVR-Captions
+        env:
+          GH_TOKEN: ${{ secrets.MIRROR_RELEASE_TOKEN }}
+          GITHUB_SHA: ${{ github.sha }}
+        shell: pwsh
+        run: |
+          $tag       = "${{ github.ref_name }}"
+          $zip       = "${{ steps.zips.outputs.mirror_captions }}"
+          $installer = "${{ steps.feature_installers.outputs.installer_captions }}"
+          $repo  = "RealWhyKnot/WKOpenVR-Captions"
+          $notes = "Mirror of WKOpenVR release $tag. Zip includes enable_captions.flag so live captions activate immediately. Source: https://github.com/RealWhyKnot/WKOpenVR/commit/$env:GITHUB_SHA"
+          gh release create $tag $zip $installer --repo $repo --title $tag --notes $notes
+
       - name: Push promoted changelog back to main (verified)
         # Use the GraphQL createCommitOnBranch mutation so the promotion
         # commit is signed server-side with GitHub's bot key. Done last so a
@@ -743,7 +760,8 @@ jobs:
               'RealWhyKnot/WKOpenVR-SpaceCalibrator',
               'RealWhyKnot/WKOpenVR-Smoothing',
               'RealWhyKnot/WKOpenVR-InputHealth',
-              'RealWhyKnot/WKOpenVR-VRCFT'
+              'RealWhyKnot/WKOpenVR-VRCFT',
+              'RealWhyKnot/WKOpenVR-Captions'
           )
           foreach ($repo in $mirrors) {
               Remove-ReleaseIfPresent -Repo $repo -Token $env:GH_TOKEN_MIRROR -Label "mirror"

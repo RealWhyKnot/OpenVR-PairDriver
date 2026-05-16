@@ -79,9 +79,9 @@ add_subdirectory("${CMAKE_SOURCE_DIR}/modules/oscrouter/src/driver" "${CMAKE_BIN
 list(APPEND OPENVR_PAIR_FEATURE_LIBS openvr_pair_feature_oscrouter_driver)
 list(APPEND OPENVR_PAIR_FEATURE_DEFINES OPENVR_PAIR_HAS_OSCROUTER_DRIVER=1)
 
-add_subdirectory("${CMAKE_SOURCE_DIR}/modules/translator/src/driver" "${CMAKE_BINARY_DIR}/modules/translator-driver")
-list(APPEND OPENVR_PAIR_FEATURE_LIBS openvr_pair_feature_translator_driver)
-list(APPEND OPENVR_PAIR_FEATURE_DEFINES OPENVR_PAIR_HAS_TRANSLATOR_DRIVER=1)
+add_subdirectory("${CMAKE_SOURCE_DIR}/modules/captions/src/driver" "${CMAKE_BINARY_DIR}/modules/captions-driver")
+list(APPEND OPENVR_PAIR_FEATURE_LIBS openvr_pair_feature_captions_driver)
+list(APPEND OPENVR_PAIR_FEATURE_DEFINES OPENVR_PAIR_HAS_CAPTIONS_DRIVER=1)
 
 file(GLOB_RECURSE SOURCES_DRIVER ${CMAKE_SOURCE_DIR}/core/src/driver "*.c" "*.h" "*.hpp" "*.cpp")
 file(GLOB_RECURSE SOURCES_COMMON ${CMAKE_SOURCE_DIR}/core/src/common "*.h" "*.hpp")

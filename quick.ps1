@@ -554,7 +554,7 @@ $steamVrProcessNames = @(
 	"WKOpenVR",
 	"OpenVRPair.FaceModuleHost",
 	"WKOpenVR.FaceModuleProcess",
-	"WKOpenVR.TranslatorHost"
+	"WKOpenVR.CaptionsHost"
 )
 $steamWasRunning = Test-NamedProcess -Names $steamProcessNames
 $steamVrWasRunning = Test-NamedProcess -Names $steamVrProcessNames
@@ -593,10 +593,10 @@ $required = @(
 	@("default.vrsettings", (Join-Path $driverSourceDir "resources\settings\default.vrsettings")),
 	@("driver_wkopenvr.dll", (Join-Path $driverSourceDir "bin\win64\driver_wkopenvr.dll")),
 	@("OpenVRPair.FaceModuleHost.exe", (Join-Path $driverSourceDir "resources\facetracking\host\OpenVRPair.FaceModuleHost.exe")),
-	@("WKOpenVR.TranslatorHost.exe", (Join-Path $driverSourceDir "resources\translator\host\WKOpenVR.TranslatorHost.exe")),
-	@("translator host openvr_api.dll", (Join-Path $driverSourceDir "resources\translator\host\openvr_api.dll")),
-	@("translator-packs.json", (Join-Path $driverSourceDir "resources\translator\host\resources\translator-packs.json")),
-	@("install-translator-pack.ps1", (Join-Path $driverSourceDir "resources\translator\host\resources\install-translator-pack.ps1"))
+	@("WKOpenVR.CaptionsHost.exe", (Join-Path $driverSourceDir "resources\captions\host\WKOpenVR.CaptionsHost.exe")),
+	@("captions host openvr_api.dll", (Join-Path $driverSourceDir "resources\captions\host\openvr_api.dll")),
+	@("captions-packs.json", (Join-Path $driverSourceDir "resources\captions\host\resources\captions-packs.json")),
+	@("install-captions-pack.ps1", (Join-Path $driverSourceDir "resources\captions\host\resources\install-captions-pack.ps1"))
 )
 
 Write-Step "Checking artifacts"
