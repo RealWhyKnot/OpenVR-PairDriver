@@ -59,7 +59,6 @@ add_executable(OpenVRPairOverlay WIN32
 	ManifestRegistration.h
 	Migration.cpp
 	Migration.h
-	ProfileStoreBase.h
 	ShellContext.cpp
 	ShellContext.h
 	ShellFooter.cpp

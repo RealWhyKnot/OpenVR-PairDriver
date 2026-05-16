@@ -34,11 +34,4 @@ void SetCalibrationDeviceLocks(const std::vector<CalibrationDeviceLock> &locks);
 bool TryGetCalibrationDeviceLockKind(const std::string &serial,
 	CalibrationDeviceLockKind &kind);
 
-// Compatibility helper for callers that only care about the primary reference.
-void SetCalibrationAnchorSerial(const std::string &serial);
-
-// Return the most recently set primary reference serial. Empty string means no
-// reference is currently known.
-const std::string &GetCalibrationAnchorSerial();
-
 } // namespace openvr_pair::overlay

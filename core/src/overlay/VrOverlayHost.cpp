@@ -107,7 +107,7 @@ bool VrOverlayHost::TryInitVrStack()
 	// Phase 1: probe with Background. Background-mode VR_Init fails fast
 	// when vrserver isn't running instead of auto-launching SteamVR, which
 	// is what we want -- the umbrella should not bring SteamVR up by
-	// merely existing. Mirrors SpaceCalibrator.cpp:312-336.
+	// merely existing.
 	vr::EVRInitError err = vr::VRInitError_None;
 	vr::VR_Init(&err, vr::VRApplication_Background);
 	if (err != vr::VRInitError_None) {

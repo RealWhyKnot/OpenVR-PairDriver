@@ -60,7 +60,6 @@ private:
     // all accesses must hold process_mutex_.
     mutable std::mutex process_mutex_;
     HANDLE process_handle_ = INVALID_HANDLE_VALUE;
-    HANDLE process_thread_ = INVALID_HANDLE_VALUE;  // not used but kept for CloseHandle
 
     std::thread monitor_thread_;
 

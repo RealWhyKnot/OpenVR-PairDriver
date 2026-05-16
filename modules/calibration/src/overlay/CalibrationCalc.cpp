@@ -1181,16 +1181,6 @@ Eigen::AffineCompact3d CalibrationCalc::EstimateRefToTargetPose(const Eigen::Aff
 		return Eigen::Affine3d(sample.ref.ToAffine().inverse() * calibration * sample.target.ToAffine());
 	});
 
-#if 0
-	Eigen::Vector3d eulerAvgQ = avg.rotation().eulerAngles(2, 1, 0) * 180.0 / EIGEN_PI;
-	Eigen::Vector3d trans = Eigen::Vector3d(avg.translation());
-
-	std::ostringstream oss;
-	oss << "==========================================================================================\n";
-	oss << "Avg rot: " << eulerAvgQ.x() << ", " << eulerAvgQ.y() << ", " << eulerAvgQ.z() << "\n";
-	oss << "Avg trans:\n" << trans.x() << ", " << trans.y() << ", " << trans.z() << "\n";
-	OutputDebugStringA(oss.str().c_str());
-#endif
 	return avg;
 }
 
@@ -1532,17 +1522,6 @@ bool CalibrationCalc::ComputeIncremental(bool &lerp, double threshold, double re
 		ComputeInstantOffset();
 	}
 
-
-	
-
-#if 0
-		char tmp[256];
-		snprintf(tmp, sizeof tmp, "Prior calibration error: %.3f (valid: %s) sct %d; new error %.3f; new better? %s\n",
-			priorCalibrationError, m_isValid ? "yes" : "no", stableCt, newError, !oldCalibrationBetter ? "yes" : "no");
-		CalCtx.Log(tmp);
-#endif
-		
-	
 	// Now, can we use the relative pose to perform a rapid correction?
 	if (!newCalibrationValid && shouldRapidCorrect) {
 		

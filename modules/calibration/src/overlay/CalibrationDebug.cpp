@@ -431,16 +431,8 @@ namespace {
 	const int N_GRAPHS = sizeof(graphs) / sizeof(graphs[0]);
 }
 
-void PushCalibrationApplyTime() {
-	Metrics::calibrationApplied.Push(true);
-}
-
-
 void ShowCalibrationDebug(int rows, int cols) {
 	static std::vector<int> curIndexes;
-
-	//ImGui::ShowDemoWindow();
-	//ImPlot::ShowDemoWindow();
 
 	double initMouseX = lastMouseX;
 	wasHovered = false;

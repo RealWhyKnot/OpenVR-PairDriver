@@ -670,7 +670,6 @@ void EndContinuousCalibration();
 void LoadChaperoneBounds();
 void ApplyChaperoneBounds();
 
-void PushCalibrationApplyTime();
 void ShowCalibrationDebug(int r, int c);
 void DebugApplyRandomOffset();
 
