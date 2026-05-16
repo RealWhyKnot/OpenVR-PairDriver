@@ -479,7 +479,6 @@ try {
 	$proc = Start-Process -FilePath "powershell.exe" `
 		-ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $helperPath, "-PlanPath", $planPath, "-ResultPath", $resultPath) `
 		-Verb RunAs `
-		-WindowStyle Hidden `
 		-PassThru `
 		-Wait
 
