@@ -13,7 +13,7 @@
 #include <cstring>
 
 // Named pipe the host exposes for control messages from the driver.
-#define FT_HOST_CONTROL_PIPE_NAME  "\\\\.\\pipe\\OpenVR-FaceTracking.host"
+#define FT_HOST_CONTROL_PIPE_NAME  "\\\\.\\pipe\\WKOpenVR-FaceTracking.host"
 
 namespace facetracking {
 namespace {

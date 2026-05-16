@@ -20,7 +20,7 @@ namespace facetracking {
 // capped at 30 s).  Stop() terminates the host and joins the monitor thread.
 //
 // Control pipe: SetActiveModuleUuid() writes a small command to
-// \\.\pipe\OpenVR-FaceTracking.host (the host's named-pipe server).
+// \\.\pipe\WKOpenVR-FaceTracking.host (the host's named-pipe server).
 // If the pipe is not yet connected the uuid is queued and sent on the next
 // successful reconnect.
 class HostSupervisor

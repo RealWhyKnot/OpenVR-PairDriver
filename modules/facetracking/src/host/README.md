@@ -2,7 +2,7 @@
 
 This directory contains the C# (.NET 10) host sidecar that loads hardware face and eye tracking
 vendor modules, normalises their per-frame output, and publishes frames into the named shared-memory
-ring `OpenVRPairFaceTrackingFrameRingV1`. The SteamVR driver reads that ring on its pose-update
+ring `WKOpenVRFaceTrackingFrameRingV2`. The SteamVR driver reads that ring on its pose-update
 path and applies continuous calibration, eyelid sync, and vergence lock before pushing data to
 SteamVR inputs and the OSC sender.
 

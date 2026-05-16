@@ -33,7 +33,10 @@
 // Pose telemetry shmem segment. Created by the driver only when the calibration
 // feature is enabled; the calibration overlay opens it to read driver-side
 // pose snapshots and telemetry counters.
-#define OPENVR_PAIRDRIVER_SHMEM_NAME            "OpenVRPairPoseMemoryV1"
+// V2 bumps the segment name to WKOpenVR* (V1 was OpenVRPairPoseMemoryV1) so a
+// half-updated install -- old driver + new overlay or vice versa -- fails
+// loudly on attach instead of silently mapping a foreign segment.
+#define OPENVR_PAIRDRIVER_SHMEM_NAME            "WKOpenVRPoseMemoryV2"
 
 // Input-health snapshot shmem segment. Created by the driver only when the
 // inputhealth feature is enabled; the InputHealth overlay opens it to read
@@ -46,7 +49,10 @@
 // 32-slot ring. The driver reads the latest frame on its pose-update path
 // and applies calibration / eyelid-sync / vergence-lock before publishing to
 // SteamVR inputs. Single writer (host) / single reader (driver).
-#define OPENVR_PAIRDRIVER_FACETRACKING_SHMEM_NAME "OpenVRPairFaceTrackingFrameRingV1"
+// V2 bumps the segment name to WKOpenVR* (V1 was
+// OpenVRPairFaceTrackingFrameRingV1) so a half-updated install fails loudly
+// on attach instead of mapping a stale ring with the wrong shape.
+#define OPENVR_PAIRDRIVER_FACETRACKING_SHMEM_NAME "WKOpenVRFaceTrackingFrameRingV2"
 // OSC router stats shmem. Created by the driver when oscrouter is enabled;
 // the overlay reads it at ~10 Hz to show per-route message rates.
 #define OPENVR_PAIRDRIVER_OSCROUTER_SHMEM_NAME "WKOpenVROscRouterStatsV1"
@@ -180,10 +186,10 @@ namespace protocol
 	// version bump prevents a dev-tree mismatch from silently corrupting config.
 	//
 	// v15 (2026-05-12): adds the FaceTracking subsystem. Driver opens a fourth
-	// pipe (\\.\pipe\OpenVR-FaceTracking) gated on enable_facetracking.flag,
+	// pipe (\\.\pipe\WKOpenVR-FaceTracking) gated on enable_facetracking.flag,
 	// accepts RequestSetFaceTrackingConfig + RequestSetFaceCalibrationCommand +
 	// RequestSetFaceActiveModule. A new shmem ring
-	// (OpenVRPairFaceTrackingFrameRingV1) carries per-frame face/eye samples
+	// (WKOpenVRFaceTrackingFrameRingV2) carries per-frame face/eye samples
 	// from a C# host sidecar (OpenVRPair.FaceModuleHost.exe) into the driver.
 	// Wire layout for the existing request types is unchanged; the bump forces
 	// paired install so a version skew is rejected at handshake instead of

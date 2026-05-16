@@ -22,13 +22,13 @@ Several Advanced-tab readouts (host status, native status, OSC status, focus dis
 
 ## IPC
 
-`\\.\pipe\OpenVR-FaceTracking`:
+`\\.\pipe\WKOpenVR-FaceTracking`:
 
 - `RequestSetFaceTrackingConfig` -- master enable, sync / lock strengths, smoothing factors, OSC enable + host + port, native enable, mDNS toggle.
 - `RequestSetFaceCalibrationCommand` -- begin / end / save / reset-all / reset-eye / reset-expr (enum values 0..5).
 - `RequestSetFaceActiveModule` -- module UUID forwarded to the host control channel.
 
-Shmem ring: `OpenVRPairFaceTrackingFrameRingV1`, 32 slots, seqlock with magic + version validation on attach.
+Shmem ring: `WKOpenVRFaceTrackingFrameRingV2`, 32 slots, seqlock with magic + version validation on attach.
 
 ## Overlay UI
 

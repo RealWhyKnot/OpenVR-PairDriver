@@ -20,7 +20,7 @@ Source: [modules/calibration/](https://github.com/RealWhyKnot/WKOpenVR/tree/main
 - `RequestSetTrackingSystemFallback` -- chooses the fallback reference when the HMD's tracking system is unavailable.
 - `RequestDebugOffset` -- single-shot nudge used by diagnostics.
 
-Driver-side pose telemetry is streamed back to the overlay over the `OpenVRPairPoseMemoryV1` shmem segment.
+Driver-side pose telemetry is streamed back to the overlay over the `WKOpenVRPoseMemoryV2` shmem segment.
 
 ## Overlay UI
 

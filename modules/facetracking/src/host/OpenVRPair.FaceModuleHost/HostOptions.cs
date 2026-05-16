@@ -9,11 +9,11 @@ public sealed class HostOptions
 {
     /// <summary>Named pipe the driver uses to send control messages to the host.</summary>
     public string DriverHandshakePipe { get; set; } =
-        @"\\.\pipe\OpenVR-FaceTracking.host";
+        @"\\.\pipe\WKOpenVR-FaceTracking.host";
 
     /// <summary>Name of the shmem ring the host writes into.</summary>
     public string ShmemName { get; set; } =
-        "OpenVRPairFaceTrackingFrameRingV1";
+        "WKOpenVRFaceTrackingFrameRingV2";
 
     /// <summary>Directory where installed hardware modules live, one uuid/version sub-tree each.</summary>
     public string ModulesInstallDir { get; set; } = Path.Combine(

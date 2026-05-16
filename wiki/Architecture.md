@@ -36,10 +36,10 @@ Each feature is gated by a marker file in the driver's resources directory:
 
 | Flag file | Module | What activates |
 |---|---|---|
-| `enable_calibration.flag` | calibration | pose-update hook + `\\.\pipe\OpenVR-Calibration` |
+| `enable_calibration.flag` | calibration | pose-update hook + `\\.\pipe\WKOpenVR-Calibration` |
 | `enable_smoothing.flag` | smoothing | skeletal hook + `\\.\pipe\WKOpenVR-Smoothing` |
 | `enable_inputhealth.flag` | inputhealth | boolean/scalar input hooks + `\\.\pipe\WKOpenVR-InputHealth` + 10 Hz snapshot shmem |
-| `enable_facetracking.flag` | facetracking | host sidecar spawn + `\\.\pipe\OpenVR-FaceTracking` + ~120 Hz frame shmem |
+| `enable_facetracking.flag` | facetracking | host sidecar spawn + `\\.\pipe\WKOpenVR-FaceTracking` + ~120 Hz frame shmem |
 
 The driver scans the resources directory at startup; flag presence is checked once per SteamVR session. The umbrella overlay's Modules tab manages these files through an elevated PowerShell helper -- because the driver tree lives under `Program Files (x86)\Steam\steamapps\common\SteamVR\drivers\01wkopenvr\`, dropping or removing flag files needs an admin token. The toggle takes effect at the next SteamVR launch.
 

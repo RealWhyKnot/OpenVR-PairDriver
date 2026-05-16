@@ -21,7 +21,7 @@ Each bump is documented in a comment above the `const uint32_t Version = N;` lin
 | `\\.\pipe\OpenVR-Calibration` | overlay <-> driver | calibration |
 | `\\.\pipe\WKOpenVR-Smoothing` | overlay <-> driver | smoothing |
 | `\\.\pipe\WKOpenVR-InputHealth` | overlay <-> driver | inputhealth |
-| `\\.\pipe\OpenVR-FaceTracking` | overlay <-> driver | facetracking |
+| `\\.\pipe\WKOpenVR-FaceTracking` | overlay <-> driver | facetracking |
 
 Each overlay sends only its own request types. The driver routes by request type and rejects messages on the wrong pipe. Pipe names are exposed in `Protocol.h` as `OPENVR_PAIRDRIVER_*_PIPE_NAME` macros so both sides resolve them through a single source of truth.
 
@@ -29,9 +29,9 @@ Each overlay sends only its own request types. The driver routes by request type
 
 | Segment | Producer -> consumer | Notes |
 |---|---|---|
-| `OpenVRPairPoseMemoryV1` | driver -> overlay | calibration pose telemetry |
+| `WKOpenVRPoseMemoryV2` | driver -> overlay | calibration pose telemetry |
 | `WKOpenVRInputHealthMemoryV1` | driver -> overlay | 10 Hz input-health snapshot ring |
-| `OpenVRPairFaceTrackingFrameRingV1` | host -> driver | 32-slot seqlock ring, ~120 Hz face/eye samples |
+| `WKOpenVRFaceTrackingFrameRingV2` | host -> driver | 32-slot seqlock ring, ~120 Hz face/eye samples |
 
 The seqlock discipline used by the shmem classes:
 
