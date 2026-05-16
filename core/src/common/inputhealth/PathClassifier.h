@@ -52,6 +52,39 @@ inline bool IsDiagnosticsOnlyPath(PathClass cls)
     return cls == PathClass::DiagnosticsOnly;
 }
 
+// Path-string-only heuristic: returns true for analog axes whose nominal
+// range is [0, 1] with degradation that drags the peak down or the rest
+// floor up. The trigger-remap kernel applies to these.
+//
+// Covers the obvious "trigger" / "Trigger" naming as well as pressure-
+// sensitive analog axes that ship under other names: Index Knuckles
+// grip force and grip value (squeeze), trackpad force, generic /force or
+// /pressure suffixes, and /squeeze/value paths. Boolean variants
+// (/click, /touch) are filtered out so e.g. "trigger/click" is not
+// misclassified as analog.
+inline bool IsTriggerLikePath(const std::string &path)
+{
+    if (path.find("/click") != std::string::npos ||
+        path.find("/touch") != std::string::npos)
+    {
+        return false;
+    }
+    if (path.find("trigger") != std::string::npos ||
+        path.find("Trigger") != std::string::npos)
+    {
+        return true;
+    }
+    const size_t n = path.size();
+    auto endsWith = [&](const char *suffix, size_t len) -> bool {
+        return n >= len && path.compare(n - len, len, suffix) == 0;
+    };
+    if (endsWith("/force",    6)) return true;
+    if (endsWith("/pressure", 9)) return true;
+    if (path.find("/grip/value")    != std::string::npos) return true;
+    if (path.find("/squeeze/value") != std::string::npos) return true;
+    return false;
+}
+
 // Classify a /input/... path string. The path should be the canonical SteamVR
 // input path as reported by CreateBooleanComponent / CreateScalarComponent.
 //
@@ -79,15 +112,11 @@ inline PathClass ClassifyInputPath(const std::string &path)
         return PathClass::Unsupported;
     }
 
-    // Trigger scalars: path contains "trigger" and is a value or click sub-path.
-    // Distinguish from "trigger/click" boolean paths: the click path is a button.
-    {
-        const bool hasTrigger = path.find("trigger") != std::string::npos ||
-                                path.find("Trigger") != std::string::npos;
-        const bool isClick = path.find("/click") != std::string::npos ||
-                             path.find("/touch") != std::string::npos;
-        if (hasTrigger && !isClick) return PathClass::Trigger;
-    }
+    // Trigger-like analog axes: paths named "trigger", plus pressure-sensitive
+    // axes (grip force, grip value, trackpad force, /squeeze/value, generic
+    // /force or /pressure suffixes). Boolean variants are filtered inside the
+    // helper so "trigger/click" stays a button.
+    if (IsTriggerLikePath(path)) return PathClass::Trigger;
 
     // Analog stick axes: path ends in /x or /y (case-insensitive).
     {

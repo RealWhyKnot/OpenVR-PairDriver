@@ -30,6 +30,37 @@ TEST(PathClassifier, TriggerTouchIsButton)
 }
 
 // ---------------------------------------------------------------------------
+// Pressure-sensitive analog axes -- classify as Trigger so the
+// trigger-remap kernel applies (degraded peak / drifted floor correction).
+// ---------------------------------------------------------------------------
+
+TEST(PathClassifier, GripForceAnalog)
+{
+    EXPECT_EQ(ClassifyInputPath("/input/grip/force"), PathClass::Trigger);
+}
+
+TEST(PathClassifier, SqueezeValueAnalog)
+{
+    EXPECT_EQ(ClassifyInputPath("/input/squeeze/value"), PathClass::Trigger);
+}
+
+TEST(PathClassifier, TrackpadForceAnalog)
+{
+    EXPECT_EQ(ClassifyInputPath("/input/trackpad/force"), PathClass::Trigger);
+}
+
+TEST(PathClassifier, GenericPressureSuffix)
+{
+    EXPECT_EQ(ClassifyInputPath("/input/somecontrol/pressure"), PathClass::Trigger);
+}
+
+TEST(PathClassifier, GripClickStaysButton)
+{
+    // /click is a boolean even when the stem ("grip") also exposes an analog.
+    EXPECT_EQ(ClassifyInputPath("/input/grip/click"), PathClass::ControllerButton);
+}
+
+// ---------------------------------------------------------------------------
 // Stick axis paths
 // ---------------------------------------------------------------------------
 
@@ -62,9 +93,12 @@ TEST(PathClassifier, TouchpadYAxis)
 // Controller button paths
 // ---------------------------------------------------------------------------
 
-TEST(PathClassifier, GripValue)
+TEST(PathClassifier, GripValueAnalog)
 {
-    EXPECT_EQ(ClassifyInputPath("/input/grip/value"), PathClass::ControllerButton);
+    // Index Knuckles publishes /input/grip/value as a pressure-sensitive
+    // analog 0..1 squeeze. Wand-style controllers only have /input/grip/click
+    // (covered separately) so this classification is safe across both.
+    EXPECT_EQ(ClassifyInputPath("/input/grip/value"), PathClass::Trigger);
 }
 
 TEST(PathClassifier, SystemClick)

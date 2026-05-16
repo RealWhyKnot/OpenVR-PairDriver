@@ -1,6 +1,7 @@
 #include "InputHealthCompensation.h"
 
 #include "ServerTrackedDeviceProvider.h"
+#include "inputhealth/PathClassifier.h"
 
 #include <algorithm>
 #include <cmath>
@@ -10,12 +11,6 @@ namespace {
 float ClampFloat(float value, float lo, float hi)
 {
 	return std::max(lo, std::min(value, hi));
-}
-
-bool PathContainsTrigger(const std::string &path)
-{
-	return path.find("trigger") != std::string::npos ||
-		path.find("Trigger") != std::string::npos;
 }
 
 } // namespace
@@ -33,7 +28,7 @@ float ApplyScalarCompensation(
 {
 	const bool isStick = entry.kind == protocol::InputHealthCompStickX ||
 		entry.kind == protocol::InputHealthCompStickY;
-	const bool isTrigger = PathContainsTrigger(stats.path);
+	const bool isTrigger = inputhealth::IsTriggerLikePath(stats.path);
 
 	if (isTrigger) {
 		// Trigger range remap: stretch [trigger_min, trigger_max] onto [0, 1].

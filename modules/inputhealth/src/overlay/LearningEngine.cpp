@@ -45,12 +45,6 @@ std::string KeyFor(uint64_t serial_hash, const std::string &path)
 	return std::string(buf) + path;
 }
 
-bool PathContainsTrigger(const std::string &path)
-{
-	return path.find("trigger") != std::string::npos ||
-		path.find("Trigger") != std::string::npos;
-}
-
 bool IsStickKind(uint8_t kind)
 {
 	return kind == protocol::InputHealthCompStickX ||
@@ -59,7 +53,8 @@ bool IsStickKind(uint8_t kind)
 
 bool IsTriggerKind(uint8_t kind, const std::string &path)
 {
-	return kind == protocol::InputHealthCompScalarSingle && PathContainsTrigger(path);
+	return kind == protocol::InputHealthCompScalarSingle
+		&& inputhealth::IsTriggerLikePath(path);
 }
 
 uint8_t KindForBody(const protocol::InputHealthSnapshotBody &b)
