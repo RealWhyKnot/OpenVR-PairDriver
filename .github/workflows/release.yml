@@ -97,7 +97,7 @@ jobs:
         # fallback lets a near-miss (different source hash) reuse the
         # most recent build state -- CMake then recompiles only what
         # changed.
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build
           key: build-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', 'core/src/**/*.cpp', 'core/src/**/*.h', 'modules/**/*.cpp', 'modules/**/*.h', 'modules/**/*.cs', '.gitmodules', 'version.txt') }}
@@ -107,7 +107,7 @@ jobs:
       - name: Cache NuGet packages
         # FaceModuleHost's dotnet publish restores NuGet packages on every
         # cold run. Caching the user-level NuGet folder keeps them warm.
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('modules/facetracking/src/host/**/*.csproj', 'modules/facetracking/src/host/**/packages.lock.json') }}
@@ -117,7 +117,7 @@ jobs:
       - name: Cache NSIS install
         # Skips the ~30 s choco install on warm runs. Key bumped on NSIS
         # upgrades.
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: 'C:\Program Files (x86)\NSIS'
           key: nsis-${{ runner.os }}-3.12
